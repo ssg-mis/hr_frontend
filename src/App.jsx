@@ -12,6 +12,7 @@ import AfterJoiningWork from './pages/AfterJoiningWork';
 import Leaving from './pages/Leaving';
 import AfterLeavingWork from './pages/AfterLeavingWork';
 import Employee from './pages/Employee';
+import Joining from './pages/Joining';
 import MyProfile from './pages/MyProfile';
 import MyAttendance from './pages/MyAttendance';
 import LeaveRequest from './pages/LeaveRequest';
@@ -21,17 +22,19 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Attendance from './pages/Attendance';
 import LeaveManagement from './pages/LeaveManagement';
 import Attendancedaily from './pages/Attendancedaily';
+import AttendanceMonthly from './pages/AttendanceMonthly';
 import Report from './pages/Report';
 import Payroll from './pages/Payroll';
-import MisReport from './pages/MisReport';
+// import MisReport from './pages/MisReport';
 import LeavePolicy from './pages/LeavePolicy';
 import EMIManagement from './pages/EMIManagement';
+import Settings from './pages/Settings';
 
 function App() {
   return (
     <div className="bg-white min-h-screen">
       <Router>
-        <Toaster position="top-right" />
+        <Toaster position="top-right" containerStyle={{ zIndex: 9999 }} />
         <Routes>
           <Route path="/login" element={<Login />} />
           
@@ -49,6 +52,7 @@ function App() {
             <Route path="leaving" element={<Leaving />} />
             <Route path="after-leaving-work" element={<AfterLeavingWork />} />
             <Route path="employee" element={<Employee />} />
+            <Route path="joining" element={<Joining />} />
             <Route path="my-profile" element={<MyProfile />} />
             <Route path="my-attendance" element={<MyAttendance />} />
             <Route path="leave-policy" element={<LeavePolicy />} />
@@ -58,10 +62,12 @@ function App() {
              <Route path="leave-management" element={<LeaveManagement />} />
               <Route path="attendance" element={<Attendance />} />
               <Route path="attendancedaily" element={<Attendancedaily />} />
+              <Route path="attendance-monthly" element={<AttendanceMonthly />} />
               <Route path="report" element={<Report />} />
               <Route path="payroll" element={<Payroll />} />
-              <Route path="misreport" element={<MisReport />} />
+              {/* <Route path="misreport" element={<MisReport />} /> */}
               <Route path="emi-management" element={<EMIManagement />} />
+              <Route path="settings" element={<Settings />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

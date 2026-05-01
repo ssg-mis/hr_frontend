@@ -157,54 +157,54 @@ const Payroll = () => {
     );
   };
 
-useEffect(() => {
-  const fetchEmployeeData = async () => {
-    try {
-      const response = await fetch(
-        "https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=JOINING&action=fetch"
-      );
-      const data = await response.json();
+  useEffect(() => {
+    const fetchEmployeeData = async () => {
+      try {
+        const response = await fetch(
+          "https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=JOINING&action=fetch"
+        );
+        const data = await response.json();
 
-      if (data && data.success && data.data) {
-        // Use row 6 (index 6) as header
-        const headers = data.data[6];
-        // Start actual rows from row 7 (index 7)
-        const rows = data.data.slice(6);
+        if (data && data.success && data.data) {
+          // Use row 6 (index 6) as header
+          const headers = data.data[6];
+          // Start actual rows from row 7 (index 7)
+          const rows = data.data.slice(6);
 
-        // Map column names to indices
-        const columnMap = {};
-        headers.forEach((header, index) => {
-          columnMap[header.trim().toLowerCase()] = index;
-        });
+          // Map column names to indices
+          const columnMap = {};
+          headers.forEach((header, index) => {
+            columnMap[header.trim().toLowerCase()] = index;
+          });
 
-        // Extract Employee ID (Column B → index 1) and Employee Name (Column C → index 2)
-        const employeeData = rows.map((row) => ({
-          employeeId: row[1] || "", // Column B
-          employeeName: row[4] || "", // Column E
-        }));
+          // Extract Employee ID (Column B → index 1) and Employee Name (Column C → index 2)
+          const employeeData = rows.map((row) => ({
+            employeeId: row[1] || "", // Column B
+            employeeName: row[4] || "", // Column E
+          }));
 
-        setEmployeesList(employeeData);
+          setEmployeesList(employeeData);
+        }
+      } catch (error) {
+        console.error("Failed to fetch employee data:", error);
+        showNotification("Failed to load employee data", "error");
       }
-    } catch (error) {
-      console.error("Failed to fetch employee data:", error);
-      showNotification("Failed to load employee data", "error");
+    };
+
+    fetchEmployeeData();
+  }, []);
+
+
+  const handleEmployeeSelect = (employeeName) => {
+    const selectedEmployee = employeesList.find(emp => emp.employeeName === employeeName);
+    if (selectedEmployee) {
+      setNewPayrollData({
+        ...newPayrollData,
+        employeeName: selectedEmployee.employeeName,
+        employeeId: selectedEmployee.employeeId
+      });
     }
   };
-
-  fetchEmployeeData();
-}, []);
-
-
-const handleEmployeeSelect = (employeeName) => {
-  const selectedEmployee = employeesList.find(emp => emp.employeeName === employeeName);
-  if (selectedEmployee) {
-    setNewPayrollData({
-      ...newPayrollData,
-      employeeName: selectedEmployee.employeeName,
-      employeeId: selectedEmployee.employeeId
-    });
-  }
-};
 
   // Fetch data from Google Sheets
   useEffect(() => {
@@ -280,143 +280,143 @@ const handleEmployeeSelect = (employeeName) => {
     fetchData();
   }, []);
 
-const handleSubmitNewPayroll = async () => {
-  try {
-    setLoading(true);
-
-    // Calculate gross, total deductions, and net
-    const gross =
-      newPayrollData.basic +
-      newPayrollData.lta +
-      newPayrollData.bonus +
-      newPayrollData.otherAllowances +
-      newPayrollData.overtime;
-
-    const totalDeductions =
-      newPayrollData.pf +
-      newPayrollData.loan +
-      newPayrollData.otherDeductions;
-
-    const net = gross - totalDeductions;
-
-    const payrollWithCalculations = {
-      ...newPayrollData,
-      gross,
-      totalDeductions,
-      net,
-    };
-
-    // Prepare data for Google Sheets
-    const sheetData = [
-      payrollWithCalculations.employeeId,
-      payrollWithCalculations.employeeName,
-      payrollWithCalculations.year,
-      payrollWithCalculations.month,
-      payrollWithCalculations.basic,
-      payrollWithCalculations.lta,
-      payrollWithCalculations.bonus,
-      payrollWithCalculations.otherAllowances,
-      payrollWithCalculations.overtime,
-      payrollWithCalculations.gross,
-      payrollWithCalculations.pf,
-      payrollWithCalculations.loan,
-      payrollWithCalculations.otherDeductions,
-      payrollWithCalculations.totalDeductions,
-      payrollWithCalculations.net,
-      payrollWithCalculations.status,
-      payrollWithCalculations.payDate,
-    ];
-
-    // Create a form data approach to avoid CORS preflight
-    const formData = new URLSearchParams();
-    formData.append('sheet', 'Salary');
-    formData.append('action', 'append');
-    formData.append('rowData', JSON.stringify(sheetData));
-
-    // Use a proxy or direct URL with different approach
-    const scriptUrl = 'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec';
-    
-    // Method 1: Use a GET request instead (if your AppScript supports it)
-    const getUrl = `${scriptUrl}?sheet=Salary&action=insert&rowData=${encodeURIComponent(JSON.stringify(sheetData))}`;
-    
+  const handleSubmitNewPayroll = async () => {
     try {
-      // Try GET approach first
-      const response = await fetch(getUrl, {
-        method: 'GET',
-        mode: 'no-cors' // This might help in some cases
-      });
-      
-      // If GET doesn't work, try POST with form data
-      if (!response.ok) {
-        const postResponse = await fetch(scriptUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: formData.toString()
+      setLoading(true);
+
+      // Calculate gross, total deductions, and net
+      const gross =
+        newPayrollData.basic +
+        newPayrollData.lta +
+        newPayrollData.bonus +
+        newPayrollData.otherAllowances +
+        newPayrollData.overtime;
+
+      const totalDeductions =
+        newPayrollData.pf +
+        newPayrollData.loan +
+        newPayrollData.otherDeductions;
+
+      const net = gross - totalDeductions;
+
+      const payrollWithCalculations = {
+        ...newPayrollData,
+        gross,
+        totalDeductions,
+        net,
+      };
+
+      // Prepare data for Google Sheets
+      const sheetData = [
+        payrollWithCalculations.employeeId,
+        payrollWithCalculations.employeeName,
+        payrollWithCalculations.year,
+        payrollWithCalculations.month,
+        payrollWithCalculations.basic,
+        payrollWithCalculations.lta,
+        payrollWithCalculations.bonus,
+        payrollWithCalculations.otherAllowances,
+        payrollWithCalculations.overtime,
+        payrollWithCalculations.gross,
+        payrollWithCalculations.pf,
+        payrollWithCalculations.loan,
+        payrollWithCalculations.otherDeductions,
+        payrollWithCalculations.totalDeductions,
+        payrollWithCalculations.net,
+        payrollWithCalculations.status,
+        payrollWithCalculations.payDate,
+      ];
+
+      // Create a form data approach to avoid CORS preflight
+      const formData = new URLSearchParams();
+      formData.append('sheet', 'Salary');
+      formData.append('action', 'append');
+      formData.append('rowData', JSON.stringify(sheetData));
+
+      // Use a proxy or direct URL with different approach
+      const scriptUrl = 'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec';
+
+      // Method 1: Use a GET request instead (if your AppScript supports it)
+      const getUrl = `${scriptUrl}?sheet=Salary&action=insert&rowData=${encodeURIComponent(JSON.stringify(sheetData))}`;
+
+      try {
+        // Try GET approach first
+        const response = await fetch(getUrl, {
+          method: 'GET',
+          mode: 'no-cors' // This might help in some cases
         });
-        
-        if (!postResponse.ok) {
-          throw new Error('Failed to add payroll entry');
+
+        // If GET doesn't work, try POST with form data
+        if (!response.ok) {
+          const postResponse = await fetch(scriptUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString()
+          });
+
+          if (!postResponse.ok) {
+            throw new Error('Failed to add payroll entry');
+          }
         }
-      }
 
-      showNotification("Payroll entry added successfully!");
-      setShowNewPayrollModal(false);
+        showNotification("Payroll entry added successfully!");
+        setShowNewPayrollModal(false);
 
-      // Refresh the data
-      const fetchResponse = await fetch(
-        "https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=Salary&action=fetch"
-      );
-      const fetchData = await fetchResponse.json();
+        // Refresh the data
+        const fetchResponse = await fetch(
+          "https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=Salary&action=fetch"
+        );
+        const fetchData = await fetchResponse.json();
 
-      if (fetchData && fetchData.success && fetchData.data) {
-        const headers = fetchData.data[0];
-        const rows = fetchData.data.slice(1);
+        if (fetchData && fetchData.success && fetchData.data) {
+          const headers = fetchData.data[0];
+          const rows = fetchData.data.slice(1);
 
-        const columnMap = {};
-        headers.forEach((header, index) => {
-          columnMap[header.trim().toLowerCase()] = index;
-        });
+          const columnMap = {};
+          headers.forEach((header, index) => {
+            columnMap[header.trim().toLowerCase()] = index;
+          });
 
-        const transformedData = rows.map((row) => ({
-          employeeId: row[1] || "",
-          employeeName: row[2] || "",
-          year: row[columnMap["year"]] || "",
-          month: row[columnMap["month"]] || "",
-          basic: parseFloat(row[columnMap["basic salary"]]) || 0,
-          lta: parseFloat(row[columnMap["leave travel allowance"]]) || 0,
-          bonus: parseFloat(row[columnMap["bonus"]]) || 0,
-          otherAllowances: parseFloat(row[columnMap["other allowance"]]) || 0,
-          overtime: parseFloat(row[columnMap["overtime"]]) || 0,
-          gross: parseFloat(row[columnMap["gross salary"]]) || 0,
-          pf: parseFloat(row[columnMap["pf"]]) || 0,
-          loan: parseFloat(row[columnMap["loan"]]) || 0,
-          otherDeductions: parseFloat(row[columnMap["other deduction"]]) || 0,
-          totalDeductions: parseFloat(row[columnMap["total deduction"]]) || 0,
-          net: parseFloat(row[columnMap["net salary"]]) || 0,
-          status: row[columnMap["status"]] || "",
-          payDate: row[columnMap["pay date"]] || "",
-        }));
+          const transformedData = rows.map((row) => ({
+            employeeId: row[1] || "",
+            employeeName: row[2] || "",
+            year: row[columnMap["year"]] || "",
+            month: row[columnMap["month"]] || "",
+            basic: parseFloat(row[columnMap["basic salary"]]) || 0,
+            lta: parseFloat(row[columnMap["leave travel allowance"]]) || 0,
+            bonus: parseFloat(row[columnMap["bonus"]]) || 0,
+            otherAllowances: parseFloat(row[columnMap["other allowance"]]) || 0,
+            overtime: parseFloat(row[columnMap["overtime"]]) || 0,
+            gross: parseFloat(row[columnMap["gross salary"]]) || 0,
+            pf: parseFloat(row[columnMap["pf"]]) || 0,
+            loan: parseFloat(row[columnMap["loan"]]) || 0,
+            otherDeductions: parseFloat(row[columnMap["other deduction"]]) || 0,
+            totalDeductions: parseFloat(row[columnMap["total deduction"]]) || 0,
+            net: parseFloat(row[columnMap["net salary"]]) || 0,
+            status: row[columnMap["status"]] || "",
+            payDate: row[columnMap["pay date"]] || "",
+          }));
 
-        setPayrollData(transformedData);
+          setPayrollData(transformedData);
+        }
+      } catch (error) {
+        // If both methods fail, try using a JSONP approach (for GET requests)
+        console.error('Both GET and POST failed, trying alternative approach');
+        showNotification("Payroll entry might have been added. Please refresh to see changes.", "info");
+        setShowNewPayrollModal(false);
       }
     } catch (error) {
-      // If both methods fail, try using a JSONP approach (for GET requests)
-      console.error('Both GET and POST failed, trying alternative approach');
-      showNotification("Payroll entry might have been added. Please refresh to see changes.", "info");
-      setShowNewPayrollModal(false);
+      setError(error.message);
+      showNotification(
+        `Failed to add payroll entry: ${error.message}`,
+        "error"
+      );
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    setError(error.message);
-    showNotification(
-      `Failed to add payroll entry: ${error.message}`,
-      "error"
-    );
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const handleFilterChange = (filterName, value) => {
     setFilters((prev) => ({
@@ -475,10 +475,10 @@ const handleSubmitNewPayroll = async () => {
       payFrequency === "Custom"
         ? employeeData?.otherAllowances || 0
         : calculateSalaryByFrequency(
-            employeeData?.otherAllowances || 0,
-            payFrequency,
-            customDays
-          );
+          employeeData?.otherAllowances || 0,
+          payFrequency,
+          customDays
+        );
 
     // Only PF deduction should be calculated for custom frequency
     const pfDeduction = calculateSalaryByFrequency(
@@ -493,10 +493,10 @@ const handleSubmitNewPayroll = async () => {
       payFrequency === "Custom"
         ? employeeData?.otherDeductions || 0
         : calculateSalaryByFrequency(
-            employeeData?.otherDeductions || 0,
-            payFrequency,
-            customDays
-          );
+          employeeData?.otherDeductions || 0,
+          payFrequency,
+          customDays
+        );
 
     // Calculate total custom earnings
     const totalCustomEarnings = customEarnings.reduce(
@@ -903,13 +903,12 @@ const handleSubmitNewPayroll = async () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        item.status === "processed" || item.status === "paid"
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${item.status === "processed" || item.status === "paid"
                           ? "bg-green-100 text-green-800"
                           : item.status === "draft"
-                          ? "bg-yellow-100 text-yellow-800"
-                          : "bg-blue-100 text-blue-800"
-                      }`}
+                            ? "bg-yellow-100 text-yellow-800"
+                            : "bg-blue-100 text-blue-800"
+                        }`}
                     >
                       {item.status}
                     </span>
@@ -985,11 +984,10 @@ const handleSubmitNewPayroll = async () => {
       {/* Notification */}
       {notification && (
         <div
-          className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transition-all duration-300 ${
-            notification.type === "error"
+          className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transition-all duration-300 ${notification.type === "error"
               ? "bg-red-100 text-red-800 border border-red-300"
               : "bg-green-100 text-green-800 border border-green-300"
-          }`}
+            }`}
         >
           {notification.message}
         </div>
@@ -997,10 +995,7 @@ const handleSubmitNewPayroll = async () => {
 
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <h1 className="text-2xl md:text-3xl font-bold text-blue-900">
-            Payroll Management
-          </h1>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-end gap-4">
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setShowNewPayrollModal(true)}
@@ -1139,11 +1134,10 @@ const handleSubmitNewPayroll = async () => {
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`py-4 px-6 text-center border-b-2 font-medium text-sm flex items-center whitespace-nowrap ${
-                      activeTab === tab.id
+                    className={`py-4 px-6 text-center border-b-2 font-medium text-sm flex items-center whitespace-nowrap ${activeTab === tab.id
                         ? "border-blue-600 text-blue-600"
                         : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                    }`}
+                      }`}
                   >
                     <IconComponent size={18} className="mr-2" />
                     {tab.label}

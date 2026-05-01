@@ -1,26 +1,33 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
     include: [
-      'react',
-      'react-dom',
-      'react-router-dom',
-      'lucide-react',
-      'recharts',
-      'date-fns'
-    ]
+      "react",
+      "react-dom",
+      "react-router-dom",
+      "lucide-react",
+      "recharts",
+      "date-fns",
+    ],
   },
   server: {
-    host: '0.0.0.0',
+    host: "0.0.0.0",
     port: 5173,
-    strictPort: true
+    strictPort: true,
+    proxy: {
+      "/api/v1": {
+        target: "http://localhost:5001",
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
   preview: {
-    host: '0.0.0.0',
+    host: "0.0.0.0",
     port: 4173,
-    strictPort: true
-  }
+    strictPort: true,
+  },
 });

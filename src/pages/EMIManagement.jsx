@@ -132,8 +132,7 @@ const EMIManagement = () => {
 
     return (
         <div className="space-y-6 page-content p-6">
-            <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold text-gray-800">EMI Management</h1>
+            <div className="flex items-center justify-end">
                 <button 
                     onClick={() => setShowAddModal(true)}
                     className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md"
@@ -247,7 +246,7 @@ const EMIManagement = () => {
 
             {/* New EMI Entry Modal */}
             {showAddModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 modal-backdrop">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
                         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-indigo-50/30">
                             <h2 className="text-xl font-bold text-gray-800">New EMI Entry</h2>
@@ -323,7 +322,7 @@ const EMIManagement = () => {
 
             {/* Update EMI Modal */}
             {showUpdateModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 modal-backdrop">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
                         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-indigo-50/30">
                             <div>

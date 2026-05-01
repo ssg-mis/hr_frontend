@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Clock, MapPin } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Clock, MapPin, Plus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const CompanyCalendar = () => {
@@ -7,66 +7,39 @@ const CompanyCalendar = () => {
   const [selectedDate, setSelectedDate] = useState(null);
   const [companyEvents, setCompanyEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [newEvent, setNewEvent] = useState({
+    title: '',
+    date: '',
+    time: '',
+    location: '',
+    type: 'meeting',
+    description: ''
+  });
 
   // Fetch calendar data from Google Sheets
   const fetchCalendarData = async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=CompanyCalendar&action=fetch'
-      );
-      
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/calendar`);
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       const result = await response.json();
-      
+
       if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch calendar data');
-      }
-      
-      const rawData = result.data || result;
-      
-      if (!Array.isArray(rawData)) {
-        throw new Error('Expected array data not received');
+        throw new Error(result.message || 'Failed to fetch calendar data');
       }
 
-      // Skip header row and map to structured data
-      const dataRows = rawData.length > 1 ? rawData.slice(1) : [];
-      
-      const processedData = dataRows
-        .map((row, index) => {
-          // Format date to YYYY-MM-DD for consistency
-          let formattedDate = '';
-          if (row[2]) { // Date column
-            // Handle different date formats
-            const date = new Date(row[2]);
-            if (!isNaN(date.getTime())) {
-              formattedDate = date.toISOString().split('T')[0];
-            } else {
-              // Try to parse other date formats
-              const parts = row[2].split('/');
-              if (parts.length === 3) {
-                formattedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-              }
-            }
-          }
+      // Map backend data to frontend format
+      const processedData = result.data.map(event => ({
+        ...event,
+        date: new Date(event.date).toISOString().split('T')[0]
+      }));
 
-          return {
-            id: index + 1,
-            timestamp: row[0] || '',
-            title: row[1] || '',
-            date: formattedDate,
-            time: row[3] || '',
-            location: row[4] || '',
-            type: row[5] || 'meeting',
-            description: row[6] || ''
-          };
-        })
-        .filter(event => event.date && event.title); // Filter out invalid entries
-
-      console.log("Processed calendar data:", processedData);
       setCompanyEvents(processedData);
 
     } catch (error) {
@@ -74,6 +47,43 @@ const CompanyCalendar = () => {
       toast.error(`Failed to load calendar data: ${error.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateEvent = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/calendar`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newEvent),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to create event');
+      }
+
+      toast.success('Event created successfully');
+      setIsModalOpen(false);
+      setNewEvent({
+        title: '',
+        date: '',
+        time: '',
+        location: '',
+        type: 'meeting',
+        description: ''
+      });
+      fetchCalendarData();
+    } catch (error) {
+      console.error('Error creating event:', error);
+      toast.error(`Failed to create event: ${error.message}`);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -97,17 +107,17 @@ const CompanyCalendar = () => {
     const startingDayOfWeek = firstDay.getDay();
 
     const days = [];
-    
+
     // Add empty cells for days before the first day of the month
     for (let i = 0; i < startingDayOfWeek; i++) {
       days.push(null);
     }
-    
+
     // Add days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       days.push(day);
     }
-    
+
     return days;
   };
 
@@ -137,10 +147,10 @@ const CompanyCalendar = () => {
   const days = getDaysInMonth(currentDate);
   const today = new Date();
   const isToday = (day) => {
-    return day && 
-           currentDate.getFullYear() === today.getFullYear() &&
-           currentDate.getMonth() === today.getMonth() &&
-           day === today.getDate();
+    return day &&
+      currentDate.getFullYear() === today.getFullYear() &&
+      currentDate.getMonth() === today.getMonth() &&
+      day === today.getDate();
   };
 
   // Filter upcoming events (from today onwards)
@@ -151,15 +161,14 @@ const CompanyCalendar = () => {
 
   return (
     <div className="space-y-6 page-content p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">Company Calendar</h1>
-        {/* <button
-          onClick={fetchCalendarData}
-          disabled={loading}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
+      <div className="flex items-center justify-end">
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
         >
-          {loading ? 'Refreshing...' : 'Refresh Calendar'}
-        </button> */}
+          <Plus size={20} className="mr-2" />
+          Add Event
+        </button>
       </div>
 
       {loading ? (
@@ -208,9 +217,8 @@ const CompanyCalendar = () => {
                 return (
                   <div
                     key={index}
-                    className={`min-h-[80px] p-1 border border-gray-200 cursor-pointer hover:bg-gray-50 ${
-                      isToday(day) ? 'bg-indigo-50 border-indigo-200' : ''
-                    }`}
+                    className={`min-h-[80px] p-1 border border-gray-200 cursor-pointer hover:bg-gray-50 ${isToday(day) ? 'bg-indigo-50 border-indigo-200' : ''
+                      }`}
                     onClick={() => setSelectedDate(day)}
                   >
                     {day && (
@@ -328,6 +336,115 @@ const CompanyCalendar = () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Add Event Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-bold text-gray-800">Add New Event</h2>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-gray-500 hover:text-gray-700 p-1"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateEvent} className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Event Title*</label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-gray-800"
+                    value={newEvent.title}
+                    onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                    placeholder="e.g. Monthly Strategy Meeting"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date*</label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-gray-800"
+                    value={newEvent.date}
+                    onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Time*</label>
+                  <input
+                    type="time"
+                    required
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-gray-800"
+                    value={newEvent.time}
+                    onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-gray-800"
+                    value={newEvent.location}
+                    onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
+                    placeholder="e.g. Conference Hall A"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Event Type</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-gray-700"
+                    value={newEvent.type}
+                    onChange={(e) => setNewEvent({ ...newEvent, type: e.target.value })}
+                  >
+                    <option value="meeting">Meeting</option>
+                    <option value="holiday">Holiday</option>
+                    <option value="training">Training</option>
+                    <option value="review">Review</option>
+                    <option value="event">Event</option>
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <textarea
+                    rows="3"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-gray-800"
+                    value={newEvent.description}
+                    onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
+                    placeholder="Add more details about the event..."
+                  ></textarea>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                >
+                  {submitting ? 'Creating...' : 'Create Event'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

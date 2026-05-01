@@ -64,6 +64,11 @@ const Attendancedaily = () => {
         remarks: row[19] || '', // Column T (index-19)
       }));
 
+      // Sort by Employee ID in increasing order
+      processedData.sort((a, b) => {
+        return (a.empIdCode || "").localeCompare(b.empIdCode || "", undefined, { numeric: true, sensitivity: 'base' });
+      });
+
       console.log('Processed attendance data:', processedData);
       setAttendanceData(processedData);
 
@@ -82,48 +87,77 @@ const Attendancedaily = () => {
 
   // Filter data based on search term and date range
   const filteredData = attendanceData.filter(item => {
-    // Text search filter - now includes additional columns
-    const matchesSearch = 
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.empIdCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.year.toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.monthName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.day.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.companyName.toLowerCase().includes(searchTerm.toLowerCase());
-    
+    const searchLower = searchTerm.toLowerCase();
+
+    let matchesSearch = !searchLower;
+    if (searchLower) {
+      matchesSearch =
+        item.name.toLowerCase().includes(searchLower) ||
+        item.empIdCode.toLowerCase().includes(searchLower) ||
+        item.year.toString().toLowerCase().includes(searchLower) ||
+        item.monthName.toLowerCase().includes(searchLower) ||
+        item.day.toLowerCase().includes(searchLower) ||
+        item.companyName.toLowerCase().includes(searchLower) ||
+        item.designation.toLowerCase().includes(searchLower) ||
+        item.status.toLowerCase().includes(searchLower) ||
+        item.remarks.toLowerCase().includes(searchLower);
+    }
+
     // Date range filter
     let matchesDateRange = true;
     if (startDate || endDate) {
-      const itemDate = new Date(item.date);
-      
-      if (startDate) {
-        const start = new Date(startDate);
-        if (itemDate < start) matchesDateRange = false;
-      }
-      
-      if (endDate && matchesDateRange) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999); // Include the entire end date
-        if (itemDate > end) matchesDateRange = false;
+      // Helper to parse DD/MM/YYYY or other formats
+      const parseDate = (dateStr) => {
+        if (!dateStr) return null;
+        if (dateStr instanceof Date) return dateStr;
+
+        // Try DD/MM/YYYY
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          return new Date(parts[2], parts[1] - 1, parts[0]);
+        }
+
+        const d = new Date(dateStr);
+        return isNaN(d.getTime()) ? null : d;
+      };
+
+      const itemDate = parseDate(item.date);
+
+      if (itemDate) {
+        if (startDate) {
+          const start = new Date(startDate);
+          start.setHours(0, 0, 0, 0);
+          if (itemDate < start) matchesDateRange = false;
+        }
+
+        if (endDate && matchesDateRange) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          if (itemDate > end) matchesDateRange = false;
+        }
+      } else {
+        // If we can't parse the date, we can't filter by range
+        // You might want to decide if unparseable dates should be shown or hidden
+        if (startDate || endDate) matchesDateRange = false;
       }
     }
-    
+
     return matchesSearch && matchesDateRange;
   });
 
   // Download CSV function
   const downloadCSV = () => {
     if (filteredData.length === 0) return;
-    
+
     // Define CSV headers
     const headers = [
-      'Year', 'Month Name', 'Date', 'Day', 'Company Name', 'Emp ID Code', 
-      'Name', 'Designation', 'Holiday (Yes/No)', 'Working Day (Yes/No)', 
-      'N-Holiday (Holiday Name)', 'Status', 'In Time', 'Out Time', 
-      'Working Hours', 'Late Minutes', 'Early Out', 'Overtime Hours', 
+      'Year', 'Month Name', 'Date', 'Day', 'Company Name', 'Emp ID Code',
+      'Name', 'Designation', 'Holiday (Yes/No)', 'Working Day (Yes/No)',
+      'N-Holiday (Holiday Name)', 'Status', 'In Time', 'Out Time',
+      'Working Hours', 'Late Minutes', 'Early Out', 'Overtime Hours',
       'Punch Miss', 'Remarks'
     ];
-    
+
     // Convert data to CSV format
     const csvData = filteredData.map(item => [
       item.year, item.monthName, item.date, item.day, item.companyName,
@@ -131,13 +165,13 @@ const Attendancedaily = () => {
       item.nHoliday, item.status, item.inTime, item.outTime, item.workingHours,
       item.lateMinutes, item.earlyOut, item.overtimeHours, item.punchMiss, item.remarks
     ]);
-    
+
     // Create CSV content
     const csvContent = [
       headers.join(','),
       ...csvData.map(row => row.map(field => `"${field}"`).join(','))
     ].join('\n');
-    
+
     // Create download link
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -151,28 +185,12 @@ const Attendancedaily = () => {
   };
 
   return (
-    <div className="space-y-6 ml-50 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Attendance Records Daily</h1>
-      </div>
+    <div className="space-y-6 page-content p-6">
 
       {/* Filters Section */}
       <div className="bg-white p-4 rounded-lg shadow">
         <div className="flex flex-col md:flex-row gap-4">
-          {/* Search Bar */}
-          <div className="flex-1">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-500"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-            </div>
-          </div>
-          
+
           {/* Date Range Filters */}
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
@@ -194,14 +212,14 @@ const Attendancedaily = () => {
               />
             </div>
           </div>
-          
+
           {/* Download Button */}
           <div className="flex items-end">
             <button
               onClick={downloadCSV}
               disabled={filteredData.length === 0}
-              className={`flex items-center px-4 py-2 rounded-lg ${filteredData.length === 0 
-                ? 'bg-gray-300 cursor-not-allowed' 
+              className={`flex items-center px-4 py-2 rounded-lg ${filteredData.length === 0
+                ? 'bg-gray-300 cursor-not-allowed'
                 : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
             >
               <Download size={18} className="mr-2" />

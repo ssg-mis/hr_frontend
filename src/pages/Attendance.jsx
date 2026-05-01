@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Download } from 'lucide-react';
+import { Search, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 import jsPDF from 'jspdf';
@@ -12,16 +12,31 @@ const Attendance = () => {
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [downloading, setDownloading] = useState({}); // Track individual download states
+  const [downloading, setDownloading] = useState({});
+  const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [selectedEmployee, setSelectedEmployee] = useState('');
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
+  const [availableDepartments, setAvailableDepartments] = useState([]);
+  const [availableEmployees, setAvailableEmployees] = useState([]);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 100,
+    total: 0,
+    totalPages: 0
+  });
 
-  const fetchAttendanceData = async () => {
+  // Only show 2025 and 2026 in the year filter
+  const yearOptions = [String(new Date().getFullYear())];
+
+  const fetchAttendanceData = async (page = 1) => {
     setLoading(true);
     setTableLoading(true);
     setError(null);
 
     try {
       const response = await fetch(
-        'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=Report&action=fetch'
+        `${import.meta.env.VITE_API_URL}/attendance?page=${page}&limit=${pagination.limit}&search=${searchTerm}&department=${selectedDepartment}&employee=${selectedEmployee}&year=${selectedYear}&date=${selectedDate}`
       );
 
       if (!response.ok) {
@@ -29,60 +44,27 @@ const Attendance = () => {
       }
 
       const result = await response.json();
-      console.log('Raw REPORT API response:', result);
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch data from REPORT sheet');
+        throw new Error(result.message || 'Failed to fetch data');
       }
 
-      const rawData = result.data || result;
+      setAttendanceData(result.data);
+      setPagination(result.pagination || {
+        page: 1,
+        limit: 10,
+        total: result.data.length,
+        totalPages: 1
+      });
 
-      if (!Array.isArray(rawData)) {
-        throw new Error('Expected array data not received');
+      // Update available filters if they are provided
+      if (result.filters) {
+        if (result.filters.departments) setAvailableDepartments(result.filters.departments);
+        if (result.filters.employees) setAvailableEmployees(result.filters.employees);
       }
-
-      // In your screenshot, headers looked around row 4–5 → adjust index if needed
-      const headers = rawData[3]; // row 4 in sheet (0-based index = 3)
-      const dataRows = rawData.length > 4 ? rawData.slice(4) : [];
-
-const getIndex = (headerName) => {
-    const index = headers.findIndex(
-      (h) => h && h.toString().trim().toLowerCase() === headerName.toLowerCase()
-    );
-    if (index === -1) {
-      console.warn(`Column "${headerName}" not found in sheet. Available headers:`, headers);
-    }
-    return index;
-  };
-
-
-      const processedData = dataRows.map((row) => ({
-        year: row[getIndex('Year')] || '',
-        month: row[getIndex('Month')] || '',
-        empId: row[getIndex('Employee ID')] || '',
-        name: row[getIndex('Name')] || '',
-        designation: row[getIndex('Designation')] || '',
-        company: row[getIndex('Company Name')] || '',
-        punchDays: row[getIndex('Punch Days')] || '',
-        totalOnTime: row[getIndex('Total On Time (>=8)')] || '',
-        lateDays: row[getIndex('Late Days(4-8)')] || '',
-        lateNotAllowed: row[getIndex('Late Not Allowed')],
-        lateAllowed: row[getIndex('Late Allowed')] || '',
-        punchMiss: row[getIndex('Punch Miss')] || '',
-        holidays: row[getIndex('Sunday+National  Holiday Given')] || '',
-        absents: row[getIndex('Absent(<4)')] || '',
-        totalWorking: row[getIndex('Total Days')] || '',
-        mgmtAdjustment: row[getIndex('Mgmt Adjustment')] || '',
-        grandTotalDays: row[getIndex('Grand Total Days')] || '',
-      }));
-
-      console.log('Processed attendance data:', processedData);
-
-      // Example usage: set state
-      setAttendanceData(processedData);
 
     } catch (error) {
-      console.error('Error fetching REPORT data:', error);
+      console.error('Error fetching attendance data:', error);
       setError(error.message);
     } finally {
       setLoading(false);
@@ -90,9 +72,22 @@ const getIndex = (headerName) => {
     }
   };
 
+  const renderPunchTime = (punchTime) => {
+    if (!punchTime) return <span className="text-gray-300">N/A</span>;
+    // WDMS returns "2026-04-11 19:21:03" — normalize space to T for reliable parsing
+    const d = new Date(String(punchTime).replace(' ', 'T'));
+    if (isNaN(d)) return punchTime;
+    return (
+      <div>
+        <div className="font-semibold text-gray-700">{d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
+        <div className="text-xs text-gray-400">{d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</div>
+      </div>
+    );
+  };
+
   useEffect(() => {
-    fetchAttendanceData();
-  }, []);
+    fetchAttendanceData(1);
+  }, [searchTerm, selectedDepartment, selectedEmployee, selectedYear, selectedDate]);
 
   // Download data as Excel
   const downloadExcel = () => {
@@ -102,16 +97,15 @@ const getIndex = (headerName) => {
     XLSX.writeFile(workbook, "attendance_data.xlsx");
   };
 
- const downloadDailyData = async (empId, name, month) => {
-    // Check if we have valid parameters
+  const downloadDailyData = async (empId, name, month) => {
     if (!empId || !month) {
       console.error('Missing parameters - empId:', empId, 'month:', month);
       alert('Cannot download: Missing employee ID or month information');
       return;
     }
-    
-    setDownloading(prev => ({ ...prev, [`${name}-${month}`]: true }));
-      
+
+    setDownloading(prev => ({ ...prev, [`${name}-${empId}`]: true }));
+
     try {
       const response = await fetch(
         `https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=Report Daily&action=fetch`
@@ -122,7 +116,6 @@ const getIndex = (headerName) => {
       }
 
       const result = await response.json();
-      console.log('Daily data response:', result);
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to fetch daily data');
@@ -134,10 +127,7 @@ const getIndex = (headerName) => {
         throw new Error('No daily data found');
       }
 
-      // Get headers from the first row
       const headers = rawData[0];
-      
-      // Find column indices
       const getIndex = (headerName) => {
         return headers.findIndex(
           (h) => h && h.toString().trim().toLowerCase() === headerName.toLowerCase()
@@ -146,50 +136,38 @@ const getIndex = (headerName) => {
 
       const empIdIndex = getIndex('Employee ID');
       const monthIndex = getIndex('Month');
-      
-      console.log('Searching for - Emp ID:', empId, 'Month:', month);
-      console.log('Found indices - Emp ID:', empIdIndex, 'Month:', monthIndex);
-      
+
       if (empIdIndex === -1 || monthIndex === -1) {
         throw new Error('Required columns not found in daily data');
       }
 
-      // Filter data based on employee ID and month
       const filteredData = rawData.filter((row, index) => {
-        if (index === 0) return false; // Skip header row
-        
+        if (index === 0) return false;
         const rowEmpId = row[empIdIndex] ? row[empIdIndex].toString().trim() : '';
         const rowMonth = row[monthIndex] ? row[monthIndex].toString().trim().toLowerCase() : '';
         const targetMonth = month.toString().trim().toLowerCase();
-        
         return rowEmpId === empId.toString().trim() && rowMonth === targetMonth;
       });
-
-      console.log('Filtered data count:', filteredData.length);
 
       if (filteredData.length === 0) {
         throw new Error(`No daily data found for Employee ID: ${empId} and Month: ${month}`);
       }
 
-      // Create PDF document
       const doc = new jsPDF({
-        orientation:'landscape',
-        unit:'mm',
-        format:'a4'
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
       });
-      
-      // Add title
+
       doc.setFontSize(16);
       doc.text(`Daily Attendance - ${name} (${empId}) - ${month}`, 14, 15);
-      
-      // Prepare data for the table
+
       const tableData = filteredData.map(row => {
         return headers.map((header, index) => {
           return row[index] !== undefined ? String(row[index]) : '';
         });
       });
 
-      // Add table to PDF
       autoTable(doc, {
         head: [headers],
         body: tableData,
@@ -198,30 +176,26 @@ const getIndex = (headerName) => {
         headStyles: { fillColor: [41, 128, 185] }
       });
 
-      // Save the PDF
       doc.save(`${empId}_${name}_${month}_daily_attendance.pdf`);
-      
+
     } catch (error) {
       console.error('Error downloading daily data:', error);
       alert(`Error: ${error.message}`);
     } finally {
-      setDownloading(prev => ({ ...prev, [`${name}-${month}`]: false }));
+      setDownloading(prev => ({ ...prev, [`${name}-${empId}`]: false }));
     }
   };
 
-  // Filter data based on search term (name, empId, month, designation, year)
-  const filteredData = attendanceData.filter(item =>
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.empId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.month.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.designation.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.year.toString().includes(searchTerm)
-  );
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+      fetchAttendanceData(newPage);
+    }
+  };
 
   return (
-    <div className="space-y-6 ml-50 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Attendance Records Monthly</h1>
+    <div className="flex flex-col h-screen ml-50 overflow-hidden">
+      {/* ── Sticky Header ── */}
+      <div className="sticky top-0 z-20 bg-gray-50 px-6 pt-6 pb-3 flex items-center justify-end shadow-sm">
         <button
           onClick={downloadExcel}
           className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
@@ -231,51 +205,90 @@ const getIndex = (headerName) => {
         </button>
       </div>
 
-      {/* Search Bar */}
-      <div className="bg-white p-4 rounded-lg shadow">
-        <div className="flex flex-1 max-w-md">
-          <div className="relative w-full">
-            <input
-              type="text"
-              placeholder="Search by name, ID, month, designation, or year..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-500"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+      {/* ── Sticky Filters ── */}
+      <div className="sticky top-[72px] z-10 bg-white px-6 py-3 shadow rounded-b-lg border-b border-gray-200">
+        <div className="flex flex-wrap gap-4">
+
+          <div className="flex-1 min-w-[200px]">
+            <select
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+              value={selectedDepartment}
+              onChange={(e) => setSelectedDepartment(e.target.value)}
+            >
+              <option value="">All Departments</option>
+              {availableDepartments.map((dept, idx) => (
+                <option key={idx} value={dept}>{dept}</option>
+              ))}
+            </select>
           </div>
+
+          <div className="flex-1 min-w-[200px]">
+            <select
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+              value={selectedEmployee}
+              onChange={(e) => setSelectedEmployee(e.target.value)}
+            >
+              <option value="">All Employees</option>
+              {availableEmployees.map((emp, idx) => (
+                <option key={idx} value={emp}>{emp}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex-1 min-w-[150px]">
+            <select
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+            >
+              {yearOptions.map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex-1 min-w-[150px]">
+            <input
+              type="date"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+            />
+          </div>
+
+          <button
+            onClick={() => {
+              setSearchTerm('');
+              setSelectedDepartment('');
+              setSelectedEmployee('');
+              setSelectedYear(String(new Date().getFullYear()));
+              setSelectedDate('');
+            }}
+            className="px-4 py-2 text-sm text-blue-600 hover:text-blue-800 font-medium"
+          >
+            Clear Filters
+          </button>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="p-6">
-          <div className="overflow-x-auto">
+      {/* ── Scrollable Table Area ── */}
+      <div className="flex-1 overflow-hidden px-6 pb-6 pt-3">
+        <div className="bg-white rounded-lg shadow h-full flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-auto">
             <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-100">
+              <thead className="bg-gray-100 sticky top-0 z-10">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee ID</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                  
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Designation</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Punch Days</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Absent</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Days</th>
-                  
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Late Days</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Late Not Allowed</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Late Allowed</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Punch Miss</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Holidays</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Download</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Punch In</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Punch Out</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {tableLoading ? (
                   <tr>
-                    <td colSpan="14" className="px-6 py-12 text-center">
+                    <td colSpan="7" className="px-6 py-12 text-center">
                       <div className="flex justify-center flex-col items-center">
                         <div className="w-6 h-6 border-4 border-indigo-500 border-dashed rounded-full animate-spin mb-2"></div>
                         <span className="text-gray-600 text-sm">Loading attendance data...</span>
@@ -284,52 +297,41 @@ const getIndex = (headerName) => {
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan="14" className="px-6 py-12 text-center">
-                      <p className="text-red-500">Error: {error}</p>
-                      <button 
-                        onClick={fetchAttendanceData}
-                        className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-                      >
-                        Retry
-                      </button>
+                    <td colSpan="7" className="px-6 py-12 text-center">
+                      <div className="bg-red-50 p-4 rounded-lg inline-block">
+                        <p className="text-red-500 font-medium">Error: {error}</p>
+                        <p className="text-red-400 text-sm mt-1">Please ensure the WDMS API server (115.245.96.254) is reachable from the backend.</p>
+                        <button
+                          onClick={() => fetchAttendanceData(pagination.page)}
+                          className="mt-4 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                        >
+                          Retry Connection
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ) : filteredData.length > 0 ? (
-                  filteredData.map((item, index) => (
+                ) : attendanceData.length > 0 ? (
+                  attendanceData.map((item, index) => (
                     <tr key={index} className="hover:bg-gray-50">
-                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.year}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.empId}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.emp_code}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.name}</td>
-                      
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.designation}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.month}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.punchDays}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.absents}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.totalWorking}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.lateDays}</td>
-                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.lateNotAllowed}</td> 
-                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.lateAllowed}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.punchMiss}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.holidays}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          <button
-  onClick={() => downloadDailyData(item.empId, item.name, item.month)}
-  disabled={downloading[`${item.name}-${item.month}`]}
-  className="p-2 text-blue-600 hover:text-blue-800 disabled:opacity-50"
-  title="Download daily attendance"
-> 
-  {downloading[`${item.name}-${item.month}`] ? (
-    <div className="w-4 h-4 border-2 border-blue-600 border-dashed rounded-full animate-spin"></div>
-  ) : (
-    <Download size={16} />
-  )}
-</button>
-                        </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {typeof item.department === 'object' ?
+                          (item.department?.dept_name || item.department?.name || JSON.stringify(item.department)) :
+                          item.department
+                        }
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {renderPunchTime(item.punch_in)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {renderPunchTime(item.punch_out)}
+                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="14" className="px-6 py-12 text-center">
+                    <td colSpan="5" className="px-6 py-12 text-center">
                       <p className="text-gray-500">No attendance records found.</p>
                     </td>
                   </tr>
@@ -337,6 +339,83 @@ const getIndex = (headerName) => {
               </tbody>
             </table>
           </div>
+
+          {/* ── Sticky Pagination ── */}
+          {pagination && pagination.totalPages > 1 && (
+            <div className="flex items-center justify-between mt-6 px-4 py-3 bg-white border-t border-gray-200 sm:px-6">
+              <div className="flex flex-1 justify-between sm:hidden">
+                <button
+                  onClick={() => handlePageChange(pagination.page - 1)}
+                  disabled={pagination.page === 1}
+                  className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => handlePageChange(pagination.page + 1)}
+                  disabled={pagination.page === pagination.totalPages}
+                  className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+              <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm text-gray-700">
+                    Showing <span className="font-medium">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="font-medium">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of{' '}
+                    <span className="font-medium">{pagination.total}</span> results
+                  </p>
+                </div>
+                <div>
+                  <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                    <button
+                      onClick={() => handlePageChange(pagination.page - 1)}
+                      disabled={pagination.page === 1}
+                      className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Previous</span>
+                      <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                    </button>
+
+                    {[...Array(Math.min(5, pagination.totalPages))].map((_, i) => {
+                      let pageNum;
+                      if (pagination.totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (pagination.page <= 3) {
+                        pageNum = i + 1;
+                      } else if (pagination.page >= pagination.totalPages - 2) {
+                        pageNum = pagination.totalPages - 4 + i;
+                      } else {
+                        pageNum = pagination.page - 2 + i;
+                      }
+
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => handlePageChange(pageNum)}
+                          className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${pagination.page === pageNum
+                            ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
+                            : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'
+                            }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      onClick={() => handlePageChange(pagination.page + 1)}
+                      disabled={pagination.page === pagination.totalPages}
+                      className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Next</span>
+                      <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                    </button>
+                  </nav>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

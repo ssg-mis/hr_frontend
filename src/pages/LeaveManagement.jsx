@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, X, Check, Clock, Calendar, Plus } from 'lucide-react';
+import { Search, X, Check, Clock, Calendar, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const LeaveManagement = () => {
@@ -14,38 +14,58 @@ const LeaveManagement = () => {
   const [activeTab, setActiveTab] = useState('pending');
   const [actionInProgress, setActionInProgress] = useState(null);
   const [editableDates, setEditableDates] = useState({ from: '', to: '' });
-  
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0
+  });
+
   // New state for leave request modal
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [employees, setEmployees] = useState([]);
+  const [hods, setHods] = useState([]);
+  const [leaveTypes, setLeaveTypes] = useState([]);
   const [formData, setFormData] = useState({
     employeeId: '',
     employeeName: '',
-    designation: '',
+    department: '',
+    departmentId: '',
     hodName: '',
     leaveType: '',
+    leaveCode: '',
     fromDate: '',
     toDate: '',
     reason: ''
   });
 
+  const API_URL = import.meta.env.VITE_API_URL;
+
   const handleCheckboxChange = (leaveId, rowData) => {
-    if (selectedRow?.serialNo === leaveId) {
+    if (selectedRow?.id === leaveId) {
       setSelectedRow(null);
       setEditableDates({ from: '', to: '' });
     } else {
-      // Convert DD/MM/YYYY to YYYY-MM-DD for date input
+      // Helper to ensure date is in YYYY-MM-DD format for input
       const formatForInput = (dateStr) => {
         if (!dateStr) return '';
-        const [day, month, year] = dateStr.split('/');
-        return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        // If it's already ISO (has T or is YYYY-MM-DD), just split and take date part
+        if (dateStr.includes('T')) return dateStr.split('T')[0];
+        if (dateStr.includes('-')) return dateStr;
+        // Fallback for old DD/MM/YYYY if any exists
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          const [day, month, year] = parts;
+          return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        }
+        return dateStr;
       };
 
       setSelectedRow(rowData);
-      setEditableDates({ 
-        from: formatForInput(rowData.startDate), 
-        to: formatForInput(rowData.endDate) 
+      setEditableDates({
+        from: formatForInput(rowData.startDate),
+        to: formatForInput(rowData.endDate)
       });
     }
   };
@@ -57,41 +77,48 @@ const LeaveManagement = () => {
     }));
   };
 
-  // Fetch employees from JOINING sheet
-const fetchEmployees = async () => {
+  // Fetch employees from backend
+  const fetchEmployees = async () => {
     try {
-      const response = await fetch(
-        'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=JOINING&action=fetch'
-      );
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
+      const response = await fetch(`${API_URL}/employees/active?all=true`);
       const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch employee data');
-      }
-      
-      const rawData = result.data || result;
-      
-      if (!Array.isArray(rawData)) {
-        throw new Error('Expected array data not received');
-      }
 
-      // Data starts from row 7 (index 6), Column E is index 4, Column B is index 1, Column I is index 8
-      const employeeData = rawData.slice(6).map((row, index) => ({
-        id: row[1] || '', // Column B (Employee ID)
-        name: row[4] || '', // Column E (Employee Name)
-        designation: row[8] || '', // Column I (Designation)
-        rowIndex: index + 7 // Actual row number in sheet
-      })).filter(emp => emp.name && emp.id); // Filter out empty entries
-
-      setEmployees(employeeData);
+      if (result.success) {
+        setEmployees(result.data.map(emp => ({
+          id: emp.employee_id,
+          name: emp.name_as_per_aadhar,
+          department: emp.department?.department_name || '',
+          departmentId: emp.department_id || ''
+        })));
+      }
     } catch (error) {
       console.error('Error fetching employee data:', error);
-      toast.error(`Failed to load employee data: ${error.message}`);
+    }
+  };
+
+  // Fetch HODs from backend
+  const fetchHods = async () => {
+    try {
+      const response = await fetch(`${API_URL}/leaves/hods`);
+      const result = await response.json();
+      if (result.success) {
+        setHods(result.data);
+      }
+    } catch (error) {
+      console.error('Error fetching HOD data:', error);
+    }
+  };
+  
+  // Fetch leave types from backend
+  const fetchLeaveTypes = async () => {
+    try {
+      const response = await fetch(`${API_URL}/leaves/policies`);
+      const result = await response.json();
+      if (result.success) {
+        setLeaveTypes(result.data);
+      }
+    } catch (error) {
+      console.error('Error fetching leave types:', error);
     }
   };
 
@@ -103,16 +130,24 @@ const fetchEmployees = async () => {
       ...prev,
       employeeName: selectedName,
       employeeId: selectedEmployee ? selectedEmployee.id : '',
-      designation: selectedEmployee ? selectedEmployee.designation : ''
+      department: selectedEmployee ? selectedEmployee.department : '',
+      departmentId: selectedEmployee ? selectedEmployee.departmentId : ''
     }));
   };
 
   // Handle form input changes
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    
+
     if (name === 'employeeName') {
       handleEmployeeChange(value);
+    } else if (name === 'leaveType') {
+      const selectedPolicy = leaveTypes.find(type => type.leaveName === value);
+      setFormData(prev => ({
+        ...prev,
+        leaveType: value,
+        leaveCode: selectedPolicy ? selectedPolicy.leaveCode : ''
+      }));
     } else {
       setFormData(prev => ({
         ...prev,
@@ -124,9 +159,9 @@ const fetchEmployees = async () => {
   // Calculate days between dates
   const calculateDays = (startDateStr, endDateStr) => {
     if (!startDateStr || !endDateStr) return 0;
-    
+
     let startDate, endDate;
-    
+
     // Handle different date formats
     if (startDateStr.includes('/')) {
       const [startDay, startMonth, startYear] = startDateStr.split('/').map(Number);
@@ -134,14 +169,14 @@ const fetchEmployees = async () => {
     } else {
       startDate = new Date(startDateStr);
     }
-    
+
     if (endDateStr.includes('/')) {
       const [endDay, endMonth, endYear] = endDateStr.split('/').map(Number);
       endDate = new Date(endYear, endMonth - 1, endDay);
     } else {
       endDate = new Date(endDateStr);
     }
-    
+
     const diffTime = endDate - startDate;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
     return diffDays;
@@ -150,20 +185,19 @@ const fetchEmployees = async () => {
   // Format date to DD/MM/YYYY
   const formatDOB = (dateString) => {
     if (!dateString) return '';
-    
+
     const date = new Date(dateString);
     if (isNaN(date.getTime())) {
       return dateString; // Return as-is if not a valid date
     }
-    
+
     const day = date.getDate().toString().padStart(2, '0');
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const year = date.getFullYear();
-    
+
     return `${day}/${month}/${year}`;
   };
 
-  // Submit leave request
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -174,29 +208,18 @@ const fetchEmployees = async () => {
 
     try {
       setSubmitting(true);
-      const now = new Date();
-      const formattedTimestamp = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
-
-      const rowData = [
-        formattedTimestamp,           // Timestamp
-        "",                          // Serial number (empty for auto-increment)
-        formData.employeeId,         // Employee ID
-        formData.employeeName,       // Employee Name
-        formatDOB(formData.fromDate), // Leave Date Start
-        formatDOB(formData.toDate),   // Leave Date End
-        formData.reason,             // Reason
-        "Pending",                   // Status
-        formData.leaveType,          // Leave Type
-        formData.hodName,            // HOD Name (Column J, index 9)
-        formData.designation         // Designation (Column K, index 10)
-      ];
-
-      const response = await fetch('https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec', {
+      const response = await fetch(`${API_URL}/leaves`, {
         method: 'POST',
-        body: new URLSearchParams({
-          sheetName: 'Leave Management',
-          action: 'insert',
-          rowData: JSON.stringify(rowData),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId: formData.employeeId,
+          employeeName: formData.employeeName,
+          startDate: formData.fromDate,
+          endDate: formData.toDate,
+          remark: formData.reason,
+          leaveCode: formData.leaveCode,
+          hodName: formData.hodName,
+          departmentId: formData.departmentId
         }),
       });
 
@@ -207,18 +230,19 @@ const fetchEmployees = async () => {
         setFormData({
           employeeId: '',
           employeeName: '',
-          designation: '',
+          department: '',
+          departmentId: '',
           hodName: '',
           leaveType: '',
+          leaveCode: '',
           fromDate: '',
           toDate: '',
           reason: ''
         });
         setShowModal(false);
-        // Refresh the data
-        fetchLeaveData();
+        fetchLeaveData(1);
       } else {
-        toast.error('Failed to insert: ' + (result.error || 'Unknown error'));
+        toast.error('Failed to submit: ' + (result.message || 'Unknown error'));
       }
     } catch (error) {
       console.error('Insert error:', error);
@@ -228,159 +252,85 @@ const fetchEmployees = async () => {
     }
   };
 
-const handleLeaveAction = async (action) => {
-  if (!selectedRow) {
-    toast.error('Please select a leave request');
-    return;
-  }
-
-  setActionInProgress(action);
-  setLoading(true);
-  
-  try {
-    const fullDataResponse = await fetch(
-      'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=Leave Management&action=fetch'
-    );
-    
-    if (!fullDataResponse.ok) {
-      throw new Error(`HTTP error! status: ${fullDataResponse.status}`);
+  const handleLeaveAction = async (action) => {
+    if (!selectedRow) {
+      toast.error('Please select a leave request');
+      return;
     }
 
-    const fullDataResult = await fullDataResponse.json();
-    const allData = fullDataResult.data || fullDataResult;
+    setActionInProgress(action);
+    setLoading(true);
 
-    const headerRowIndex = 0;
-    const headers = allData[headerRowIndex].map(h => h?.toString().trim().toLowerCase());
+    try {
+      const status = action === 'accept' ? 'Approved' : 'Rejected';
+      const response = await fetch(`${API_URL}/leaves/${selectedRow.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status,
+          startDate: editableDates.from,
+          endDate: editableDates.to
+        }),
+      });
 
-    const timestampIndex = 0;
-    const employeeIdIndex = 2;
-    const startDateIndex = 4;
-    const endDateIndex = 5;
-    const statusIndex = 7;
-
-    const rowIndex = allData.findIndex((row, idx) => 
-      idx > headerRowIndex &&
-      row[employeeIdIndex]?.toString().trim() === selectedRow.employeeId?.toString().trim()
-    );
-    
-    if (rowIndex === -1) {
-      throw new Error(`Employee ${selectedRow.employeeId} not found`);
-    }
-
-    let currentRow = [...allData[rowIndex]];
-    
-    const today = new Date();
-    const day = String(today.getDate()).padStart(2, '0');
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const year = today.getFullYear();
-    const formattedDate = `${day}/${month}/${year}`;
-    
-    // Update dates if they were changed
-    if (editableDates.from && editableDates.from !== selectedRow.startDate) {
-      const [year, month, day] = editableDates.from.split('-');
-      currentRow[startDateIndex] = `${day}/${month}/${year}`;
-    }
-
-    if (editableDates.to && editableDates.to !== selectedRow.endDate) {
-      const [year, month, day] = editableDates.to.split('-');
-      currentRow[endDateIndex] = `${day}/${month}/${year}`;
-    }
-    
-    currentRow[timestampIndex] = formattedDate;
-    
-    // FIX: Use the correct status values that match your filtering logic
-    currentRow[statusIndex] = action === 'accept' ? 'Approved' : 'Rejected';
-
-    const payload = {
-      sheetName: "Leave Management",
-      action: "update",
-      rowIndex: rowIndex + 1,
-      rowData: JSON.stringify(currentRow)
-    };
-
-    const response = await fetch(
-      "https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams(payload).toString(),
+      const result = await response.json();
+      if (result.success) {
+        toast.success(`Leave ${status} for ${selectedRow.employeeName}`);
+        fetchLeaveData(pagination.page);
+        setSelectedRow(null);
+        setEditableDates({ from: '', to: '' });
+      } else {
+        throw new Error(result.message || "Update failed");
       }
-    );
 
-    const result = await response.json();
-    if (result.success) {
-      toast.success(`Leave ${action === 'accept' ? 'approved' : 'rejected'} for ${selectedRow.employeeName || 'employee'}`);
-      fetchLeaveData();
-      setSelectedRow(null);
-      setEditableDates({ from: '', to: '' });
-    } else {
-      throw new Error(result.error || "Update failed");
+    } catch (error) {
+      console.error('Update error:', error);
+      toast.error(`Failed to ${action} leave: ${error.message}`);
+    } finally {
+      setLoading(false);
+      setActionInProgress(null);
     }
+  };
 
-  } catch (error) {
-    console.error('Update error:', error);
-    toast.error(`Failed to ${action} leave: ${error.message}`);
-  } finally {
-    setLoading(false);
-    setActionInProgress(null);
-  }
-};
-
-  const fetchLeaveData = async () => {
+  const fetchLeaveData = async (page = 1) => {
     setLoading(true);
     setTableLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(
-        'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=Leave Management&action=fetch'
-      );
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
+      const statusParam = activeTab === 'pending' ? 'Pending' : activeTab === 'approved' ? 'Approved' : 'Rejected';
+      const response = await fetch(`${API_URL}/leaves?status=${statusParam}&page=${page}&limit=${pagination.limit}`);
       const result = await response.json();
-      
+
       if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch leave data');
-      }
-      
-      const rawData = result.data || result;
-      console.log(rawData);
-      
-      if (!Array.isArray(rawData)) {
-        throw new Error('Expected array data not received');
+        throw new Error(result.message || 'Failed to fetch leave data');
       }
 
-      const dataRows = rawData.length > 1 ? rawData.slice(1) : [];
-      
-      const processedData = dataRows.map(row => ({
-        timestamp: row[0] || '',
-        serialNo: row[1] || '',
-        employeeId: row[2] || '',
-        employeeName: row[3] || '',
-        startDate: row[4] || '',
-        endDate: row[5] || '',
-        remark: row[6] || '',
-        days: calculateDays(row[4], row[5]),
-        status: row[7],
-        leaveType: row[8],
+      const processedData = result.data.map(leave => ({
+        id: leave.id,
+        timestamp: leave.createdAt,
+        employeeId: leave.employeeId,
+        employeeName: leave.employeeName,
+        startDate: leave.startDate.split('T')[0],
+        endDate: leave.endDate.split('T')[0],
+        remark: leave.remark,
+        days: calculateDays(leave.startDate, leave.endDate),
+        status: leave.status,
+        leaveType: leave.leaveType,
+        hodName: leave.hodName,
+        department: leave.department
       }));
 
-      // Case-insensitive filtering
-      setPendingLeaves(processedData.filter(leave => 
-        leave.status?.toString().toLowerCase() === 'pending'
-      ));
-      setApprovedLeaves(processedData.filter(leave => 
-        leave.status?.toString().toLowerCase() === 'approved'
-      ));
-      setRejectedLeaves(processedData.filter(leave => 
-        leave.status?.toString().toLowerCase() === 'rejected'
-      ));
-     
+      if (activeTab === 'pending') setPendingLeaves(processedData);
+      else if (activeTab === 'approved') setApprovedLeaves(processedData);
+      else setRejectedLeaves(processedData);
+
+      setPagination(result.pagination || {
+        page: 1,
+        limit: 10,
+        total: result.data.length,
+        totalPages: 1
+      });
     } catch (error) {
       console.error('Error fetching leave data:', error);
       setError(error.message);
@@ -391,10 +341,18 @@ const handleLeaveAction = async (action) => {
     }
   };
 
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+      fetchLeaveData(newPage);
+    }
+  };
+
   useEffect(() => {
-    fetchLeaveData();
+    fetchLeaveData(1);
     fetchEmployees();
-  }, []);
+    fetchHods();
+    fetchLeaveTypes();
+  }, [activeTab]);
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -404,27 +362,21 @@ const handleLeaveAction = async (action) => {
 
   const filteredPendingLeaves = pendingLeaves.filter(item => {
     const matchesSearch = item.employeeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
+      item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
 
   const filteredApprovedLeaves = approvedLeaves.filter(item => {
     const matchesSearch = item.employeeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
+      item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
 
   const filteredRejectedLeaves = rejectedLeaves.filter(item => {
     const matchesSearch = item.employeeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
+      item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
-
-  const leaveTypes = [
-    'Casual Leave',
-    'Earned Leave',
-    'Normal Leave',
-  ];
 
   const renderPendingLeavesTable = () => (
     <table className="min-w-full divide-y divide-white">
@@ -450,15 +402,15 @@ const handleLeaveAction = async (action) => {
               <td className="px-6 py-4 whitespace-nowrap">
                 <input
                   type="checkbox"
-                  checked={selectedRow?.serialNo === item.serialNo}
-                  onChange={() => handleCheckboxChange(item.serialNo, item)}
+                  checked={selectedRow?.id === item.id}
+                  onChange={() => handleCheckboxChange(item.id, item)}
                   className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                 />
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeId}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeName}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {selectedRow?.serialNo === item.serialNo ? (
+                {selectedRow?.id === item.id ? (
                   <input
                     type="date"
                     value={editableDates.from}
@@ -470,7 +422,7 @@ const handleLeaveAction = async (action) => {
                 )}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {selectedRow?.serialNo === item.serialNo ? (
+                {selectedRow?.id === item.id ? (
                   <input
                     type="date"
                     value={editableDates.to}
@@ -482,8 +434,8 @@ const handleLeaveAction = async (action) => {
                 )}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {selectedRow?.serialNo === item.serialNo ? 
-                  calculateDays(editableDates.from, editableDates.to) : 
+                {selectedRow?.id === item.id ?
+                  calculateDays(editableDates.from, editableDates.to) :
                   item.days
                 }
               </td>
@@ -493,17 +445,16 @@ const handleLeaveAction = async (action) => {
                 <div className="flex space-x-2">
                   <button
                     onClick={() => handleLeaveAction('accept')}
-                    disabled={!selectedRow || selectedRow.serialNo !== item.serialNo || loading}
-                    className={`px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700 min-h-[42px] flex items-center justify-center ${
-                      !selectedRow || selectedRow.serialNo !== item.serialNo || loading ? 'opacity-75 cursor-not-allowed' : ''
-                    }`}
+                    disabled={!selectedRow || selectedRow.id !== item.id || loading}
+                    className={`px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700 min-h-[42px] flex items-center justify-center ${!selectedRow || selectedRow.id !== item.id || loading ? 'opacity-75 cursor-not-allowed' : ''
+                      }`}
                   >
-                    {loading && selectedRow?.serialNo === item.serialNo && actionInProgress === 'accept' ? (
+                    {loading && selectedRow?.id === item.id && actionInProgress === 'accept' ? (
                       <div className="flex items-center">
-                        <svg 
-                          className="animate-spin h-4 w-4 text-white mr-2" 
-                          xmlns="http://www.w3.org/2000/svg" 
-                          fill="none" 
+                        <svg
+                          className="animate-spin h-4 w-4 text-white mr-2"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
                           viewBox="0 0 24 24"
                         >
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -515,17 +466,16 @@ const handleLeaveAction = async (action) => {
                   </button>
                   <button
                     onClick={() => handleLeaveAction('rejected')}
-                    disabled={selectedRow?.serialNo !== item.serialNo || loading}
-                    className={`px-4 py-2 text-white bg-red-600 rounded-md hover:bg-red-700 min-h-[42px] flex items-center justify-center ${
-                      selectedRow?.serialNo !== item.serialNo || (loading && actionInProgress === 'accept') ? 'opacity-75 cursor-not-allowed' : ''
-                    }`}
+                    disabled={selectedRow?.id !== item.id || loading}
+                    className={`px-4 py-2 text-white bg-red-600 rounded-md hover:bg-red-700 min-h-[42px] flex items-center justify-center ${selectedRow?.id !== item.id || (loading && actionInProgress === 'accept') ? 'opacity-75 cursor-not-allowed' : ''
+                      }`}
                   >
-                    {loading && selectedRow?.serialNo === item.serialNo && actionInProgress === 'rejected' ? (
+                    {loading && selectedRow?.id === item.id && actionInProgress === 'rejected' ? (
                       <div className="flex items-center">
-                        <svg 
-                          className="animate-spin h-4 w-4 text-white mr-2" 
-                          xmlns="http://www.w3.org/2000/svg" 
-                          fill="none" 
+                        <svg
+                          className="animate-spin h-4 w-4 text-white mr-2"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
                           viewBox="0 0 24 24"
                         >
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -647,9 +597,8 @@ const handleLeaveAction = async (action) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Leave Management</h1>
-        <button 
+      <div className="flex items-center justify-end">
+        <button
           onClick={() => setShowModal(true)}
           className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
         >
@@ -678,33 +627,30 @@ const handleLeaveAction = async (action) => {
           <nav className="flex -mb-px">
             <button
               onClick={() => setActiveTab('pending')}
-              className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${
-                activeTab === 'pending' 
-                  ? 'border-indigo-500 text-indigo-600' 
+              className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${activeTab === 'pending'
+                  ? 'border-indigo-500 text-indigo-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
+                }`}
             >
-              Pending Leaves ({pendingLeaves.length})
+              Pending ({pendingLeaves.length})
             </button>
             <button
               onClick={() => setActiveTab('approved')}
-              className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${
-                activeTab === 'approved' 
-                  ? 'border-indigo-500 text-indigo-600' 
+              className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${activeTab === 'approved'
+                  ? 'border-indigo-500 text-indigo-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
+                }`}
             >
-              Approved Leaves ({approvedLeaves.length})
+              Approved ({approvedLeaves.length})
             </button>
             <button
               onClick={() => setActiveTab('rejected')}
-              className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${
-                activeTab === 'rejected' 
-                  ? 'border-indigo-500 text-indigo-600' 
+              className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${activeTab === 'rejected'
+                  ? 'border-indigo-500 text-indigo-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
+                }`}
             >
-              Rejected Leaves ({rejectedLeaves.length})
+              Rejected ({rejectedLeaves.length})
             </button>
           </nav>
         </div>
@@ -723,7 +669,7 @@ const handleLeaveAction = async (action) => {
             ) : error ? (
               <div className="px-6 py-12 text-center">
                 <p className="text-red-500">Error: {error}</p>
-                <button 
+                <button
                   onClick={fetchLeaveData}
                   className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
                 >
@@ -735,172 +681,256 @@ const handleLeaveAction = async (action) => {
             )}
           </div>
         </div>
+
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6 px-4 py-3 bg-white border-t border-gray-200 sm:px-6">
+            <div className="flex flex-1 justify-between sm:hidden">
+              <button
+                onClick={() => handlePageChange(pagination.page - 1)}
+                disabled={pagination.page === 1}
+                className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => handlePageChange(pagination.page + 1)}
+                disabled={pagination.page === pagination.totalPages}
+                className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+            <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-gray-700">
+                  Showing <span className="font-medium">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="font-medium">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of{' '}
+                  <span className="font-medium">{pagination.total}</span> results
+                </p>
+              </div>
+              <div>
+                <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                  <button
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    disabled={pagination.page === 1}
+                    className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Previous</span>
+                    <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                  </button>
+
+                  {[...Array(Math.min(5, pagination.totalPages))].map((_, i) => {
+                    let pageNum;
+                    if (pagination.totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (pagination.page <= 3) {
+                      pageNum = i + 1;
+                    } else if (pagination.page >= pagination.totalPages - 2) {
+                      pageNum = pagination.totalPages - 4 + i;
+                    } else {
+                      pageNum = pagination.page - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => handlePageChange(pageNum)}
+                        className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${pagination.page === pageNum
+                          ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
+                          : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'
+                          }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    disabled={pagination.page === pagination.totalPages}
+                    className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Next</span>
+                    <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                </nav>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal for new leave request */}
-{showModal && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-lg shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto scrollbar-hide">
-      <div className="flex justify-between items-center p-6 border-b sticky top-0 bg-white z-10">
-        <h3 className="text-lg font-medium">New Leave Request</h3>
-        <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-gray-700">
-          <X size={20} />
-        </button>
-      </div>
-      <form onSubmit={handleSubmit} className="p-6 space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Employee Name *</label>
-          <select
-            name="employeeName"
-            value={formData.employeeName}
-            onChange={handleInputChange}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            required
-          >
-            <option value="">Select Employee</option>
-            {employees.map(employee => (
-              <option key={employee.id} value={employee.name}>{employee.name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label>
-          <input
-            type="text"
-            name="employeeId"
-            value={formData.employeeId}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
-            readOnly
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Designation</label>
-          <input
-            type="text"
-            name="designation"
-            value={formData.designation}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
-            readOnly
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name *</label>
-          <select
-            name="hodName"
-            value={formData.hodName}
-            onChange={handleInputChange}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            required
-          >
-            <option value="">Select HOD</option>
-            <option value="Deepak">Deepak</option>
-            <option value="Vikas">Vikas</option>
-            <option value="Dharam">Dharam</option>
-            <option value="Pratap">Pratap</option>
-            <option value="Aubhav">Aubhav</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Leave Type *</label>
-          <select
-            name="leaveType"
-            value={formData.leaveType}
-            onChange={handleInputChange}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            required
-          >
-            <option value="">Select Leave Type</option>
-            {leaveTypes.map(type => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">From Date *</label>
-            <input
-              type="date"
-              name="fromDate"
-              value={formData.fromDate}
-              onChange={handleInputChange}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">To Date *</label>
-            <input
-              type="date"
-              name="toDate"
-              value={formData.toDate}
-              onChange={handleInputChange}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              required
-            />
-          </div>
-        </div>
-
-        {formData.fromDate && formData.toDate && (
-          <div className="bg-blue-50 p-3 rounded-lg">
-            <p className="text-sm text-blue-800">
-              Total Days: <span className="font-semibold">{calculateDays(formData.fromDate, formData.toDate)}</span>
-            </p>
-          </div>
-        )}
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
-          <textarea
-            name="reason"
-            value={formData.reason}
-            onChange={handleInputChange}
-            rows={3}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            placeholder="Please provide reason for leave..."
-            required
-          />
-        </div>
-
-        <div className="flex justify-end space-x-2 pt-4">
-          <button
-            type="button"
-            onClick={() => setShowModal(false)}
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className={`px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 min-h-[42px] flex items-center justify-center ${
-              submitting ? 'opacity-75 cursor-not-allowed' : ''
-            }`}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <div className="flex items-center">
-                <svg 
-                  className="animate-spin h-4 w-4 text-white mr-2" 
-                  xmlns="http://www.w3.org/2000/svg" 
-                  fill="none" 
-                  viewBox="0 0 24 24"
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div className="flex justify-between items-center p-6 border-b sticky top-0 bg-white z-10">
+              <h3 className="text-lg font-medium">New Leave Request</h3>
+              <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-gray-700">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Employee Name *</label>
+                <select
+                  name="employeeName"
+                  value={formData.employeeName}
+                  onChange={handleInputChange}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  required
                 >
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span>Submitting...</span>
+                  <option value="">Select Employee</option>
+                  {employees.map(employee => (
+                    <option key={employee.id} value={employee.name}>{employee.name}</option>
+                  ))}
+                </select>
               </div>
-            ) : 'Submit Request'}
-          </button>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label>
+                <input
+                  type="text"
+                  name="employeeId"
+                  value={formData.employeeId}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
+                  readOnly
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                <input
+                  type="text"
+                  name="department"
+                  value={formData.department}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
+                  readOnly
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name *</label>
+                <select
+                  name="hodName"
+                  value={formData.hodName}
+                  onChange={handleInputChange}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  required
+                >
+                  <option value="">Select HOD</option>
+                  {hods.map(hod => (
+                    <option key={hod.id} value={hod.name}>{hod.name}</option>
+                  ))}
+                  <option value="Dharam">Dharam</option>
+                  <option value="Pratap">Pratap</option>
+                  <option value="Aubhav">Aubhav</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Leave Type *</label>
+                <select
+                  name="leaveType"
+                  value={formData.leaveType}
+                  onChange={handleInputChange}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                  required
+                >
+                  <option value="">Select Leave Type</option>
+                  {leaveTypes.map((type, idx) => (
+                    <option key={idx} value={type.leaveName}>{type.leaveName}</option>
+                  ))}
+                  {leaveTypes.length === 0 && (
+                    <>
+                      <option value="Normal Leave">Normal Leave</option>
+                      <option value="Earned Leave">Earned Leave</option>
+                      <option value="Casual Leave">Casual Leave</option>
+                      <option value="Sick Leave">Sick Leave</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">From Date *</label>
+                  <input
+                    type="date"
+                    name="fromDate"
+                    value={formData.fromDate}
+                    onChange={handleInputChange}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">To Date *</label>
+                  <input
+                    type="date"
+                    name="toDate"
+                    value={formData.toDate}
+                    onChange={handleInputChange}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              {formData.fromDate && formData.toDate && (
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    Total Days: <span className="font-semibold">{calculateDays(formData.fromDate, formData.toDate)}</span>
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
+                <textarea
+                  name="reason"
+                  value={formData.reason}
+                  onChange={handleInputChange}
+                  rows={3}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Please provide reason for leave..."
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className={`px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 min-h-[42px] flex items-center justify-center ${submitting ? 'opacity-75 cursor-not-allowed' : ''
+                    }`}
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <div className="flex items-center">
+                      <svg
+                        className="animate-spin h-4 w-4 text-white mr-2"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>Submitting...</span>
+                    </div>
+                  ) : 'Submit Request'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-      </form>
-    </div>
-  </div>
-)}
+      )}
     </div>
   );
 };

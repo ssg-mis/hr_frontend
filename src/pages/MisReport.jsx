@@ -78,8 +78,8 @@ const MisReport = () => {
     return (
       <div className="flex items-center space-x-2">
         <div className="w-20 bg-gray-200 rounded-full h-3">
-          <div 
-            className={`h-3 rounded-full ${color}`} 
+          <div
+            className={`h-3 rounded-full ${color}`}
             style={{ width: `${value}%` }}
           ></div>
         </div>
@@ -106,8 +106,7 @@ const MisReport = () => {
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">List of People</h1>
-        
+
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full">
@@ -154,7 +153,7 @@ const MisReport = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><TotalDoneWork weeks={person.totalWorkDone} /></td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                    {person.weekPending}
+                      {person.weekPending}
                     </td>
                   </tr>
                 ))}

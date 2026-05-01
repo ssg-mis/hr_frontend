@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Clock, CheckCircle, X, Upload } from 'lucide-react';
+import { Search, Clock, CheckCircle, X, Upload, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const CallTracker = () => {
@@ -9,6 +9,12 @@ const CallTracker = () => {
   const [showJoiningModal, setShowJoiningModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [followUpData, setFollowUpData] = useState([]);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0
+  });
 
     const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
@@ -53,156 +59,173 @@ const CallTracker = () => {
     qualificationPhoto: null,
     paymentMode: '',
     salarySlip: null,
-    resumeCopy: null
+    resumeCopy: null,
+    bloodGroup: '',
+    department_id: '',
+    community_id: '',
+    education: ''
   });
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [enquiryData, setEnquiryData] = useState([]);
   const [historyData, setHistoryData] = useState([]);
   const [error, setError] = useState(null);
+  const [latestFollowUp, setLatestFollowUp] = useState(null);
+  const [fetchingLatest, setFetchingLatest] = useState(false);
+  const [departments, setDepartments] = useState([]);
+  const [communities, setCommunities] = useState([]);
 
-  const fetchEnquiryData = async () => {
+  useEffect(() => {
+    if (activeTab === 'pending') {
+      fetchEnquiryData(1);
+    } else {
+      fetchFollowUpHistory(1);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const fetchMasterData = async () => {
+      try {
+        const [deptRes, commRes] = await Promise.all([
+          fetch(`${import.meta.env.VITE_API_URL}/master/departments`),
+          fetch(`${import.meta.env.VITE_API_URL}/master/communities`)
+        ]);
+        const deptData = await deptRes.json();
+        const commData = await commRes.json();
+        if (deptData.success) setDepartments(deptData.data);
+        if (commData.success) setCommunities(commData.data);
+      } catch (err) {
+        console.error('Error fetching master data:', err);
+      }
+    };
+    fetchMasterData();
+  }, []);
+
+  const fetchEnquiryData = async (page = 1) => {
     setLoading(true);
     setTableLoading(true);
     setError(null);
 
     try {
-      const [enquiryResponse, followUpResponse] = await Promise.all([
-        fetch('https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=ENQUIRY&action=fetch'),
-        fetch('https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=Follow - Up&action=fetch')
-      ]);
-      
-      if (!enquiryResponse.ok || !followUpResponse.ok) {
-        throw new Error(`HTTP error! status: ${enquiryResponse.status} or ${followUpResponse.status}`);
-      }
-      
-      const [enquiryResult, followUpResult] = await Promise.all([
-        enquiryResponse.json(),
-        followUpResponse.json()
-      ]);
-      
-      if (!enquiryResult.success || !enquiryResult.data || enquiryResult.data.length < 7) {
-        throw new Error(enquiryResult.error || 'Not enough rows in enquiry sheet data');
-      }
-      
-      // Process enquiry data
-      const enquiryHeaders = enquiryResult.data[5].map(h => h.trim());
-      const enquiryDataFromRow7 = enquiryResult.data.slice(6);
-      
-      const getIndex = (headerName) => enquiryHeaders.findIndex(h => h === headerName);
-      
-      const processedEnquiryData = enquiryDataFromRow7
-        .filter(row => {
-          const plannedIndex = getIndex('Planned');
-          const actualIndex = getIndex('Actual');
-          const planned = row[plannedIndex];
-          const actual = row[actualIndex];
-          return planned && (!actual || actual === '');
-        })
-        .map(row => ({
-          id: row[getIndex('Timestamp')],
-          indentNo: row[getIndex('Indent Number')],
-          candidateEnquiryNo: row[getIndex('Candidate Enquiry Number')],
-          applyingForPost: row[getIndex('Applying For the Post')],
-          candidateName: row[getIndex('Candidate Name')],
-          candidateDOB: row[getIndex('DOB')],
-          candidatePhone: row[getIndex('Candidate Phone Number')],
-          candidateEmail: row[getIndex('Candidate Email')],
-          previousCompany: row[getIndex('Previous Company Name')],
-          jobExperience: row[getIndex('Job Experience')] || '',
-          lastSalary: row[getIndex('Last Salary Drawn')] || '',
-          previousPosition: row[getIndex('Previous Position')] || '',
-          reasonForLeaving: row[getIndex('Reason Of Leaving Previous Company')] || '',
-          maritalStatus: row[getIndex('Marital Status')] || '',
-          lastEmployerMobile: row[getIndex('Last Employer Mobile Number')] || '',
-          candidatePhoto: row[getIndex('Candidate Photo')] || '',
-          candidateResume: row[19] || '',
-          referenceBy: row[getIndex('Reference By')] || '',
-          presentAddress: row[getIndex('Present Address')] || '',
-          aadharNo: row[getIndex('Aadhar Number')] || ''
-        }));
-      
-      setEnquiryData(processedEnquiryData);
-      
-      // Process follow-up data for filtering
-      if (followUpResult.success && followUpResult.data) {
-        const rawFollowUpData = followUpResult.data || followUpResult;
-        const followUpRows = Array.isArray(rawFollowUpData[0]) ? rawFollowUpData.slice(1) : rawFollowUpData;
+      // First, get ALL followups to filter pending status locally 
+      // (This is a bit inefficient if many followups, but matches existing logic)
+      // Optimization: In a real app, I'd move this filter to the backend.
+      const fuResponse = await fetch(`${import.meta.env.VITE_API_URL}/followups?limit=10000`);
+      const fuResult = await fuResponse.json();
+      let finalEnquiryNos = [];
+      if (fuResult.success) {
+        finalEnquiryNos = fuResult.data
+          .filter(f => f.status === 'Joining' || f.status === 'Reject')
+          .map(f => f.candidate_enquiry_no);
         
-        const processedFollowUpData = followUpRows.map(row => ({
-          enquiryNo: row[1] || '',       // Column B (index 1) - Enquiry No
-          status: row[2] || ''           // Column C (index 2) - Status
-        }));
-        
-        setFollowUpData(processedFollowUpData);
+        setFollowUpData(fuResult.data.map(item => ({
+          enquiryNo: item.candidate_enquiry_no,
+          status: item.status
+        })));
       }
+
+      // Fetch ENQUIRY data from backend with pagination
+      // We pass planned=true as a filter if supported, or filter here.
+      // Since I haven't added 'planned' filter to backend yet, I'll fetch and filter.
+      // WAIT: To be efficient and follow 'attendance' pattern, I should filter in backend.
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/enquiries?page=${page}&limit=${pagination.limit}`);
+      const result = await response.json();
       
+      if (result.success) {
+        const allEnquiries = result.data.map(item => ({
+          id: item.id,
+          indentNo: item.indent_number,
+          candidateEnquiryNo: item.candidate_enquiry_no,
+          applyingForPost: item.applying_for_post,
+          candidateName: item.candidate_name,
+          candidateDOB: item.candidate_dob,
+          candidatePhone: item.candidate_phone,
+          candidateEmail: item.candidate_email,
+          previousCompany: item.previous_company,
+          jobExperience: item.job_experience,
+          lastSalary: item.last_salary,
+          previousPosition: item.previous_position,
+          reasonForLeaving: item.reason_for_leaving,
+          maritalStatus: item.marital_status,
+          lastEmployerMobile: item.last_employer_mobile,
+          candidatePhoto: item.candidate_photo,
+          candidateResume: item.candidate_resume,
+          referenceBy: item.reference_by,
+          presentAddress: item.present_address,
+          aadharNo: item.aadhar_no,
+          status: item.status,
+          planned: item.planned 
+        }));
+
+        // Filter: planned exists AND not in Joining/Reject
+        const processedEnquiryData = allEnquiries.filter(item => 
+          item.planned && !finalEnquiryNos.includes(item.candidateEnquiryNo)
+        );
+        
+        setEnquiryData(processedEnquiryData);
+        setPagination(result.pagination || {
+          page: 1,
+          limit: 10,
+          total: processedEnquiryData.length,
+          totalPages: 1
+        });
+      } else {
+        throw new Error(result.error || 'Failed to fetch enquiries');
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
       setError(error.message);
-      toast.error('Failed to fetch data');
+      toast.error('Failed to fetch enquiries');
     } finally {
       setLoading(false);
       setTableLoading(false);
     }
   };
 
-const fetchFollowUpData = async () => {
-  setLoading(true);
-  setTableLoading(true);
-  setError(null);
+  const fetchFollowUpHistory = async (page = 1) => {
+    setLoading(true);
+    setTableLoading(true);
+    setError(null);
 
-  try {
-    const response = await fetch(
-      'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=Follow - Up&action=fetch'
-    );
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/followups?page=${page}&limit=${pagination.limit}`);
+      const result = await response.json();
+      
+      if (result.success) {
+        const processedData = result.data.map(item => ({
+          timestamp: formatDateTime(item.createdAt),
+          enquiryNo: item.candidate_enquiry_no,
+          status: item.status,
+          candidateSays: item.candidate_says,
+          nextDate: formatDOB(item.next_date) || '-'
+        }));
+        setHistoryData(processedData);
+        setPagination(result.pagination || {
+          page: 1,
+          limit: 10,
+          total: processedData.length,
+          totalPages: 1
+        });
+      }
+    } catch (error) {
+      console.error('Error in fetchFollowUpHistory:', error);
+      setError(error.message);
+      toast.error(`Failed to load follow-ups: ${error.message}`);
+    } finally {
+      setLoading(false);
+      setTableLoading(false);
     }
+  };
 
-    const result = await response.json();
-    console.log('Raw API response:', result);
-
-    if (!result.success) {
-      throw new Error(result.error || 'Google Script returned an error');
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+      if (activeTab === 'pending') {
+        fetchEnquiryData(newPage);
+      } else {
+        fetchFollowUpHistory(newPage);
+      }
     }
-
-    // Handle both array formats (direct data or result.data)
-    const rawData = result.data || result;
-    
-    if (!Array.isArray(rawData)) {
-      throw new Error('Expected array data not received');
-    }
-
-    // Process data - skip header row if present
-    const dataRows = rawData.length > 0 && Array.isArray(rawData[0]) ? rawData.slice(1) : rawData;
-    
-    const processedData = dataRows.map(row => ({
-      timestamp: row[0] || '',       // Column A (index 0) - Timestamp
-      enquiryNo: row[1] || '',       // Column B (index 1) - Enquiry No
-      status: row[2] || '',          // Column C (index 2) - Status
-      candidateSays: row[3] || '',   // Column D (index 3) - Candidates Says
-      nextDate: row[4] || ''         // Column E (index 4) - Next Date
-    }));
-
-    console.log('Processed follow-up data:', processedData);
-    setHistoryData(processedData);
-    
-  } catch (error) {
-    console.error('Error in fetchFollowUpData:', error);
-    setError(error.message);
-    toast.error(`Failed to load follow-ups: ${error.message}`);
-  } finally {
-    setLoading(false);
-    setTableLoading(false);
-  }
-};
-
-  useEffect(() => {
-    fetchEnquiryData();
-    fetchFollowUpData();
-  }, []);
+  };
 
  const pendingData = enquiryData.filter(item => {
     const hasFinalStatus = followUpData.some(followUp => 
@@ -212,14 +235,28 @@ const fetchFollowUpData = async () => {
     return !hasFinalStatus;
   });
 
-  const handleCallClick = (item) => {
+  const handleCallClick = async (item) => {
     setSelectedItem(item);
     setFormData({
       candidateSays: '',
       status: '',
       nextDate: ''
     });
+    setLatestFollowUp(null);
     setShowModal(true);
+
+    setFetchingLatest(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/followups/${item.candidateEnquiryNo}`);
+      const result = await response.json();
+      if (result.success && result.data.length > 0) {
+        setLatestFollowUp(result.data[0]);
+      }
+    } catch (err) {
+      console.error("Error fetching latest follow-up:", err);
+    } finally {
+      setFetchingLatest(false);
+    }
   };
 
   const handleInputChange = (e) => {
@@ -413,56 +450,56 @@ const postToSheet = async (rowData) => {
     return `${day}/${month}/${year}`;
   };
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setSubmitting(true);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
 
-  if (!formData.candidateSays || !formData.status) {
-    toast.error('Please fill all required fields');
-    setSubmitting(false);
-    return;
-  }
-
-  try {
-    const now = new Date();
-    const formattedTimestamp = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
-
-    const rowData = [
-      formattedTimestamp,
-      selectedItem.candidateEnquiryNo || '',
-      formData.status,
-      formData.candidateSays,
-      formatDOB(formData.nextDate) || '',
-    ];
-
-    // Always post to Follow-Up sheet first, regardless of status
-    await postToSheet(rowData);
-    toast.success('Update successful!');
-    
-    // If status is Joining, show the joining modal after successful submission
-    if (formData.status === 'Joining') {
-      setShowModal(false);
-      setShowJoiningModal(true);
-    } else {
-      setShowModal(false);
+    if (!formData.candidateSays || !formData.status) {
+      toast.error('Please fill all required fields');
+      setSubmitting(false);
+      return;
     }
-    
-    fetchEnquiryData();
-  } catch (error) {
-    console.error('Submission failed:', error);
-    toast.error(`Failed to update: ${error.message}`);
-    if (error.message.includes('appendRow')) {
-      toast('Please verify the "Follow-Up" sheet exists', {
-        icon: 'ℹ️',
-        duration: 8000
+
+    try {
+      const payload = {
+        candidate_enquiry_no: selectedItem.candidateEnquiryNo,
+        indent_number: selectedItem.indentNo,
+        status: formData.status,
+        candidate_says: formData.candidateSays,
+        next_date: formData.nextDate || null
+      };
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/followups`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
       });
-    }
-  } finally {
-    setSubmitting(false);
-  }
-};
 
- const handleJoiningSubmit = async (e) => {
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.message || 'Submission failed');
+      }
+
+      toast.success('Update successful!');
+      setShowModal(false);
+      
+      if (activeTab === 'pending') {
+        fetchEnquiryData(pagination.page);
+      } else {
+        fetchFollowUpHistory(pagination.page);
+      }
+    } catch (error) {
+      console.error('Submission failed:', error);
+      toast.error(`Failed to update: ${error.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleJoiningSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     
@@ -502,57 +539,64 @@ const handleSubmit = async (e) => {
         fileUrls[field] = uploadedUrls[index];
       });
 
-      const now = new Date();
-      const formattedTimestamp = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()} ${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`;
+      // Prepare payload for backend
+      const payload = {
+        indent_number: selectedItem.indentNo,
+        candidate_enquiry_no: selectedItem.candidateEnquiryNo,
+        name_as_per_aadhar: joiningFormData.nameAsPerAadhar || selectedItem.candidateName,
+        father_name: joiningFormData.father_name || joiningFormData.fatherName, // Handle both since frontend state might vary
+        date_of_joining: joiningFormData.dateOfJoining,
+        joining_place: joiningFormData.joiningPlace,
+        designation: joiningFormData.designation,
+        salary: joiningFormData.salary,
+        aadhar_frontside_photo: fileUrls.aadharFrontPhoto,
+        pan_card: fileUrls.aadharBackPhoto, // As per original mapping rowData[11]
+        candidate_photo: joiningFormData.candidatePhoto || '',
+        current_address: selectedItem.presentAddress,
+        address_as_per_aadhar_card: joiningFormData.addressAsPerAadhar,
+        date_of_birth: joiningFormData.dobAsPerAadhar,
+        gender: joiningFormData.gender,
+        mobile_no: selectedItem.candidatePhone,
+        family_mobile_no: joiningFormData.familyMobileNo,
+        relationship_with_family_person: joiningFormData.relationshipWithFamily,
+        past_pf_id: joiningFormData.pastPfId,
+        current_bank_ac_no: joiningFormData.currentBankAc,
+        ifsc_code: joiningFormData.ifscCode,
+        branch_name: joiningFormData.branchName,
+        photo_of_front_bank_passbook: fileUrls.bankPassbookPhoto,
+        personal_email: selectedItem.candidateEmail,
+        esic_no: joiningFormData.esicNo,
+        highest_qualification: joiningFormData.highestQualification,
+        pf_eligible: joiningFormData.pfEligible,
+        esic_eligible: joiningFormData.esicEligible,
+        joining_company_name: joiningFormData.joiningCompanyName,
+        email_id_to_be_issued: joiningFormData.emailToBeIssue,
+        issue_mobile: joiningFormData.issueMobile,
+        issue_laptop: joiningFormData.issueLaptop,
+        aadhar_card_no: selectedItem.aadharNo,
+        mode_of_attendance: joiningFormData.modeOfAttendance,
+        qualification_photo: fileUrls.qualificationPhoto,
+        payment_mode: joiningFormData.paymentMode,
+        salary_slip: fileUrls.salarySlip,
+        resume_copy: fileUrls.resumeCopy,
+        blood_group: joiningFormData.bloodGroup,
+        department_id: joiningFormData.department_id,
+        community_id: joiningFormData.community_id
+      };
 
-      // Create an array with all column values in order
-      const rowData = [];
-      
-      // Assign values directly to array indices
-      rowData[0] = formattedTimestamp;           // Timestamp
-      // rowData[1] = "employee no";                // Employee No (placeholder)
-      rowData[2] = selectedItem.indentNo;        // Indent No
-      rowData[3] = selectedItem.candidateEnquiryNo || ''; // Candidate Enquiry No
-      rowData[4] = selectedItem.candidateName;   // Candidate Name
-      rowData[5] = joiningFormData.fatherName;   // Father Name
-      rowData[6] = formatDOB(joiningFormData.dateOfJoining); // Date of Joining
-      rowData[7] = joiningFormData.joiningPlace;  // Joining Place
-      rowData[8] = joiningFormData.designation;   // Designation
-      rowData[9] = joiningFormData.salary;        // Salary
-      rowData[10] = fileUrls.aadharFrontPhoto;    // Aadhar Front Photo (Column K)
-      rowData[11] = fileUrls.aadharBackPhoto;     // PAN Card Photo (Column L)
-      rowData[12] = "";                           // Candidate Photo (placeholder)
-      rowData[13] = selectedItem.presentAddress;  // Present Address
-      rowData[14] = joiningFormData.addressAsPerAadhar; // Address as per Aadhar
-      rowData[15] = formatDOB(joiningFormData.dobAsPerAadhar); // DOB as per Aadhar
-      rowData[16] = joiningFormData.gender;       // Gender
-      rowData[17] = selectedItem.candidatePhone;  // Candidate Phone
-      rowData[18] = joiningFormData.familyMobileNo; // Family Mobile No
-      rowData[19] = joiningFormData.relationshipWithFamily; // Relationship with Family
-      rowData[20] = joiningFormData.pastPfId;     // Past PF ID
-      rowData[21] = joiningFormData.currentBankAc; // Current Bank Account
-      rowData[22] = joiningFormData.ifscCode;     // IFSC Code
-      rowData[23] = joiningFormData.branchName;   // Branch Name
-      rowData[24] = fileUrls.bankPassbookPhoto;   // Bank Passbook Photo (Column Y)
-      rowData[25] = selectedItem.candidateEmail;  // Candidate Email
-      rowData[26] = joiningFormData.esicNo;       // ESIC No
-      rowData[27] = joiningFormData.highestQualification; // Highest Qualification
-      rowData[28] = joiningFormData.pfEligible;   // PF Eligible
-      rowData[29] = joiningFormData.esicEligible; // ESIC Eligible
-      rowData[30] = joiningFormData.joiningCompanyName; // Joining Company Name
-      rowData[31] = joiningFormData.emailToBeIssue; // Email to be Issued
-      rowData[32] = joiningFormData.issueMobile;   // Issue Mobile
-      rowData[33] = joiningFormData.issueLaptop;   // Issue Laptop
-      rowData[34] = selectedItem.aadharNo;        // Aadhar No
-      rowData[35] = joiningFormData.modeOfAttendance; // Mode of Attendance
-      rowData[36] = fileUrls.qualificationPhoto;  // Qualification Photo (Column AK)
-      rowData[37] = joiningFormData.paymentMode;   // Payment Mode
-      rowData[38] = fileUrls.salarySlip;          // Salary Slip (Column AM)
-      rowData[39] = fileUrls.resumeCopy;          // Resume Copy (Column AN)
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/joining`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
 
-      await postToJoiningSheet(rowData);
+      const result = await response.json();
 
-      console.log("Joining Form Data:", rowData);
+      if (!result.success) {
+        throw new Error(result.message || 'Joining form submission failed');
+      }
 
       toast.success('Employee added successfully!');
       setShowJoiningModal(false);
@@ -580,9 +624,6 @@ const handleSubmit = async (e) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">Call Tracker</h1>
-      </div>
 
       {/* Filter and Search */}
       <div className="bg-white p-4 rounded-lg shadow flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0 md:space-x-4">
@@ -779,20 +820,97 @@ const handleSubmit = async (e) => {
     </table>
   </div>
 )}
-        </div>
-      </div>
 
-      {/* Call Modal */}
-{showModal && selectedItem && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
-      <div className="flex justify-between items-center p-6 border-b border-gray-300">
-        <h3 className="text-lg font-medium text-gray-900">Call Tracker</h3>
-        <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-gray-700">
-          <X size={20} />
-        </button>
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6 px-4 py-3 bg-white border-t border-gray-200 sm:px-6">
+            <div className="flex flex-1 justify-between sm:hidden">
+              <button
+                onClick={() => handlePageChange(pagination.page - 1)}
+                disabled={pagination.page === 1}
+                className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => handlePageChange(pagination.page + 1)}
+                disabled={pagination.page === pagination.totalPages}
+                className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+            <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-gray-700">
+                  Showing <span className="font-medium">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="font-medium">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of{' '}
+                  <span className="font-medium">{pagination.total}</span> results
+                </p>
+              </div>
+              <div>
+                <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                  <button
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    disabled={pagination.page === 1}
+                    className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Previous</span>
+                    <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                  </button>
+
+                  {[...Array(Math.min(5, pagination.totalPages))].map((_, i) => {
+                    let pageNum;
+                    if (pagination.totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (pagination.page <= 3) {
+                      pageNum = i + 1;
+                    } else if (pagination.page >= pagination.totalPages - 2) {
+                      pageNum = pagination.totalPages - 4 + i;
+                    } else {
+                      pageNum = pagination.page - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => handlePageChange(pageNum)}
+                        className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${pagination.page === pageNum
+                            ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
+                            : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'
+                          }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    disabled={pagination.page === pagination.totalPages}
+                    className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Next</span>
+                    <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                </nav>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-      <form onSubmit={handleSubmit} className="p-6 space-y-4">
+    </div>
+
+    {/* Call Modal */}
+    {showModal && selectedItem && (
+      <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 modal-backdrop">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-white/20 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300 overflow-hidden">
+          <div className="flex justify-between items-center p-6 border-b border-gray-200">
+            <h3 className="text-lg font-medium text-gray-900">Call Tracker</h3>
+            <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-gray-700">
+              <X size={20} />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="flex flex-col overflow-hidden">
+            <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Candidate Enquiry No.</label>
           <input
@@ -802,6 +920,39 @@ const handleSubmit = async (e) => {
             className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 text-gray-700"
           />
         </div> 
+        {fetchingLatest ? (
+          <div className="flex items-center space-x-2 text-sm text-gray-500 py-2">
+            <div className="w-4 h-4 border-2 border-indigo-500 border-dashed rounded-full animate-spin"></div>
+            <span>Fetching latest history...</span>
+          </div>
+        ) : latestFollowUp && (
+          <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 space-y-2">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs font-bold text-indigo-700 uppercase tracking-widest">Last Interaction</span>
+              <span className="text-[10px] text-indigo-400">{new Date(latestFollowUp.createdAt).toLocaleString()}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div>
+                <span className="text-gray-500 text-[11px] block">Last Status</span>
+                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                  latestFollowUp.status === 'Joining' ? 'bg-green-100 text-green-700' :
+                  latestFollowUp.status === 'Reject' ? 'bg-red-100 text-red-700' :
+                  'bg-indigo-100 text-indigo-700'
+                }`}>{latestFollowUp.status}</span>
+              </div>
+              {latestFollowUp.next_date && (
+                <div>
+                  <span className="text-gray-500 text-[11px] block">Scheduled For</span>
+                  <span className="text-gray-700 font-medium">{new Date(latestFollowUp.next_date).toLocaleDateString()}</span>
+                </div>
+              )}
+            </div>
+            <div>
+              <span className="text-gray-500 text-[11px] block">Last Note</span>
+              <p className="text-gray-700 text-sm italic">"{latestFollowUp.candidate_says}"</p>
+            </div>
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Status *</label>
           <select
@@ -865,53 +1016,55 @@ const handleSubmit = async (e) => {
           </div>
         )}
         
-        <div className="flex justify-end space-x-2 pt-4">
-          <button
-            type="button"
-            onClick={() => setShowModal(false)}
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className={`px-4 py-2 text-white bg-indigo-700 rounded-md hover:bg-indigo-800 min-h-[42px] flex items-center justify-center ${
-              submitting ? 'opacity-90 cursor-not-allowed' : ''
-            }`}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <div className="flex items-center">
-                <svg 
-                  className="animate-spin h-4 w-4 text-white mr-2" 
-                  xmlns="http://www.w3.org/2000/svg" 
-                  fill="none" 
-                  viewBox="0 0 24 24"
-                >
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span>Submitting...</span>
-              </div>
-            ) : 'Submit'}
-          </button>
+            </div>
+            <div className="flex justify-end space-x-2 p-6 border-t border-gray-100 bg-gray-50/50 rounded-b-2xl">
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="px-5 py-2.5 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-all duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className={`px-6 py-2.5 text-white bg-indigo-700 rounded-xl font-medium hover:bg-indigo-800 shadow-lg shadow-indigo-100 flex items-center justify-center min-h-[42px] ${
+                  submitting ? 'opacity-90 cursor-not-allowed' : ''
+                }`}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <div className="flex items-center">
+                    <svg 
+                      className="animate-spin h-4 w-4 text-white mr-2" 
+                      xmlns="http://www.w3.org/2000/svg" 
+                      fill="none" 
+                      viewBox="0 0 24 24"
+                    >
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Submitting...</span>
+                  </div>
+                ) : 'Submit'}
+              </button>
+            </div>
+          </form>
         </div>
-      </form>
-    </div>
-  </div>
-)}
+      </div>
+    )}
 
       {/* Joining Modal */}
       {showJoiningModal && selectedItem && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-6xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center p-6 border-b border-gray-300">
-              <h3 className="text-lg font-medium text-gray-900">Employee Joining Form</h3>
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 modal-backdrop">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl border border-white/20 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300 overflow-hidden">
+            <div className="flex justify-between items-center p-6 border-b border-gray-200">
+              <h3 className="text-xl font-bold text-gray-900">Employee Joining Form</h3>
               <button onClick={() => setShowJoiningModal(false)} className="text-gray-500 hover:text-gray-700">
-                <X size={20} />
+                <X size={24} />
               </button>
             </div>
-       <form onSubmit={handleJoiningSubmit} className="p-6 space-y-6">
+            <form onSubmit={handleJoiningSubmit} className="flex flex-col overflow-hidden">
+              <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
   {/* Section 1: Basic Information */}
   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
     <div>
@@ -976,6 +1129,51 @@ const handleSubmit = async (e) => {
         <option value="Male">Male</option>
         <option value="Female">Female</option>
         <option value="Other">Other</option>
+      </select>
+    </div>
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Blood Group</label>
+      <input
+        type="text"
+        name="bloodGroup"
+        value={joiningFormData.bloodGroup}
+        onChange={handleJoiningInputChange}
+        placeholder="e.g. O+, A-"
+        className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700"
+      />
+    </div>
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Department *</label>
+      <select
+        name="department_id"
+        value={joiningFormData.department_id}
+        onChange={handleJoiningInputChange}
+        className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700"
+        required
+      >
+        <option value="">Select Department</option>
+        {departments.map(dept => (
+          <option key={dept.department_id} value={dept.department_id}>
+            {dept.department_name}
+          </option>
+        ))}
+      </select>
+    </div>
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Community *</label>
+      <select
+        name="community_id"
+        value={joiningFormData.community_id}
+        onChange={handleJoiningInputChange}
+        className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700"
+        required
+      >
+        <option value="">Select Community</option>
+        {communities.map(comm => (
+          <option key={comm.community_id} value={comm.community_id}>
+            {comm.community_name}
+          </option>
+        ))}
       </select>
     </div>
   </div>
@@ -1162,13 +1360,19 @@ const handleSubmit = async (e) => {
     </div>
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">Payment Mode *</label>
-      <input
+      <select
         name="paymentMode"
         value={joiningFormData.paymentMode}
         onChange={handleJoiningInputChange}
         className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700"
-        
-      />
+        required
+      >
+        <option value="">Select Payment Mode</option>
+        <option value="Online">Online</option>
+        <option value="Bank">Bank</option>
+        <option value="Cash">Cash</option>
+        <option value="Cheque">Cheque</option>
+      </select>
     </div>
   </div>
 
@@ -1262,7 +1466,7 @@ const handleSubmit = async (e) => {
       </select>
     </div>
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">Highest Qualification</label>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Education / Highest Qualification</label>
       <input
         name="highestQualification"
         value={joiningFormData.highestQualification}
@@ -1409,33 +1613,34 @@ const handleSubmit = async (e) => {
   </div>
 
   {/* Form Actions */}
-  <div className="flex justify-end space-x-2 pt-4">
-    <button
-      type="button"
-      onClick={() => setShowJoiningModal(false)}
-      className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-    >
-      Cancel
-    </button>
-    <button
-      type="submit"
-      className={`px-4 py-2 text-white bg-indigo-700 rounded-md hover:bg-indigo-800 flex items-center justify-center min-h-[42px] ${
-        submitting ? 'opacity-90 cursor-not-allowed' : ''
-      }`}
-      disabled={submitting}
-    >
-      {submitting ? (
-        <>
-          <svg className="animate-spin h-4 w-4 text-white mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          Submitting...
-        </>
-      ) : 'Submit'}
-    </button>
-  </div>
-</form>
+              </div>
+              <div className="flex justify-end space-x-2 p-6 border-t border-gray-100 bg-gray-50/50 rounded-b-2xl">
+                <button
+                  type="button"
+                  onClick={() => setShowJoiningModal(false)}
+                  className="px-6 py-2.5 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-all duration-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className={`px-8 py-2.5 text-white bg-indigo-700 rounded-xl font-medium hover:bg-indigo-800 shadow-lg shadow-indigo-100 flex items-center justify-center min-h-[42px] ${
+                    submitting ? 'opacity-90 cursor-not-allowed' : ''
+                  }`}
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 text-white mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Submitting...
+                    </>
+                  ) : 'Submit'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

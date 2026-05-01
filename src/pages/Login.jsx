@@ -1,55 +1,68 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Users, User, Lock } from 'lucide-react';
-import toast from 'react-hot-toast';
-import useAuthStore from '../store/authStore';
-
-const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=USER&action=fetch';
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Users, User, Lock, Eye, EyeOff } from "lucide-react";
+import toast from "react-hot-toast";
+import useAuthStore from "../store/authStore";
 
 const Login = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const login = useAuthStore((state) => state.login);
   const navigate = useNavigate();
 
+  React.useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/", { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
+  const apiBase = import.meta.env.VITE_API_URL || "/api/v1";
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitting(true)
+    setSubmitting(true);
     try {
-      const res = await fetch(SHEET_API_URL);
-      const json = await res.json();
+      const res = await fetch(`${apiBase}/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, password }),
+      });
 
-      if (!json.success) {
-        toast.error('Error fetching data');
+      let json = {};
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        json = await res.json();
+      }
+
+      if (!res.ok || !json.success) {
+        toast.error(json.error || "Login failed");
+        setSubmitting(false);
         return;
       }
 
-      const rows = json.data;
-      const headers = rows[0];
-      const users = rows.slice(1).map(row => {
-        let obj = {};
-        headers.forEach((h, i) => obj[h] = row[i]);
-        return obj;
-      });
+      toast.success("Login successful!");
 
-      const matchedUser = users.find(
-        (u) => u.Username === username && u.Password === password
-      );
-      if (matchedUser) {
-        toast.success('Login successful!');
-        localStorage.setItem('user', JSON.stringify(matchedUser));
-        setSubmitting(false);
-        navigate('/', { replace: true });  // Add replace: true to prevent going back to login
-      } else {
-        toast.error('Invalid credentials');
-        setSubmitting(false);
-      }
+      const normalizedUser = {
+        ...json.user,
+        Admin: json.user.admin ? "Yes" : "No",
+        Name: json.user.name,
+        Username: json.user.username,
+        role: json.user.admin ? "admin" : "employee",
+      };
 
+      login(normalizedUser);
+      localStorage.setItem("user", JSON.stringify(normalizedUser));
+      setSubmitting(false);
+      navigate("/", { replace: true });
     } catch (err) {
       console.error(err);
-      toast.error('Network error');
+      toast.error("Network error");
+      setSubmitting(false);
     }
   };
 
@@ -62,7 +75,7 @@ const Login = () => {
       <div className="max-w-md w-full relative group">
         {/* Subtle Card Glow Effect */}
         <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-2xl blur opacity-20 group-hover:opacity-30 transition duration-1000"></div>
-        
+
         <div className="relative bg-white p-8 rounded-2xl shadow-2xl space-y-8 overflow-hidden">
           {/* Top Colorful Accent Strip */}
           <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
@@ -86,7 +99,12 @@ const Login = () => {
           <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
             <div className="space-y-4">
               <div className="space-y-1">
-                <label htmlFor="username" className="text-sm font-medium text-gray-700 ml-1">Username</label>
+                <label
+                  htmlFor="username"
+                  className="text-sm font-medium text-gray-700 ml-1"
+                >
+                  Username
+                </label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none transition-colors group-focus-within:text-indigo-600">
                     <User className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500" />
@@ -105,7 +123,13 @@ const Login = () => {
               </div>
 
               <div className="space-y-1">
-                <label htmlFor="password" title="Password" className="text-sm font-medium text-gray-700 ml-1">Password</label>
+                <label
+                  htmlFor="password"
+                  title="Password"
+                  className="text-sm font-medium text-gray-700 ml-1"
+                >
+                  Password
+                </label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none transition-colors group-focus-within:text-indigo-600">
                     <Lock className="h-4 w-4 text-gray-400 group-focus-within:text-indigo-500" />
@@ -113,13 +137,24 @@ const Login = () => {
                   <input
                     id="password"
                     name="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="appearance-none block w-full pl-10 pr-3 py-3 border border-gray-200 text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium sm:text-sm bg-gray-50/30"
                     placeholder="Enter your password"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 focus:outline-none"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
@@ -127,8 +162,9 @@ const Login = () => {
             <div className="pt-2">
               <button
                 type="submit"
-                className={`group relative w-full flex justify-center py-3.5 px-4 border border-transparent text-sm font-bold rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 shadow-lg shadow-indigo-100 transform active:scale-[0.98] ${submitting ? 'opacity-90 cursor-not-allowed' : ''
-                  }`}
+                className={`group relative w-full flex justify-center py-3.5 px-4 border border-transparent text-sm font-bold rounded-xl text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-300 shadow-lg shadow-indigo-100 transform active:scale-[0.98] ${
+                  submitting ? "opacity-90 cursor-not-allowed" : ""
+                }`}
                 disabled={submitting}
               >
                 {submitting ? (
@@ -139,16 +175,37 @@ const Login = () => {
                       fill="none"
                       viewBox="0 0 24 24"
                     >
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
                     </svg>
                     <span>Signing in...</span>
                   </div>
                 ) : (
                   <span className="flex items-center">
                     Sign in
-                    <svg className="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    <svg
+                      className="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M14 5l7 7m0 0l-7 7m7-7H3"
+                      />
                     </svg>
                   </span>
                 )}

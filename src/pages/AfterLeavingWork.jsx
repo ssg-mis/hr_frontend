@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Search, X } from 'lucide-react';
+import { Search, X, Clock, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const AfterLeavingWork = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('pending');
   const [showModal, setShowModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [pendingData, setPendingData] = useState([]);
@@ -12,6 +13,12 @@ const AfterLeavingWork = () => {
   const [tableLoading, setTableLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0
+  });
   const [formData, setFormData] = useState({
     resignationLetterReceived: false,
     resignationAcceptance: false,
@@ -24,183 +31,78 @@ const AfterLeavingWork = () => {
     removeBenefitEnrollment: false
   });
 
-  const fetchLeavingData = async () => {
+  const fetchLeavingData = async (page = 1) => {
     setLoading(true);
     setTableLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(
-        'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=LEAVING&action=fetch'
-      );
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
+      const isCompleted = activeTab === 'history' ? 'true' : 'false';
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/after-leaving?completed=${isCompleted}&page=${page}&limit=${pagination.limit}`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch data from LEAVING sheet');
-      }
-      
-      const rawData = result.data || result;
-      
-      if (!Array.isArray(rawData)) {
-        throw new Error('Expected array data not received');
-      }
+      if (!result.success) throw new Error(result.message);
 
-      // Process data starting from row 7 (index 6) - skip headers
-      const dataRows = rawData.length > 6 ? rawData.slice(6) : [];
-      
-      const processedData = dataRows.map(row => ({
-        timestamp: row[0] || '',
-        employeeId: row[1] || '',
-        name: row[2] || '',
-        dateOfLeaving: row[3] || '',
-        mobileNo: row[4] || '',
-        reasonOfLeaving: row[5] || '',
-        firmName: row[6] || '',
-        fatherName: row[7] || '', 
-        dateOfJoining: row[8] || '', 
-        workingLocation: row[9] || '', 
-        designation: row[10] || '', 
-        salary: row[11] || '', 
-        plannedDate: row[12] || '', 
-        actual: row[13] || ''
+      const processedData = result.data.map(item => ({
+        id: item.id,
+        employeeId: item.leaving?.employee_id_val,
+        name: item.leaving?.name,
+        dateOfJoining: item.leaving?.date_of_joining,
+        dateOfLeaving: item.leaving?.date_of_leaving,
+        designation: item.leaving?.designation,
+        reasonOfLeaving: item.leaving?.reason_for_leaving,
+        planned: item.planned,
+        delay: item.delay,
+        actual: item.actual_date,
+        checklist: item
       }));
 
-      const pendingTasks = processedData.filter(
-        task => task.plannedDate && !task.actual
-      );
-      setPendingData(pendingTasks);
-      
-      const historyTasks = processedData.filter(
-        task => task.plannedDate && task.actual
-      );
-      setHistoryData(historyTasks);
-     
+      if (activeTab === 'pending') {
+        setPendingData(processedData);
+      } else {
+        setHistoryData(processedData);
+      }
+      setPagination(result.pagination || {
+        page: 1,
+        limit: 10,
+        total: result.data.length,
+        totalPages: 1
+      });
     } catch (error) {
       console.error('Error fetching leaving data:', error);
       setError(error.message);
-      toast.error(`Failed to load leaving data: ${error.message}`);
     } finally {
       setLoading(false);
       setTableLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchLeavingData();
-  }, []);
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+      fetchLeavingData(newPage);
+    }
+  };
 
-  const handleAfterLeavingClick = async (item) => {
-    // Reset form data first to prevent previous state from showing
+  useEffect(() => {
+    fetchLeavingData(1);
+  }, [activeTab]);
+
+  const handleAfterLeavingClick = (item) => {
+    const checklist = item.checklist;
     setFormData({
-      resignationLetterReceived: false,
-      resignationAcceptance: false,
-      handoverOfAssets: false,
-      idCard: false,
-      visitingCard: false,
-      cancellationOfEmailId: false,
-      biometricAccess: false,
-      finalReleaseDate: '',
-      removeBenefitEnrollment: false
+      resignationLetterReceived: checklist.resignation_letter_received,
+      resignationAcceptance: checklist.resignation_acceptance,
+      handoverOfAssets: checklist.handover_of_assets,
+      idCard: checklist.id_card,
+      visitingCard: checklist.visiting_card,
+      cancellationOfEmailId: checklist.cancellation_of_email_id,
+      biometricAccess: checklist.biometric_access,
+      finalReleaseDate: checklist.final_release_date ? checklist.final_release_date.split('T')[0] : '',
+      removeBenefitEnrollment: checklist.remove_benefit_enrollment
     });
-    
+
     setSelectedItem(item);
     setShowModal(true);
-    setLoading(true);
-
-    try {
-      // Fetch current values from the sheet
-      const fullDataResponse = await fetch(
-        'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=LEAVING&action=fetch'
-      );
-      
-      if (!fullDataResponse.ok) {
-        throw new Error(`HTTP error! status: ${fullDataResponse.status}`);
-      }
-      
-      const fullDataResult = await fullDataResponse.json();
-      const allData = fullDataResult.data || fullDataResult;
-
-      // Find header row
-      let headerRowIndex = allData.findIndex(row =>
-        row.some(cell => cell?.toString().trim().toLowerCase().includes('employee id'))
-      );
-      if (headerRowIndex === -1) headerRowIndex = 4;
-
-      const headers = allData[headerRowIndex].map(h => h?.toString().trim());
-
-      // Find Employee ID column index
-      const employeeIdIndex = headers.findIndex(h => h?.toLowerCase() === "employee id");
-      if (employeeIdIndex === -1) {
-        throw new Error("Could not find 'Employee ID' column");
-      }
-
-      // Find the employee row index
-      const rowIndex = allData.findIndex((row, idx) =>
-        idx > headerRowIndex &&
-        row[employeeIdIndex]?.toString().trim() === item.employeeId?.toString().trim()
-      );
-      
-      if (rowIndex === -1) {
-        throw new Error(`Employee ${item.employeeId} not found in LEAVING sheet`);
-      }
-
-      // Get current values from the sheet
-      // Column W is index 22 (0-based)
-      const finalReleaseDateValue = allData[rowIndex][22] || "";
-      
-      // Format the date for the input field (YYYY-MM-DD format)
-      let formattedDate = "";
-      if (finalReleaseDateValue) {
-        // Try to parse the date if it's in a different format
-        const dateParts = finalReleaseDateValue.toString().split('/');
-        if (dateParts.length === 3) {
-          // Assuming DD/MM/YYYY format
-          const day = dateParts[0].padStart(2, '0');
-          const month = dateParts[1].padStart(2, '0');
-          const year = dateParts[2];
-          formattedDate = `${year}-${month}-${day}`;
-        } else {
-          // Try to parse as a Date object if it's in a different format
-          const dateObj = new Date(finalReleaseDateValue);
-          if (!isNaN(dateObj.getTime())) {
-            formattedDate = dateObj.toISOString().split('T')[0];
-          }
-        }
-      }
-
-      const currentValues = {
-        resignationLetterReceived: 
-          allData[rowIndex][15]?.toString().trim().toLowerCase() === "yes",
-        resignationAcceptance: 
-          allData[rowIndex][16]?.toString().trim().toLowerCase() === "yes",
-        handoverOfAssets: 
-          allData[rowIndex][17]?.toString().trim().toLowerCase() === "yes",
-        idCard: 
-          allData[rowIndex][18]?.toString().trim().toLowerCase() === "yes",
-        visitingCard: 
-          allData[rowIndex][19]?.toString().trim().toLowerCase() === "yes",
-        cancellationOfEmailId: 
-          allData[rowIndex][20]?.toString().trim().toLowerCase() === "yes",
-        biometricAccess: 
-          allData[rowIndex][21]?.toString().trim().toLowerCase() === "yes",
-        finalReleaseDate: formattedDate,
-        removeBenefitEnrollment: 
-          allData[rowIndex][23]?.toString().trim().toLowerCase() === "yes"
-      };
-
-      setFormData(currentValues);
-    } catch (error) {
-      console.error('Error fetching current values:', error);
-      // Keep the default reset values if there's an error
-      toast.error("Failed to load current values");
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleCheckboxChange = (name) => {
@@ -223,168 +125,33 @@ const AfterLeavingWork = () => {
     setLoading(true);
     setSubmitting(true);
 
-    if (!selectedItem.employeeId || !selectedItem.name) {
-      toast.error('Please fill all required fields');
-      setSubmitting(false);
-      return;
-    }
+    const payload = {
+      resignation_letter_received: formData.resignationLetterReceived,
+      resignation_acceptance: formData.resignationAcceptance,
+      handover_of_assets: formData.handoverOfAssets,
+      id_card: formData.idCard,
+      visiting_card: formData.visitingCard,
+      cancellation_of_email_id: formData.cancellationOfEmailId,
+      biometric_access: formData.biometricAccess,
+      remove_benefit_enrollment: formData.removeBenefitEnrollment,
+      final_release_date: formData.finalReleaseDate || null
+    };
 
     try {
-      // 1. First fetch the current data
-      const fullDataResponse = await fetch(
-        'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=LEAVING&action=fetch'
-      );
-      if (!fullDataResponse.ok) {
-        throw new Error(`HTTP error! status: ${fullDataResponse.status}`);
-      }
-
-      const fullDataResult = await fullDataResponse.json();
-      const allData = fullDataResult.data || fullDataResult;
-
-      // Find header row in LEAVING sheet
-      let headerRowIndex = allData.findIndex(row =>
-        row.some(cell => cell?.toString().trim().toLowerCase().includes('employee id'))
-      );
-      if (headerRowIndex === -1) headerRowIndex = 4;
-
-      const headers = allData[headerRowIndex].map(h => h?.toString().trim());
-
-      // Find Employee ID column index
-      const employeeIdIndex = headers.findIndex(h => h?.toLowerCase() === "employee id");
-      if (employeeIdIndex === -1) {
-        throw new Error("Could not find 'Employee ID' column");
-      }
-
-      // Find the employee row index
-      const rowIndex = allData.findIndex((row, idx) =>
-        idx > headerRowIndex &&
-        row[employeeIdIndex]?.toString().trim() === selectedItem.employeeId?.toString().trim()
-      );
-      if (rowIndex === -1) throw new Error(`Employee ${selectedItem.employeeId} not found in LEAVING sheet`);
-
-      const now = new Date();
-      const formattedTimestamp = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()} `;
-      
-      // Check if all conditions are met
-      const allConditionsMet = 
-        formData.resignationLetterReceived &&
-        formData.resignationAcceptance &&
-        formData.handoverOfAssets &&
-        formData.idCard &&
-        formData.visitingCard &&
-        formData.cancellationOfEmailId &&
-        formData.biometricAccess &&
-        formData.removeBenefitEnrollment &&
-        formData.finalReleaseDate;
-
-      const updatePromises = [];
-
-      // Only update actual date if all conditions are met
-      if (allConditionsMet) {
-        updatePromises.push(
-          fetch(
-            "https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-              },
-              body: new URLSearchParams({
-                sheetName: "LEAVING",
-                action: "updateCell",
-                rowIndex: (rowIndex + 1).toString(),
-                columnIndex: "14", // Column N (Actual date)
-                value: formattedTimestamp,
-              }).toString(),
-            }
-          )
-        );
-      }
-
-      // Update checklist columns regardless of allConditionsMet
-      const fields = [
-        { value: formData.resignationLetterReceived ? "Yes" : "No", offset: 15 },
-        { value: formData.resignationAcceptance ? "Yes" : "No", offset: 16 },
-        { value: formData.handoverOfAssets ? "Yes" : "No", offset: 17 },
-        { value: formData.idCard ? "Yes" : "No", offset: 18 },
-        { value: formData.visitingCard ? "Yes" : "No", offset: 19 },
-        { value: formData.cancellationOfEmailId ? "Yes" : "No", offset: 20 },
-        { value: formData.biometricAccess ? "Yes" : "No", offset: 21 },
-        { value: formData.removeBenefitEnrollment ? "Yes" : "No", offset: 23 }
-      ];
-
-      // Convert final release date to DD/MM/YYYY
-      let finalReleaseDateValue = "";
-      if (formData.finalReleaseDate) {
-        const dateParts = formData.finalReleaseDate.split('-');
-        if (dateParts.length === 3) {
-          finalReleaseDateValue = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
-        } else {
-          finalReleaseDateValue = formData.finalReleaseDate;
-        }
-      }
-
-      // Add final release date update
-      updatePromises.push(
-        fetch(
-          "https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: new URLSearchParams({
-              sheetName: "LEAVING",
-              action: "updateCell",
-              rowIndex: (rowIndex + 1).toString(),
-              columnIndex: "23", // Column W (Final Release Date)
-              value: finalReleaseDateValue,
-            }).toString(),
-          }
-        )
-      );
-
-      // Add all other field updates
-      fields.forEach((field) => {
-        updatePromises.push(
-          fetch(
-            "https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-              },
-              body: new URLSearchParams({
-                sheetName: "LEAVING",
-                action: "updateCell",
-                rowIndex: (rowIndex + 1).toString(),
-                columnIndex: (field.offset + 1).toString(),
-                value: field.value,
-              }).toString(),
-            }
-          )
-        );
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/after-leaving/${selectedItem.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
       });
 
-      const responses = await Promise.all(updatePromises);
-      const results = await Promise.all(responses.map((r) => r.json()));
+      const result = await response.json();
+      if (!result.success) throw new Error(result.message);
 
-      const hasError = results.some((result) => !result.success);
-      if (hasError) {
-        console.error("Some cell updates failed:", results);
-        throw new Error("Some cell updates failed");
-      }
-
-      if (allConditionsMet) {
-        toast.success("All conditions met! Actual date updated successfully.");
-      } else {
-        toast.success(
-          "Conditions updated successfully. Actual date will be updated when all conditions are met."
-        );
-      }
-
+      toast.success('Checklist updated successfully!');
       setShowModal(false);
-      fetchLeavingData();
+      fetchLeavingData(pagination.page);
     } catch (error) {
       console.error('Update error:', error);
       toast.error(`Update failed: ${error.message}`);
@@ -396,30 +163,29 @@ const AfterLeavingWork = () => {
 
   const formatDOB = (dateString) => {
     if (!dateString) return '';
-    
+
     const date = new Date(dateString);
     if (isNaN(date.getTime())) {
       return dateString; // Return as-is if not a valid date
     }
-    
+
     const day = date.getDate();
     const month = date.getMonth();
     const year = date.getFullYear();
-    
+
     return `${day}/${month}/${year}`;
   };
 
-  const filteredPendingData = pendingData.filter(item => {
+  const filteredData = activeTab === 'pending' ? pendingData : historyData;
+
+  const filteredItems = filteredData.filter(item => {
     const matchesSearch = item.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
+      item.employeeId?.toString().toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">After Leaving Work</h1>
-      </div>
 
       {/* Filter and Search */}
       <div className="bg-white p-4 rounded-lg shadow flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0 md:space-x-4">
@@ -437,7 +203,33 @@ const AfterLeavingWork = () => {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Tabs */}
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="border-b border-gray-200">
+          <nav className="flex -mb-px">
+            <button
+              onClick={() => setActiveTab('pending')}
+              className={`py-4 px-6 font-medium text-sm transition-colors duration-200 border-b-2 ${activeTab === 'pending'
+                  ? "border-indigo-600 text-indigo-700 bg-indigo-50 bg-opacity-30"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }`}
+            >
+              <Clock size={16} className="inline-block mr-2" />
+              Pending ({pendingData.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`py-4 px-6 font-medium text-sm transition-colors duration-200 border-b-2 ${activeTab === 'history'
+                  ? "border-indigo-600 text-indigo-700 bg-indigo-50 bg-opacity-30"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }`}
+            >
+              <CheckCircle size={16} className="inline-block mr-2" />
+              History ({historyData.length})
+            </button>
+          </nav>
+        </div>
+      </div>
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="p-6">
           <div className="overflow-x-auto">
@@ -451,12 +243,14 @@ const AfterLeavingWork = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Of Leaving</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Designation</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason Of Leaving</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Planned Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Delay</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white">
                 {tableLoading ? (
                   <tr>
-                    <td colSpan="7" className="px-6 py-12 text-center">
+                    <td colSpan="9" className="px-6 py-12 text-center">
                       <div className="flex justify-center flex-col items-center">
                         <div className="w-6 h-6 border-4 border-indigo-500 border-dashed rounded-full animate-spin mb-2"></div>
                         <span className="text-gray-600 text-sm">Loading pending calls...</span>
@@ -465,9 +259,9 @@ const AfterLeavingWork = () => {
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan="7" className="px-6 py-12 text-center">
+                    <td colSpan="9" className="px-6 py-12 text-center">
                       <p className="text-red-500">Error: {error}</p>
-                      <button 
+                      <button
                         onClick={fetchLeavingData}
                         className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
                       >
@@ -475,33 +269,47 @@ const AfterLeavingWork = () => {
                       </button>
                     </td>
                   </tr>
-                ) : filteredPendingData.length > 0 ? (
-                  filteredPendingData.map((item, index) => (
-                    <tr key={index} className="hover:bg-white">
+                ) : filteredItems.length > 0 ? (
+                  filteredItems.map((item, index) => (
+                    <tr key={index} className="hover:bg-white text-gray-600">
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <button
-                          onClick={() => handleAfterLeavingClick(item)}
-                          className="px-3 py-1 text-white bg-indigo-700 rounded-md text-sm"
-                        >
-                          Process
-                        </button>
+                        {activeTab === 'pending' ? (
+                          <button
+                            onClick={() => handleAfterLeavingClick(item)}
+                            className="px-3 py-1 text-white bg-indigo-700 rounded-md text-sm"
+                          >
+                            Process
+                          </button>
+                        ) : (
+                          <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                            Completed
+                          </span>
+                        )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeId}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.name}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">{item.employeeId}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {item.dateOfJoining ? new Date(item.dateOfJoining).toLocaleDateString() : '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {item.dateOfLeaving ? new Date(item.dateOfLeaving).toLocaleDateString() : '-'}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.designation}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.reasonOfLeaving}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">{item.designation}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">{item.reasonOfLeaving}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {item.planned ? formatDOB(item.planned) : '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <span className={item.delay && !item.delay.startsWith('-') && item.delay !== "00:00:00" ? "text-red-500 font-medium" : "text-green-600"}>
+                          {item.delay || '00:00:00'}
+                        </span>
+                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="7" className="px-6 py-12 text-center">
-                      <p className="text-gray-500">No pending after leaving work found.</p>
+                    <td colSpan="9" className="px-6 py-12 text-center">
+                      <p className="text-gray-500">No {activeTab} after leaving work found.</p>
                     </td>
                   </tr>
                 )}
@@ -509,6 +317,82 @@ const AfterLeavingWork = () => {
             </table>
           </div>
         </div>
+
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6 px-4 py-3 bg-white border-t border-gray-200 sm:px-6">
+            <div className="flex flex-1 justify-between sm:hidden">
+              <button
+                onClick={() => handlePageChange(pagination.page - 1)}
+                disabled={pagination.page === 1}
+                className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => handlePageChange(pagination.page + 1)}
+                disabled={pagination.page === pagination.totalPages}
+                className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+            <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-gray-700">
+                  Showing <span className="font-medium">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="font-medium">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of{' '}
+                  <span className="font-medium">{pagination.total}</span> results
+                </p>
+              </div>
+              <div>
+                <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                  <button
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    disabled={pagination.page === 1}
+                    className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Previous</span>
+                    <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                  </button>
+
+                  {[...Array(Math.min(5, pagination.totalPages))].map((_, i) => {
+                    let pageNum;
+                    if (pagination.totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (pagination.page <= 3) {
+                      pageNum = i + 1;
+                    } else if (pagination.page >= pagination.totalPages - 2) {
+                      pageNum = pagination.totalPages - 4 + i;
+                    } else {
+                      pageNum = pagination.page - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => handlePageChange(pageNum)}
+                        className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${pagination.page === pageNum
+                          ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
+                          : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'
+                          }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    disabled={pagination.page === pagination.totalPages}
+                    className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Next</span>
+                    <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                </nav>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal */}
@@ -545,7 +429,7 @@ const AfterLeavingWork = () => {
 
               <div className="space-y-3">
                 <h4 className="text-md font-medium text-gray-700">Checklist Items</h4>
-                
+
                 {[
                   { key: 'resignationLetterReceived', label: 'Resignation Letter Received' },
                   { key: 'resignationAcceptance', label: 'Resignation Acceptance' },
@@ -592,17 +476,16 @@ const AfterLeavingWork = () => {
                 </button>
                 <button
                   type="submit"
-                  className={`px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 min-h-[42px] flex items-center justify-center ${
-                    submitting ? 'opacity-75 cursor-not-allowed' : ''
-                  }`}
+                  className={`px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 min-h-[42px] flex items-center justify-center ${submitting ? 'opacity-75 cursor-not-allowed' : ''
+                    }`}
                   disabled={submitting}
                 >
                   {submitting ? (
                     <div className="flex items-center">
-                      <svg 
-                        className="animate-spin h-4 w-4 text-white mr-2" 
-                        xmlns="http://www.w3.org/2000/svg" 
-                        fill="none" 
+                      <svg
+                        className="animate-spin h-4 w-4 text-white mr-2"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
                         viewBox="0 0 24 24"
                       >
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Filter, Search, Clock, CheckCircle, X } from 'lucide-react';
+import { Filter, Search, Clock, CheckCircle, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import useDataStore from '../store/dataStore';
 import toast from 'react-hot-toast';
 
@@ -14,6 +14,12 @@ const Leaving = () => {
   const [tableLoading, setTableLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0
+  });
   const [formData, setFormData] = useState({
     dateOfLeaving: '',
     mobileNumber: '',
@@ -21,66 +27,41 @@ const Leaving = () => {
   });
 
   // Fetch joining data
-  const fetchJoiningData = async () => {
+  const fetchJoiningData = async (page = 1) => {
     setLoading(true);
     setTableLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(
-        'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=JOINING&action=fetch'
-      );
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/employees/active?page=${page}&limit=${pagination.limit}`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch data from JOINING sheet');
-      }
-      
-      const rawData = result.data || result;
-      
-      if (!Array.isArray(rawData)) {
-        throw new Error('Expected array data not received');
-      }
+      if (!result.success) throw new Error(result.message);
 
-      const headers = rawData[5];
-      const dataRows = rawData.length > 6 ? rawData.slice(6) : [];
-      
-      const getIndex = (headerName) => {
-        const index = headers.findIndex(h => 
-          h && h.toString().trim().toLowerCase() === headerName.toLowerCase()
-        );
-        return index;
-      };
-
-      const processedData = dataRows.map(row => ({
-        employeeNo: row[getIndex('Employee ID')] || '',
-        candidateName: row[getIndex('Name As Per Aadhar')] || '',
-        fatherName: row[getIndex('Father Name')] || '',
-        dateOfJoining: row[getIndex('Date Of Joining')] || '',
-        designation: row[getIndex('Designation')] || '',
-        salary: row[getIndex('Salary')] || '',
-        mobileNo: row[getIndex('Mobile No.')] || '',
-        firmName: row[getIndex('Joining Company Name')] || '', 
-        workingPlace: row[getIndex('Joining Place')] || '',
-        plannedDate: row[getIndex('Planned Date')] || '',
-        actual: row[getIndex('Actual')] || '',
+      const processedData = result.data.map(item => ({
+        id: item.id,
+        employeeNo: item.employee_id,
+        candidateName: item.name_as_per_aadhar,
+        fatherName: item.father_name,
+        dateOfJoining: item.date_of_joining,
+        designation: item.designation,
+        salary: item.salary,
+        mobileNo: item.mobile_no,
+        firmName: item.joining_company_name,
+        workingPlace: item.joining_place,
+        candidate_enquiry_no: item.candidate_enquiry_no
       }));
 
-      // Filter for completed joining tasks
-      const completedTasks = processedData.filter(
-        (task) => task.plannedDate && task.actual
-      );
-      
-      setPendingData(completedTasks);
+      setPendingData(processedData);
+      setPagination(result.pagination || {
+        page: 1,
+        limit: 10,
+        total: result.data.length,
+        totalPages: 1
+      });
     } catch (error) {
       console.error('Error fetching joining data:', error);
       setError(error.message);
-      toast.error(`Failed to load joining data: ${error.message}`);
     } finally {
       setLoading(false);
       setTableLoading(false);
@@ -88,88 +69,72 @@ const Leaving = () => {
   };
 
   // Fetch leaving data
-  const fetchLeavingData = async () => {
+  const fetchLeavingData = async (page = 1) => {
     setLoading(true);
     setTableLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(
-        'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=LEAVING&action=fetch'
-      );
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/employees/left?page=${page}&limit=${pagination.limit}`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch data from LEAVING sheet');
-      }
-      
-      const rawData = result.data || result;
-      
-      if (!Array.isArray(rawData)) {
-        throw new Error('Expected array data not received');
-      }
+      if (!result.success) throw new Error(result.message);
 
-      // Process data starting from row 7 (index 6) - skip headers
-      const dataRows = rawData.length > 6 ? rawData.slice(6) : [];
-      
-      const processedData = dataRows.map(row => ({
-        timestamp: row[0] || '',
-        employeeId: row[1] || '',
-        name: row[2] || '',
-        dateOfLeaving: row[3] || '',
-        mobileNo: row[4] || '',
-        reasonOfLeaving: row[5] || '',
-        firmName: row[6] || '',
-        fatherName: row[7] || '', 
-        dateOfJoining: row[8] || '', 
-        workingLocation: row[9] || '', 
-        designation: row[10] || '', 
-        salary: row[11] || '', 
-        plannedDate: row[12] || '', 
-        actual: row[13] || '', 
+      const processedData = result.data.map(item => ({
+        employeeId: item.joining?.employee_id,
+        name: item.joining?.name_as_per_aadhar,
+        dateOfJoining: item.joining?.date_of_joining,
+        dateOfLeaving: item.date_of_leaving,
+        designation: item.joining?.designation,
+        reasonOfLeaving: item.reason_for_leaving,
+        planned: item.planned,
+        delay: item.delay
       }));
 
-      const historyTasks = processedData;
-      setHistoryData(historyTasks);
+      setHistoryData(processedData);
+      setPagination(result.pagination || {
+        page: 1,
+        limit: 10,
+        total: result.data.length,
+        totalPages: 1
+      });
     } catch (error) {
       console.error('Error fetching leaving data:', error);
       setError(error.message);
-      toast.error(`Failed to load leaving data: ${error.message}`);
     } finally {
       setLoading(false);
       setTableLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchJoiningData();
-    fetchLeavingData();
-  }, []);
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+      if (activeTab === 'pending') {
+        fetchJoiningData(newPage);
+      } else {
+        fetchLeavingData(newPage);
+      }
+    }
+  };
 
-  // Filter out employees who already have leaving records
-  const filteredPendingData = pendingData
-    .filter(item => {
-      // Remove items that exist in history
-      const isInHistory = historyData.some(historyItem => 
-        historyItem.employeeId === item.employeeNo
-      );
-      return !isInHistory;
-    })
-    .filter(item => {
+  useEffect(() => {
+    if (activeTab === 'pending') {
+      fetchJoiningData(1);
+    } else {
+      fetchLeavingData(1);
+    }
+  }, [activeTab]);
+
+  const filteredPendingData = pendingData.filter(item => {
       // Apply search filter
       const matchesSearch = item.candidateName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           item.employeeNo?.toLowerCase().includes(searchTerm.toLowerCase());
+                           item.employeeNo?.toString().toLowerCase().includes(searchTerm.toLowerCase());
       return matchesSearch;
     });
 
   const filteredHistoryData = historyData.filter(item => {
     const matchesSearch = item.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
+                         item.employeeId?.toString().toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
 
@@ -207,7 +172,7 @@ const Leaving = () => {
     return `${day}/${month}/${year}`;
   };
 
-  const handleSubmit = async(e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.dateOfLeaving || !formData.reasonOfLeaving) {
       toast.error('Please fill all required fields');
@@ -216,31 +181,29 @@ const Leaving = () => {
 
     try {
       setSubmitting(true);
-      const now = new Date();
-      const formattedTimestamp = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()} `;
+      
+      const payload = {
+        joining_id: selectedItem.id,
+        candidate_enquiry_no: selectedItem.candidate_enquiry_no,
+        date_of_leaving: formData.dateOfLeaving,
+        reason_for_leaving: formData.reasonOfLeaving,
+        mobile_no: formData.mobileNumber,
+        employee_id: selectedItem.employeeNo,
+        name: selectedItem.candidateName,
+        firm_name: selectedItem.firmName,
+        father_name: selectedItem.fatherName,
+        date_of_joining: selectedItem.dateOfJoining,
+        work_location: selectedItem.workingPlace,
+        designation: selectedItem.designation,
+        salary: selectedItem.salary
+      };
 
-      const rowData = [
-        formattedTimestamp,
-        selectedItem.employeeNo,
-        selectedItem.candidateName,
-        formatDOB(formData.dateOfLeaving),
-        formData.mobileNumber,
-        formData.reasonOfLeaving,
-        selectedItem.firmName,
-        selectedItem.fatherName,
-        formatDOB(selectedItem.dateOfJoining),
-        selectedItem.workingPlace,
-        selectedItem.designation,
-        selectedItem.salary,
-      ];
-
-      const response = await fetch('https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/leaving`, {
         method: 'POST',
-        body: new URLSearchParams({
-          sheetName: 'LEAVING',
-          action: 'insert',
-          rowData: JSON.stringify(rowData),
-        }),
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
       });
 
       const result = await response.json();
@@ -248,17 +211,16 @@ const Leaving = () => {
       if (result.success) {
         setFormData({
           dateOfLeaving: '',
+          mobileNumber: '',
           reasonOfLeaving: '',
         });
         setShowModal(false);
-        toast.success('Leaving request added successfully!');
+        toast.success('Leaving request recorded successfully!');
         setSelectedItem(null);
-        
-        // Refresh both datasets
-        await fetchJoiningData();
-        await fetchLeavingData();
+        fetchJoiningData(pagination.page);
+        fetchLeavingData(pagination.page);
       } else {
-        toast.error('Failed to insert: ' + (result.error || 'Unknown error'));
+        toast.error('Failed to record: ' + (result.message || 'Unknown error'));
       }
     } catch (error) {
       console.error('Insert error:', error);
@@ -270,9 +232,6 @@ const Leaving = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold ">Leaving</h1>
-      </div>
 
       {/* Filter and Search */}
       <div className="bg-white  p-4 rounded-lg shadow flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0 md:space-x-4">
@@ -398,6 +357,8 @@ const Leaving = () => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Of Leaving</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Designation</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason Of Leaving</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Planned Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Delay</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white  ">
@@ -434,6 +395,14 @@ const Leaving = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.designation}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.reasonOfLeaving}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {item.planned ? formatDOB(item.planned) : '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <span className={item.delay && !item.delay.startsWith('-') && item.delay !== "00:00:00" ? "text-red-500" : "text-green-500"}>
+                          {item.delay || '00:00:00'}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -446,6 +415,82 @@ const Leaving = () => {
             </div>
           )}
         </div>
+
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6 px-4 py-3 bg-white border-t border-gray-200 sm:px-6">
+            <div className="flex flex-1 justify-between sm:hidden">
+              <button
+                onClick={() => handlePageChange(pagination.page - 1)}
+                disabled={pagination.page === 1}
+                className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => handlePageChange(pagination.page + 1)}
+                disabled={pagination.page === pagination.totalPages}
+                className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+            <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-gray-700">
+                  Showing <span className="font-medium">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="font-medium">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of{' '}
+                  <span className="font-medium">{pagination.total}</span> results
+                </p>
+              </div>
+              <div>
+                <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                  <button
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    disabled={pagination.page === 1}
+                    className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Previous</span>
+                    <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                  </button>
+
+                  {[...Array(Math.min(5, pagination.totalPages))].map((_, i) => {
+                    let pageNum;
+                    if (pagination.totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (pagination.page <= 3) {
+                      pageNum = i + 1;
+                    } else if (pagination.page >= pagination.totalPages - 2) {
+                      pageNum = pagination.totalPages - 4 + i;
+                    } else {
+                      pageNum = pagination.page - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => handlePageChange(pageNum)}
+                        className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${pagination.page === pageNum
+                            ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
+                            : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'
+                          }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    disabled={pagination.page === pagination.totalPages}
+                    className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Next</span>
+                    <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                </nav>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal */}

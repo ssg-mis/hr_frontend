@@ -150,8 +150,7 @@ const totalOvertime = filteredSalary.reduce((sum, record) => {
 
   return (
     <div className="space-y-6 page-content p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">My Salary</h1>
+      <div className="flex items-center justify-end">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
           <select
@@ -251,7 +250,7 @@ const totalOvertime = filteredSalary.reduce((sum, record) => {
                     <td colSpan="7" className="px-6 py-12 text-center">
                       <p className="text-red-500">Error: {error}</p>
                       <button 
-                        onClick={fetchLeavingData}
+                        onClick={fetchSalaryData}
                         className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
                       >
                         Retry

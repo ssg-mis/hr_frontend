@@ -44,9 +44,6 @@ const SocialSite = () => {
 
   return (
     <div className="space-y-6 page-content p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">Social Site</h1>
-      </div>
 
       {/* Filter and Search */}
       <div className="bg-white p-4 rounded-lg shadow border flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0 md:space-x-4">

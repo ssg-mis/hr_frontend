@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { HistoryIcon, Plus, X } from 'lucide-react';
-import useDataStore from '../store/dataStore';
+import { Plus, X, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const Indent = () => {
-  const { addIndent } = useDataStore();
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({
     post: '',
@@ -13,226 +11,79 @@ const Indent = () => {
     numberOfPost: '',
     competitionDate: '',
     socialSite: '',
-    indentNumber: '',
-    timestamp: '',
+    experienceDetails: '',
   });
-   const [indentData, setIndentData] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [indentData, setIndentData] = useState([]);
   const [tableLoading, setTableLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  // const [lastIndentNumber, setLastIndentNumber] = useState(0);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0
+  });
+  const [selectedPlatforms, setSelectedPlatforms] = useState([]);
 
-// useEffect(() => {
-//   const loadData = async () => {
-//     const result = await fetchLastIndentNumber();
-//     console.log('Fetch result:', result); // Debug
-    
-//     if (result.success) {
-//       setLastIndentNumber(result.lastIndentNumber);
-//       toast.success(`Last indent: ${result.fullLastIndent || result.lastIndentNumber}`);
-//     } else {
-//       toast.error(result.error);
-//       // Fallback to starting from 1 if detection fails
-//       setLastIndentNumber(1);
-//     }
-//   };
-  
-//   loadData();
-// }, []);
+  const platforms = ['LinkedIn', 'Instagram', 'Facebook', 'WhatsApp'];
 
-  useEffect(() => {
-    const loadData = async () => {
-      setTableLoading(true);
-      const result = await fetchIndentDataFromRow7();
-      if (result.success) {
-        console.log('Data from row 7:', result.data);
-      } else {
-        console.error('Error:', result.error);
-      }
-      setTableLoading(false);
-    };
-    loadData();
-  }, []);
-
-const generateIndentNumber = async () => {
-  try {
-    const result = await fetchLastIndentNumber();
-    
-    if (result.success) {
-      const nextNumber = result.lastIndentNumber + 1;
-      return `REC-${String(nextNumber).padStart(2, '0')}`;
-    }
-    // Fallback if fetch fails
-    return 'REC-01';
-  } catch (error) {
-    console.error('Error generating indent number:', error);
-    return 'REC-01';
-  }
-};
-
-  const getCurrentTimestamp = () => {
-    const now = new Date();
-    const month = now.getMonth() + 1;
-    const day = now.getDate();
-    const year = now.getFullYear();
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-
-    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+  const handlePlatformChange = (platform) => {
+    setSelectedPlatforms(prev =>
+      prev.includes(platform)
+        ? prev.filter(p => p !== platform)
+        : [...prev, platform]
+    );
   };
 
-  const fetchIndentDataFromRow7 = async () => {
-  try {
-    const response = await fetch(
-      'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=INDENT&action=fetch'
-    );
-    
-    const result = await response.json();
-    
-    if (result.success && result.data && result.data.length >= 7) {
-      // Get data starting from row 7 (array index 6) to end
-      const dataFromRow7 = result.data.slice(6);
-      
-      // Find headers (assuming they're in row 6 - array index 5)
-      const headers = result.data[5].map(h => h.trim());
-      
-      // Find column indices for important fields
-      const timestampIndex = headers.indexOf('Timestamp');
-      const indentNumberIndex = headers.indexOf('Indent Number');
-      const postIndex = headers.indexOf('Post');
-      const genderIndex = headers.indexOf('Gender');
-       const preferIndex = headers.indexOf('Prefer');
-         const noOFPostIndex = headers.indexOf('Number Of Posts');
-         const completionDateIndex = headers.indexOf('Completion Date');
-         const socialSiteIndex = headers.indexOf('Social Site');
-      // Add other column indices as needed
-      
-      // Process the data
-      const processedData = dataFromRow7.map(row => ({
-        timestamp: row[timestampIndex],
-        indentNumber: row[indentNumberIndex],
-        post: row[postIndex],
-        gender: row[genderIndex],
-        prefer:row[preferIndex],
-        noOfPost:row[noOFPostIndex],
-        completionDate:row[completionDateIndex],
-        socialSite:row[socialSiteIndex],
-        // Add other fields as needed
-      }));
-      setIndentData(processedData)
-      return {
-        success: true,
-        data: processedData,
-        headers: headers
-      };
-    } else {
-      return {
-        success: false,
-        error: 'Not enough rows in sheet data'
-      };
-    }
-  } catch (error) {
-    console.error('Error fetching data:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-};
+  const API_URL = `${import.meta.env.VITE_API_URL}/indents`;
 
-const fetchLastIndentNumber = async () => {
-  try {
-    const response = await fetch(
-      'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=INDENT&action=fetch'
-    );
-    
-    const result = await response.json();
-    console.log('Full sheet data:', result); // Debugging
-    
-    if (result.success && result.data && result.data.length > 1) {
-      // Find the first row with actual headers (skip empty rows)
-      let headerRowIndex = 0;
-      while (headerRowIndex < result.data.length && 
-             result.data[headerRowIndex].every(cell => !cell || cell.trim() === '')) {
-        headerRowIndex++;
-      }
+  useEffect(() => {
+    fetchIndentData(1);
+  }, [searchTerm]);
+
+  const fetchIndentData = async (page = 1) => {
+    try {
+      setTableLoading(true);
+      const response = await fetch(`${API_URL}?page=${page}&limit=${pagination.limit}&search=${searchTerm}`);
+      const result = await response.json();
       
-      if (headerRowIndex >= result.data.length) {
-        throw new Error('No header row found in sheet');
-      }
-      
-      const headers = result.data[headerRowIndex].map(h => h ? h.trim().toLowerCase() : '');
-      console.log('Headers found:', headers);
-      
-      // Try to find the indent number column by common names
-      const possibleNames = ['indent number', 'indentnumber', 'indent_no', 'indentno', 'indent'];
-      let indentNumberIndex = -1;
-      
-      for (const name of possibleNames) {
-        indentNumberIndex = headers.indexOf(name);
-        if (indentNumberIndex !== -1) break;
-      }
-      
-      if (indentNumberIndex === -1) {
-        // If still not found, try to find by position (from your screenshot it's column B/index 1)
-        indentNumberIndex = 1;
-        console.warn('Using fallback column index 1 for indent number');
-      }
-      
-      // Find the last non-empty row with data
-      let lastDataRowIndex = result.data.length - 1;
-      while (lastDataRowIndex > headerRowIndex && 
-             (!result.data[lastDataRowIndex][indentNumberIndex] || 
-              result.data[lastDataRowIndex][indentNumberIndex].trim() === '')) {
-        lastDataRowIndex--;
-      }
-      
-      if (lastDataRowIndex <= headerRowIndex) {
-        return {
-          success: true,
-          lastIndentNumber: 0,
-          message: 'No data rows found'
-        };
-      }
-      
-      const lastIndentNumber = result.data[lastDataRowIndex][indentNumberIndex];
-      console.log('Last indent number found:', lastIndentNumber);
-      
-      // Extract numeric part from "REC-01" format
-      let numericValue = 0;
-      if (typeof lastIndentNumber === 'string') {
-        const match = lastIndentNumber.match(/\d+/);
-        numericValue = match ? parseInt(match[0]) : 0;
+      if (result.success) {
+        // Map Prisma properties to camelCase used in the table
+        const processedData = result.data.map(indent => ({
+          timestamp: indent.createdAt,
+          indentNumber: indent.indent_number,
+          post: indent.post,
+          gender: indent.gender,
+          prefer: indent.priority,
+          experienceDetails: indent.experience_details,
+          noOfPost: indent.number_of_posts,
+          completionDate: indent.completion_date,
+          socialSite: indent.social_site,
+          socialPlatforms: indent.social_platforms,
+        }));
+        setIndentData(processedData);
+        setPagination(result.pagination || {
+          page: 1,
+          limit: 10,
+          total: result.data.length,
+          totalPages: 1
+        });
       } else {
-        numericValue = parseInt(lastIndentNumber) || 0;
+        toast.error(result.error || 'Failed to fetch indents');
       }
-      
-      return {
-        success: true,
-        lastIndentNumber: numericValue,
-        fullLastIndent: lastIndentNumber
-      };
-    } else {
-      return {
-        success: true,
-        lastIndentNumber: 0,
-        message: 'Sheet is empty or has no data rows'
-      };
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      toast.error('Could not connect to the backend server');
+    } finally {
+      setTableLoading(false);
     }
-  } catch (error) {
-    console.error('Error in fetchLastIndentNumber:', error);
-    return {
-      success: false,
-      error: error.message,
-      lastIndentNumber: 0
-    };
-  }
-};
+  };
 
-
-
-
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.totalPages) {
+      fetchIndentData(newPage);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -242,7 +93,7 @@ const fetchLastIndentNumber = async () => {
     }));
   };
 
-const handleSubmit = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (
@@ -258,33 +109,24 @@ const handleSubmit = async (e) => {
 
     try {
       setSubmitting(true);
-      // Generate indent number and timestamp
-      const indentNumber = await generateIndentNumber();
-      const timestamp = getCurrentTimestamp();
 
-      // Format the competition date to MM/DD/YYYY for Google Sheets
-      const formattedDate = formatDateForSheet(formData.competitionDate);
-      console.log(indentNumber);
+      const requestData = {
+        post: formData.post,
+        gender: formData.gender,
+        priority: formData.prefer || 'Any',
+        number_of_posts: parseInt(formData.numberOfPost, 10),
+        competition_date: new Date(formData.competitionDate).toISOString(),
+        social_site: formData.socialSite,
+        social_platforms: formData.socialSite === 'Yes' ? selectedPlatforms.join(', ') : null,
+        experience_details: formData.prefer === 'Experience' ? formData.experienceDetails : null,
+      };
 
-      const rowData = [
-        timestamp,
-        indentNumber,
-        formData.post,
-        formData.gender,
-        formData.prefer,
-        formData.numberOfPost,
-        formattedDate,
-        formData.socialSite,
-        "NeedMore"
-      ];
-
-      const response = await fetch('https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec', {
+      const response = await fetch(API_URL, {
         method: 'POST',
-        body: new URLSearchParams({
-          sheetName: 'INDENT',
-          action: 'insert',
-          rowData: JSON.stringify(rowData),
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
       });
 
       const result = await response.json();
@@ -298,33 +140,20 @@ const handleSubmit = async (e) => {
           numberOfPost: '',
           competitionDate: '',
           socialSite: '',
-          indentNumber: '',
-          timestamp: '',
+          experienceDetails: '',
         });
+        setSelectedPlatforms([]);
         setShowModal(false);
-        // Refresh the table data
-        setTableLoading(true);
-        await fetchIndentDataFromRow7();
-        setTableLoading(false);
+        fetchIndentData(pagination.page);
       } else {
-        toast.error('Failed to insert: ' + (result.error || 'Unknown error'));
+        toast.error('Failed to submit: ' + (result.error || 'Unknown error'));
       }
     } catch (error) {
-      console.error('Insert error:', error);
-      toast.error('Something went wrong!');
+      console.error('Submit error:', error);
+      toast.error('Something went wrong! Is the backend running?');
     } finally {
       setSubmitting(false);
     }
-  };
-
-  // Helper function to format date for Google Sheets
-  const formatDateForSheet = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    const year = date.getFullYear();
-    return `${month}/${day}/${year}`;
   };
 
   const handleCancel = () => {
@@ -335,49 +164,26 @@ const handleSubmit = async (e) => {
       numberOfPost: '',
       competitionDate: '',
       socialSite: '',
-      indentNumber: '',
-      timestamp: '',
+      experienceDetails: '',
     });
+    setSelectedPlatforms([]);
     setShowModal(false);
   };
 
   return (
-    <div className="space-y-6 page-content p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">Indent</h1>
-        <button 
-          onClick={() => setShowModal(true)}
-          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-all duration-200"
-          disabled={loading}
-        >
-          {loading ? (
-            <>
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Loading...
-            </>
-          ) : (
-            <>
-              <Plus size={16} className="mr-2" />
-              Create Indent
-            </>
-          )}
-        </button>
-      </div>
-
+    <>
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 modal-backdrop">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-white/20 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300">
             <div className="flex justify-between items-center p-6 border-b border-gray-200">
               <h3 className="text-lg font-medium text-gray-800">Create New Indent</h3>
               <button onClick={handleCancel} className="text-gray-500 hover:text-gray-700">
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="flex flex-col overflow-hidden">
+              <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Post *</label>
                 <input
@@ -407,6 +213,7 @@ const handleSubmit = async (e) => {
                 </select>
               </div>
 
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Prefer</label>
                 <select
@@ -414,13 +221,27 @@ const handleSubmit = async (e) => {
                   value={formData.prefer}
                   onChange={handleInputChange}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
                 >
                   <option value="">Any</option>
                   <option value="Experience">Experience</option>
-                  <option value="Male">Fresher</option>
+                  <option value="Fresher">Fresher</option>
                 </select>
               </div>
+
+                  {formData.prefer === 'Experience' && (
+                    <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Experience Details *</label>
+                      <input
+                        type="text"
+                        name="experienceDetails"
+                        value={formData.experienceDetails}
+                        onChange={handleInputChange}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        placeholder="eg. 2 Years"
+                        required
+                      />
+                    </div>
+                  )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number Of Post *</label>
@@ -447,45 +268,59 @@ const handleSubmit = async (e) => {
                   required
                 />
               </div>
- <div> 
-  <label className="block text-sm font-medium text-gray-700 mb-1">Social Site *</label>
-  <select 
-    name="socialSite"
-    value={formData.socialSite}
-    onChange={handleInputChange}
-    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-    required
-  >
-    <option value="">Select</option>
-    <option value="Yes">Yes</option>
-    <option value="No">No</option>
-  </select>
-</div>
+              
+              <div> 
+                <label className="block text-sm font-medium text-gray-700 mb-1">Social Site *</label>
+                <select 
+                  name="socialSite"
+                  value={formData.socialSite}
+                  onChange={handleInputChange}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  required
+                >
+                  <option value="">Select</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+              </div>
 
+              {formData.socialSite === 'Yes' && (
+                <div className="space-y-2 p-3 border border-gray-200 rounded-md bg-gray-50">
+                  <p className="text-xs font-medium text-gray-500 uppercase mb-2">Select Platforms</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {platforms.map(platform => (
+                      <label key={platform} className="flex items-center space-x-2 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={selectedPlatforms.includes(platform)}
+                          onChange={() => handlePlatformChange(platform)}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer"
+                        />
+                        <span className="text-sm text-gray-700 group-hover:text-indigo-600 transition-colors">
+                          {platform}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              </div>
 
-               <div className="flex justify-end space-x-2 pt-4">
+              <div className="flex justify-end space-x-3 p-6 border-t border-gray-100 bg-gray-50/50 rounded-b-2xl">
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-all duration-200"
+                  className="px-5 py-2.5 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-all duration-200"
                   disabled={submitting}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-all duration-200 flex items-center justify-center"
+                  className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-all duration-200 shadow-lg shadow-indigo-200 flex items-center justify-center"
                   disabled={submitting}
                 >
-                  {submitting ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Processing...
-                    </>
-                  ) : 'Submit'}
+                  {submitting ? 'Processing...' : 'Create Indent'}
                 </button>
               </div>
             </form>
@@ -493,95 +328,166 @@ const handleSubmit = async (e) => {
         </div>
       )}
 
-      {/* Info Card */}
-      <div className="bg-white rounded-xl shadow-lg border p-6">
-        <h2 className="text-lg font-bold text-gray-800 mb-4">Indent Management</h2>
-        <p className="text-gray-600">
-          Create new indents for job positions. Once created, indents will be available in the Social Site section for further processing.
-        </p>
-      </div>
+      <div className="space-y-6 page-content p-6">
+        <div className="flex items-center justify-end">
+          <button 
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-all duration-200"
+          >
+            <Plus size={16} className="mr-2" />
+            Create Indent
+          </button>
+        </div>
 
-      <div className="bg-white shadow-lg rounded-lg overflow-hidden">
-  <div className="overflow-x-auto">
-    {/* Add max-height and overflow-y to the table container */}
-    <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
-      <table className="min-w-full divide-y divide-gray-200 shadow">
-        <thead className="bg-gray-50 sticky top-0 z-10">
-          <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indent Number</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Post</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gender</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prefer</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No. of Post</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Completion Date</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Social Site</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-200 bg-white">
-          {tableLoading ? (
-            <tr>
-              <td colSpan="7" className="px-6 py-12 text-center">
-                <div className="flex justify-center flex-col items-center">
-                  <div className="w-6 h-6 border-4 border-blue-500 border-dashed rounded-full animate-spin mb-2"></div>
-                  <span className="text-gray-600 text-sm">Loading indent data...</span>
+
+        {/* Search Filter Container */}
+        <div className="bg-white rounded-xl shadow-md border p-6 mb-6">
+          <div className="relative max-w-md">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-5 w-5 text-gray-400" />
+            </div>
+            <input
+              type="text"
+              placeholder="Search by indent number, post, or priority..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-all duration-200"
+            />
+          </div>
+        </div>
+
+        <div className="bg-white shadow-lg rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+              <table className="min-w-full divide-y divide-gray-200 shadow">
+                <thead className="bg-gray-50 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indent Number</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Post</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gender</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prefer</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Experience Details</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No. of Post</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Completion Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Social Site</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {tableLoading ? (
+                    <tr>
+                      <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                        Loading data...
+                      </td>
+                    </tr>
+                  ) : indentData.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                        No indent data found.
+                      </td>
+                    </tr>
+                  ) : (
+                    indentData.map((item, index) => (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap font-medium text-indigo-600">
+                          {item.indentNumber}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.post}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.gender}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.prefer}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.experienceDetails}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.noOfPost}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {item.completionDate ? new Date(item.completionDate).toLocaleDateString() : "—"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {item.socialPlatforms || "No"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {pagination && pagination.totalPages > 1 && (
+            <div className="flex items-center justify-between mt-6 px-4 py-3 bg-white border-t border-gray-200 sm:px-6">
+              <div className="flex flex-1 justify-between sm:hidden">
+                <button
+                  onClick={() => handlePageChange(pagination.page - 1)}
+                  disabled={pagination.page === 1}
+                  className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => handlePageChange(pagination.page + 1)}
+                  disabled={pagination.page === pagination.totalPages}
+                  className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+              <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm text-gray-700">
+                    Showing <span className="font-medium">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="font-medium">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of{' '}
+                    <span className="font-medium">{pagination.total}</span> results
+                  </p>
                 </div>
-              </td>
-            </tr>
-          ) : indentData.length === 0 ? (
-            <tr>
-              <td colSpan="7" className="px-6 py-12 text-center">
-                <p className="text-gray-500">No indent data found.</p>
-              </td>
-            </tr>
-          ) : (
-            indentData.map((item, index) => (
-              <tr key={index} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {item.indentNumber}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.post}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.gender}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {item.prefer}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {item.noOfPost}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <div className="text-sm text-gray-900 break-words">
-                    {item.completionDate ? (() => {
-                      const date = new Date(item.completionDate);
-                      if (!date || isNaN(date.getTime())) return "Invalid date";
-                      const day = date.getDate().toString().padStart(2, '0');
-                      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-                      const year = date.getFullYear();
-                      const hours = date.getHours().toString().padStart(2, '0');
-                      const minutes = date.getMinutes().toString().padStart(2, '0');
-                      const seconds = date.getSeconds().toString().padStart(2, '0');
-                      return (
-                        <div>
-                          <div className="font-medium break-words">
-                            {`${day}/${month}/${year}`}
-                          </div>
-                          <div className="text-xs text-gray-500 break-words">
-                            {`${hours}:${minutes}:${seconds}`}
-                          </div>
-                        </div>
-                      );
-                    })() : "—"}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.socialSite}</td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
+                <div>
+                  <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                    <button
+                      onClick={() => handlePageChange(pagination.page - 1)}
+                      disabled={pagination.page === 1}
+                      className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Previous</span>
+                      <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                    </button>
 
-    </div>
+                    {[...Array(Math.min(5, pagination.totalPages))].map((_, i) => {
+                      let pageNum;
+                      if (pagination.totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (pagination.page <= 3) {
+                        pageNum = i + 1;
+                      } else if (pagination.page >= pagination.totalPages - 2) {
+                        pageNum = pagination.totalPages - 4 + i;
+                      } else {
+                        pageNum = pagination.page - 2 + i;
+                      }
+
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => handlePageChange(pageNum)}
+                          className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${pagination.page === pageNum
+                              ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
+                              : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'
+                            }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      onClick={() => handlePageChange(pagination.page + 1)}
+                      disabled={pagination.page === pagination.totalPages}
+                      className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                    >
+                      <span className="sr-only">Next</span>
+                      <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                    </button>
+                  </nav>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 };
 
