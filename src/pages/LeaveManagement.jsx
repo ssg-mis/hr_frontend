@@ -299,7 +299,7 @@ const LeaveManagement = () => {
 
     try {
       const statusParam = activeTab === 'pending' ? 'Pending' : activeTab === 'approved' ? 'Approved' : 'Rejected';
-      const response = await fetch(`${API_URL}/leaves?status=${statusParam}&page=${page}&limit=${pagination.limit}`);
+      const response = await fetch(`${API_URL}/leaves?status=${statusParam}&page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
       const result = await response.json();
 
       if (!result.success) {
@@ -360,23 +360,19 @@ const LeaveManagement = () => {
     return isNaN(date.getTime()) ? dateString : date.toLocaleDateString();
   };
 
-  const filteredPendingLeaves = pendingLeaves.filter(item => {
-    const matchesSearch = item.employeeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      fetchLeaveData(1);
+    }, 500);
 
-  const filteredApprovedLeaves = approvedLeaves.filter(item => {
-    const matchesSearch = item.employeeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
 
-  const filteredRejectedLeaves = rejectedLeaves.filter(item => {
-    const matchesSearch = item.employeeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
+  const filteredPendingLeaves = pendingLeaves;
+
+  const filteredApprovedLeaves = approvedLeaves;
+
+  const filteredRejectedLeaves = rejectedLeaves;
 
   const renderPendingLeavesTable = () => (
     <table className="min-w-full divide-y divide-white">

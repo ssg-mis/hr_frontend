@@ -270,32 +270,34 @@ const Settings = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
-                  <User size={14} className="mr-1" /> Select Employee (Optional)
-                </label>
-                <select
-                  name="employee_id"
-                  value={currentUser.employee_id || ''}
-                  onChange={(e) => {
-                    const empId = e.target.value;
-                    const employee = employees.find(emp => emp.employee_id.toString() === empId);
-                    setCurrentUser(prev => ({
-                      ...prev,
-                      employee_id: empId,
-                      name: employee ? employee.name_as_per_aadhar : prev.name
-                    }));
-                  }}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                >
-                  <option value="">-- Select Employee --</option>
-                  {employees.map(emp => (
-                    <option key={emp.employee_id} value={emp.employee_id}>
-                      {emp.name_as_per_aadhar} ({emp.employee_id})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {!isEditing && (
+                <div>
+                  <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+                    <User size={14} className="mr-1" /> Select Employee (Optional)
+                  </label>
+                  <select
+                    name="employee_id"
+                    value={currentUser.employee_id || ''}
+                    onChange={(e) => {
+                      const empId = e.target.value;
+                      const employee = employees.find(emp => emp.employee_id.toString() === empId);
+                      setCurrentUser(prev => ({
+                        ...prev,
+                        employee_id: empId,
+                        name: employee ? employee.name_as_per_aadhar : prev.name
+                      }));
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                  >
+                    <option value="">-- Select Employee --</option>
+                    {employees.map(emp => (
+                      <option key={emp.employee_id} value={emp.employee_id}>
+                        {emp.name_as_per_aadhar} ({emp.employee_id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="flex items-center text-sm font-medium text-gray-700 mb-1">

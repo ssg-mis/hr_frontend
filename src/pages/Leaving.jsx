@@ -33,7 +33,7 @@ const Leaving = () => {
     setError(null);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/employees/active?page=${page}&limit=${pagination.limit}`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/employees/active?page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const result = await response.json();
       if (!result.success) throw new Error(result.message);
@@ -75,7 +75,7 @@ const Leaving = () => {
     setError(null);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/employees/left?page=${page}&limit=${pagination.limit}`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/employees/left?page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const result = await response.json();
       if (!result.success) throw new Error(result.message);
@@ -125,18 +125,21 @@ const Leaving = () => {
     }
   }, [activeTab]);
 
-  const filteredPendingData = pendingData.filter(item => {
-      // Apply search filter
-      const matchesSearch = item.candidateName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           item.employeeNo?.toString().toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesSearch;
-    });
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (activeTab === 'pending') {
+        fetchJoiningData(1);
+      } else {
+        fetchLeavingData(1);
+      }
+    }, 500);
 
-  const filteredHistoryData = historyData.filter(item => {
-    const matchesSearch = item.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.employeeId?.toString().toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
+
+  const filteredPendingData = pendingData;
+
+  const filteredHistoryData = historyData;
 
   // Rest of your component remains the same...
   const handleLeavingClick = (item) => {
@@ -148,6 +151,7 @@ const Leaving = () => {
     });
     setShowModal(true);
   };
+
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -309,7 +313,7 @@ const Leaving = () => {
               <td colSpan="7" className="px-6 py-12 text-center">
                 <p className="text-red-500">Error: {error}</p>
                 <button 
-                  onClick={fetchEnquiryData}
+                  onClick={() => fetchJoiningData(1)}
                   className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
                 >
                   Retry
@@ -376,7 +380,7 @@ const Leaving = () => {
               <td colSpan="7" className="px-6 py-12 text-center">
                 <p className="text-red-500">Error: {error}</p>
                 <button 
-                  onClick={fetchEnquiryData}
+                  onClick={() => fetchLeavingData(1)}
                   className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
                 >
                   Retry

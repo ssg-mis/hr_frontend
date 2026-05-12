@@ -29,7 +29,7 @@ const useDataStore = create(
         findEnquiryData: [...state.findEnquiryData, { 
           ...data, 
           id: Date.now(),
-          candidateEnquiryNo: `EN-${String(state.findEnquiryData.length + 1).padStart(3, '0')}`,
+          candidateEnquiryNo: `CEN-${String(state.findEnquiryData.length + 1).padStart(3, '0')}`,
           createdAt: new Date().toISOString() 
         }]
       })),

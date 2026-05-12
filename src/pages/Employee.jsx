@@ -39,7 +39,7 @@ const Employee = () => {
     setError(null);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/employees/active?page=${page}&limit=${pagination.limit}`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/employees/active?page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const result = await response.json();
       if (!result.success) throw new Error(result.message);
@@ -75,7 +75,7 @@ const Employee = () => {
     setError(null);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/employees/left?page=${page}&limit=${pagination.limit}`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/employees/left?page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const result = await response.json();
       if (!result.success) throw new Error(result.message);
@@ -123,19 +123,21 @@ const Employee = () => {
     }
   }, [activeTab]);
 
-  const filteredJoiningData = joiningData.filter(item => {
-    const matchesSearch = item.candidateName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.designation?.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (activeTab === 'joining') {
+        fetchJoiningData(1);
+      } else {
+        fetchLeavingData(1);
+      }
+    }, 500);
 
-  const filteredLeavingData = leavingData.filter(item => {
-    const matchesSearch = item.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.employeeId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.designation?.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
+
+  const filteredJoiningData = joiningData;
+
+  const filteredLeavingData = leavingData;
 
   return (
     <div className="space-y-6">

@@ -948,8 +948,8 @@ const postToSheet = async (rowData) => {
               )}
             </div>
             <div>
-              <span className="text-gray-500 text-[11px] block">Last Note</span>
-              <p className="text-gray-700 text-sm italic">"{latestFollowUp.candidate_says}"</p>
+              <span className="text-gray-500 text-[11px] block font-bold">Last Note</span>
+              <p className="text-gray-700 text-sm">{latestFollowUp.candidate_says}</p>
             </div>
           </div>
         )}

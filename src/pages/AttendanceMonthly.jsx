@@ -35,7 +35,7 @@ const AttendanceMonthly = () => {
     setError(null);
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/attendance/monthly?month=${selectedMonth}&year=${selectedYear}&department=${selectedDepartment}`
+        `${import.meta.env.VITE_API_URL}/attendance/monthly?month=${selectedMonth}&year=${selectedYear}&department=${selectedDepartment}&search=${encodeURIComponent(searchTerm)}`
       );
       if (!response.ok) throw new Error('Failed to fetch monthly attendance');
       const result = await response.json();
@@ -55,13 +55,14 @@ const AttendanceMonthly = () => {
   };
 
   useEffect(() => {
-    fetchMonthlyData();
-  }, [selectedMonth, selectedYear, selectedDepartment]);
+    const delayDebounceFn = setTimeout(() => {
+      fetchMonthlyData();
+    }, 500);
 
-  const filteredData = attendanceData.filter(item =>
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.emp_code.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+    return () => clearTimeout(delayDebounceFn);
+  }, [selectedMonth, selectedYear, selectedDepartment, searchTerm]);
+
+  const filteredData = attendanceData;
 
   const downloadExcel = () => {
     const dataToExport = filteredData.map(item => ({

@@ -281,6 +281,7 @@ const Attendance = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee ID</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Shift Code</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Punch In</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Punch Out</th>
                 </tr>
@@ -321,6 +322,7 @@ const Attendance = () => {
                           item.department
                         }
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.shift_code || '-'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {renderPunchTime(item.punch_in)}
                       </td>

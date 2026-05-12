@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Eye, Plus, X, Upload, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Clock, CheckCircle, Mail, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const Joining = () => {
@@ -9,6 +9,8 @@ const Joining = () => {
   const [data, setData] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedJoining, setSelectedJoining] = useState(null);
+  const [sendingOfferLetters, setSendingOfferLetters] = useState({});
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
@@ -19,6 +21,7 @@ const Joining = () => {
   const [communities, setCommunities] = useState([]);
   const [sites, setSites] = useState([]);
   const [bloodGroups, setBloodGroups] = useState([]);
+  const [designations, setDesignations] = useState([]);
   
   // Joining Form Modal States
   const [showJoiningModal, setShowJoiningModal] = useState(false);
@@ -81,6 +84,7 @@ const Joining = () => {
     fetchCommunities();
     fetchSites();
     fetchBloodGroups();
+    fetchDesignations();
   }, []);
 
   const fetchBloodGroups = async () => {
@@ -90,6 +94,16 @@ const Joining = () => {
       if (result.success) setBloodGroups(result.data);
     } catch (error) {
       console.error('Error fetching blood groups:', error);
+    }
+  };
+
+  const fetchDesignations = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/master/designations`);
+      const result = await response.json();
+      if (result.success) setDesignations(result.data);
+    } catch (error) {
+      console.error('Error fetching designations:', error);
     }
   };
 
@@ -126,7 +140,7 @@ const Joining = () => {
   const fetchPendingData = async (page = 1) => {
     setLoading(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/followups?status=Joining&page=${page}&limit=${pagination.limit}`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/followups?status=Joining&page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
       const result = await response.json();
       if (result.success) {
         setData(result.data);
@@ -147,7 +161,7 @@ const Joining = () => {
   const fetchHistoryData = async (page = 1) => {
     setLoading(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/joining?page=${page}&limit=${pagination.limit}`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/joining?page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
       const result = await response.json();
       if (result.success) {
         setHistoryData(result.data);
@@ -217,6 +231,28 @@ const Joining = () => {
       }));
     }
     setShowJoiningModal(true);
+  };
+
+  const handleSendOfferLetter = async (item) => {
+    const candidateEnquiryNo = item.candidate_enquiry_no;
+    setSendingOfferLetters(prev => ({ ...prev, [candidateEnquiryNo]: true }));
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/joining/offer-letter`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateEnquiryNo })
+      });
+
+      const result = await response.json();
+      if (!result.success) throw new Error(result.message);
+
+      toast.success('Offer letter sent successfully!');
+    } catch (error) {
+      toast.error(`Error: ${error.message}`);
+    } finally {
+      setSendingOfferLetters(prev => ({ ...prev, [candidateEnquiryNo]: false }));
+    }
   };
 
   const handleCandidateSelect = (e) => {
@@ -378,17 +414,21 @@ const Joining = () => {
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
 
-  const filteredPendingData = data.filter(item => 
-    item.enquiry?.candidate_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.candidate_enquiry_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.indent_number?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (activeTab === "pending") {
+        fetchPendingData(1);
+      } else {
+        fetchHistoryData(1);
+      }
+    }, 500);
 
-  const filteredHistoryData = historyData.filter(item =>
-    item.name_as_per_aadhar?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.candidate_enquiry_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.employee_id?.toString().includes(searchTerm.toLowerCase())
-  );
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
+
+  const filteredPendingData = data;
+
+  const filteredHistoryData = historyData;
 
   return (
     <div className="space-y-6">
@@ -409,32 +449,34 @@ const Joining = () => {
       </div>
 
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="border-b border-gray-200">
+        <div className="border-b border-gray-300 border-opacity-20">
           <nav className="flex -mb-px">
             <button
               onClick={() => setActiveTab("pending")}
-              className={`py-4 px-6 font-medium text-sm transition-colors duration-200 border-b-2 ${
+              className={`py-4 px-6 font-medium text-sm border-b-2 ${
                 activeTab === "pending"
-                  ? "border-indigo-600 text-indigo-700 bg-indigo-50 bg-opacity-30"
+                  ? "border-indigo-500 text-indigo-600"
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
+              <Clock size={16} className="inline mr-2" />
               Pending ({filteredPendingData.length})
             </button>
             <button
               onClick={() => setActiveTab("history")}
-              className={`py-4 px-6 font-medium text-sm transition-colors duration-200 border-b-2 ${
+              className={`py-4 px-6 font-medium text-sm border-b-2 ${
                 activeTab === "history"
-                  ? "border-indigo-600 text-indigo-700 bg-indigo-50 bg-opacity-30"
+                  ? "border-indigo-500 text-indigo-600"
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
+              <CheckCircle size={16} className="inline mr-2" />
               History ({filteredHistoryData.length})
             </button>
           </nav>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="p-6 overflow-x-auto">
           {activeTab === "pending" ? (
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -449,24 +491,45 @@ const Joining = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
-                  <tr><td colSpan="6" className="px-6 py-4 text-center">Loading...</td></tr>
+                  <tr>
+                    <td colSpan="6" className="px-6 py-12 text-center">
+                      <div className="flex justify-center flex-col items-center">
+                        <div className="w-6 h-6 border-4 border-indigo-500 border-dashed rounded-full animate-spin mb-2"></div>
+                        <span className="text-gray-600 text-sm">Loading pending joining...</span>
+                      </div>
+                    </td>
+                  </tr>
                 ) : filteredPendingData.length === 0 ? (
-                  <tr><td colSpan="6" className="px-6 py-4 text-center">No pending joining status records found</td></tr>
+                  <tr>
+                    <td colSpan="6" className="px-6 py-12 text-center">
+                      <p className="text-gray-500">No pending joining status records found.</p>
+                    </td>
+                  </tr>
                 ) : (
                   filteredPendingData.map((item, index) => (
                     <tr key={index} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleOpenJoiningForm(item)}
-                          className="bg-indigo-700 text-white px-3 py-1 rounded hover:bg-indigo-800 transition-colors text-xs"
+                          className="px-3 py-1 text-white bg-indigo-700 rounded-md hover:bg-opacity-90 text-sm"
                         >
                           Joining
                         </button>
+                        <button
+                          onClick={() => handleSendOfferLetter(item)}
+                          disabled={sendingOfferLetters[item.candidate_enquiry_no]}
+                          className="inline-flex items-center gap-1 px-3 py-1 text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md hover:bg-indigo-100 disabled:opacity-50 text-sm"
+                        >
+                          <Mail size={14} />
+                          {sendingOfferLetters[item.candidate_enquiry_no] ? 'Sending...' : 'Offer Letter'}
+                        </button>
+                        </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.enquiry?.candidate_name}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{item.candidate_enquiry_no}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{item.enquiry?.applying_for_post}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{item.indent_number}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.enquiry?.candidate_name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.candidate_enquiry_no}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.enquiry?.applying_for_post}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.indent_number}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                         <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">Ready to Join</span>
                       </td>
@@ -489,9 +552,20 @@ const Joining = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
-                  <tr><td colSpan="6" className="px-6 py-4 text-center">Loading...</td></tr>
+                  <tr>
+                    <td colSpan="6" className="px-6 py-12 text-center">
+                      <div className="flex justify-center flex-col items-center">
+                        <div className="w-6 h-6 border-4 border-indigo-500 border-dashed rounded-full animate-spin mb-2"></div>
+                        <span className="text-gray-600 text-sm">Loading joining history...</span>
+                      </div>
+                    </td>
+                  </tr>
                 ) : filteredHistoryData.length === 0 ? (
-                  <tr><td colSpan="6" className="px-6 py-4 text-center">No joining history found</td></tr>
+                  <tr>
+                    <td colSpan="6" className="px-6 py-12 text-center">
+                      <p className="text-gray-500">No joining history found.</p>
+                    </td>
+                  </tr>
                 ) : (
                   filteredHistoryData.map((item, index) => (
                     <tr key={index} className="hover:bg-gray-50">
@@ -503,10 +577,10 @@ const Joining = () => {
                           View Details
                         </button>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono font-bold">{item.employee_id}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.name_as_per_aadhar}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{item.designation}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{formatDOB(item.date_of_joining)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.employee_id}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.name_as_per_aadhar}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.designation}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDOB(item.date_of_joining)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                         <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-semibold uppercase tracking-wide">Joined</span>
                       </td>
@@ -696,10 +770,15 @@ const Joining = () => {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Designation *</label>
-                          <input type="text" name="designation" value={joiningFormData.designation} onChange={handleJoiningInputChange} className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700" />
+                          <select name="designation" value={joiningFormData.designation} onChange={handleJoiningInputChange} className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700">
+                            <option value="">Select Designation</option>
+                            {designations.map(desig => (
+                              <option key={desig.designation_code} value={desig.designation_code}>{desig.designation}</option>
+                            ))}
+                          </select>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Salary</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Salary (Per Month)</label>
                           <input type="number" name="salary" value={joiningFormData.salary} onChange={handleJoiningInputChange} className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700" />
                         </div>
                         <div>

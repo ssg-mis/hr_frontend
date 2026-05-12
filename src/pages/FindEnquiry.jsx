@@ -16,6 +16,9 @@ const FindEnquiry = () => {
   const [error, setError] = useState(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadingResume, setUploadingResume] = useState(false);
+  const [uploadingSalarySlip, setUploadingSalarySlip] = useState(false);
+  const [uploadingExperienceLetter, setUploadingExperienceLetter] = useState(false);
+  const [uploadingRelievingLetter, setUploadingRelievingLetter] = useState(false);
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 10,
@@ -29,7 +32,12 @@ const FindEnquiry = () => {
     candidatePhone: '',
     candidateEmail: '',
     previousCompany: '',
+    previousCompanyNoticePeriod: '',
     jobExperience: '',
+    lastSalary: '',
+    salarySlip: null,
+    experienceLetter: null,
+    relievingLetter: null,
     previousPosition: '',
     maritalStatus: '',
     candidatePhoto: null,
@@ -54,7 +62,7 @@ const FindEnquiry = () => {
     setTableLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/indents?page=${page}&limit=${pagination.limit}`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/indents?page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
       const result = await response.json();
       if (result.success) {
         // Fetch BOTH active and left data to calculate accurate counts and notes
@@ -124,7 +132,7 @@ const FindEnquiry = () => {
     setTableLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/enquiries?page=${page}&limit=${pagination.limit}`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/enquiries?page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
       const result = await response.json();
       if (result.success) {
         // Fetch left staff to identify leaved candidates
@@ -147,8 +155,12 @@ const FindEnquiry = () => {
           candidatePhone: item.candidate_phone,
           candidateEmail: item.candidate_email,
           previousCompany: item.previous_company,
+          previousCompanyNoticePeriod: item.previous_company_notice_period,
           jobExperience: item.job_experience,
           lastSalary: item.last_salary,
+          salarySlip: item.salary_slip,
+          experienceLetter: item.experience_letter,
+          relievingLetter: item.relieving_letter,
           previousPosition: item.previous_position,
           reasonForLeaving: item.reason_for_leaving,
           maritalStatus: item.marital_status,
@@ -198,8 +210,12 @@ const FindEnquiry = () => {
       candidatePhone: '',
       candidateEmail: '',
       previousCompany: '',
+      previousCompanyNoticePeriod: '',
       jobExperience: '',
       lastSalary: '',
+      salarySlip: null,
+      experienceLetter: null,
+      relievingLetter: null,
       previousPosition: '',
       reasonForLeaving: '',
       maritalStatus: '',
@@ -214,6 +230,34 @@ const FindEnquiry = () => {
     setShowModal(true);
   };
 
+  const uploadFileToGoogleDrive = async (file) => {
+    const reader = new FileReader();
+    const base64Data = await new Promise((resolve, reject) => {
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const params = new URLSearchParams();
+    params.append('action', 'uploadFile');
+    params.append('base64Data', base64Data);
+    params.append('fileName', file.name);
+    params.append('mimeType', file.type);
+    params.append('folderId', GOOGLE_DRIVE_FOLDER_ID);
+
+    const response = await fetch(
+      'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params,
+      }
+    );
+    const data = await response.json();
+    if (!data.success) throw new Error(data.error || 'File upload failed');
+    return data.fileUrl;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -221,6 +265,9 @@ const FindEnquiry = () => {
     try {
       let photoUrl = '';
       let resumeUrl = '';
+      let salarySlipUrl = '';
+      let experienceLetterUrl = '';
+      let relievingLetterUrl = '';
 
       // Upload photo if exists (Keeping GD logic as requested implicitly)
       if (formData.candidatePhoto) {
@@ -232,8 +279,26 @@ const FindEnquiry = () => {
       // Upload resume if exists
       if (formData.candidateResume) {
         setUploadingResume(true);
-        resumeUrl = await uploadFileToGoogleDrive(formData.candidateResume, 'resume');
+        resumeUrl = await uploadFileToGoogleDrive(formData.candidateResume);
         setUploadingResume(false);
+      }
+
+      if (formData.salarySlip) {
+        setUploadingSalarySlip(true);
+        salarySlipUrl = await uploadFileToGoogleDrive(formData.salarySlip);
+        setUploadingSalarySlip(false);
+      }
+
+      if (formData.experienceLetter) {
+        setUploadingExperienceLetter(true);
+        experienceLetterUrl = await uploadFileToGoogleDrive(formData.experienceLetter);
+        setUploadingExperienceLetter(false);
+      }
+
+      if (formData.relievingLetter) {
+        setUploadingRelievingLetter(true);
+        relievingLetterUrl = await uploadFileToGoogleDrive(formData.relievingLetter);
+        setUploadingRelievingLetter(false);
       }
 
       // Prepare backend data
@@ -245,8 +310,12 @@ const FindEnquiry = () => {
         candidate_phone: formData.candidatePhone,
         candidate_email: formData.candidateEmail,
         previous_company: formData.previousCompany,
+        previous_company_notice_period: formData.previousCompanyNoticePeriod,
         job_experience: formData.jobExperience,
         last_salary: formData.lastSalary,
+        salary_slip: salarySlipUrl,
+        experience_letter: experienceLetterUrl,
+        relieving_letter: relievingLetterUrl,
         previous_position: formData.previousPosition,
         reason_for_leaving: formData.reasonForLeaving,
         marital_status: formData.maritalStatus,
@@ -310,6 +379,9 @@ const FindEnquiry = () => {
       setSubmitting(false);
       setUploadingPhoto(false);
       setUploadingResume(false);
+      setUploadingSalarySlip(false);
+      setUploadingExperienceLetter(false);
+      setUploadingRelievingLetter(false);
     }
   };
 
@@ -337,18 +409,21 @@ const FindEnquiry = () => {
     }
   };
 
-  const filteredPendingData = indentData.filter(item => {
-    const matchesSearch = item.post?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.indentNo?.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (activeTab === 'pending') {
+        fetchIndents(1);
+      } else {
+        fetchEnquiries(1);
+      }
+    }, 500);
 
-  const filteredHistoryData = enquiryData.filter(item => {
-    const matchesSearch = item.candidateName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.candidateEnquiryNo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.indentNo?.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
+
+  const filteredPendingData = indentData;
+
+  const filteredHistoryData = enquiryData;
 
 
   return (
@@ -713,6 +788,16 @@ const FindEnquiry = () => {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Previous Company Notice Period</label>
+                  <input
+                    type="text"
+                    name="previousCompanyNoticePeriod"
+                    value={formData.previousCompanyNoticePeriod}
+                    onChange={handleInputChange}
+                    className="w-full border border-gray-300 border-opacity-30 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-white bg-white bg-opacity-10 text-gray-500 placeholder-white placeholder-opacity-60"
+                  />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">Job Experience</label>
                   <input
                     type="text"
@@ -722,7 +807,7 @@ const FindEnquiry = () => {
                     className="w-full border border-gray-300 border-opacity-30 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-white bg-white bg-opacity-10 text-gray-500 placeholder-white placeholder-opacity-60"
                   />
                 </div>
-                {/* <div>
+                <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">Last Salary Drawn</label>
                   <input
                     type="number"
@@ -731,7 +816,7 @@ const FindEnquiry = () => {
                     onChange={handleInputChange}
                     className="w-full border border-gray-300 border-opacity-30 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-white bg-white bg-opacity-10 text-gray-500 placeholder-white placeholder-opacity-60"
                   />
-                </div> */}
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">Previous Position</label>
                   <input
@@ -810,7 +895,7 @@ const FindEnquiry = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">Candidate Photo</label>
                   <div className="flex items-center space-x-2">
@@ -838,7 +923,7 @@ const FindEnquiry = () => {
                       </div>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">Max 10MB. Supports: JPG, JPEG, PNG, PDF, DOC, DOCX</p>
+                  {/* <p className="text-xs text-gray-400 mt-1">Max 10MB. Supports: JPG, JPEG, PNG, PDF, DOC, DOCX</p> */}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">Candidate Resume</label>
@@ -867,7 +952,95 @@ const FindEnquiry = () => {
                       </div>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">Max 10MB. Supports: PDF, DOC, DOCX, JPG, JPEG, PNG</p>
+                  {/* <p className="text-xs text-gray-400 mt-1">Max 10MB. Supports: PDF, DOC, DOCX, JPG, JPEG, PNG</p> */}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Salary Slip</label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      onChange={(e) => handleFileChange(e, 'salarySlip')}
+                      className="hidden"
+                      id="salary-slip-upload"
+                    />
+                    <label
+                      htmlFor="salary-slip-upload"
+                      className="flex items-center px-4 py-2 border border-gray-300 border-opacity-30 rounded-md cursor-pointer hover:bg-white hover:bg-opacity-10 text-gray-500"
+                    >
+                      <Upload size={16} className="mr-2" />
+                      {uploadingSalarySlip ? 'Uploading...' : 'Upload File'}
+                    </label>
+                    {formData.salarySlip && !uploadingSalarySlip && (
+                      <span className="text-sm text-gray-500 opacity-80">{formData.salarySlip.name}</span>
+                    )}
+                    {uploadingSalarySlip && (
+                      <div className="flex items-center">
+                        <div className="w-4 h-4 border-2 border-indigo-500 border-dashed rounded-full animate-spin mr-2"></div>
+                        <span className="text-sm text-gray-500">Uploading salary slip...</span>
+                      </div>
+                    )}
+                  </div>
+                  {/* <p className="text-xs text-gray-400 mt-1">Max 10MB. Supports: PDF, DOC, DOCX, JPG, JPEG, PNG</p> */}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Experience Letter</label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      onChange={(e) => handleFileChange(e, 'experienceLetter')}
+                      className="hidden"
+                      id="experience-letter-upload"
+                    />
+                    <label
+                      htmlFor="experience-letter-upload"
+                      className="flex items-center px-4 py-2 border border-gray-300 border-opacity-30 rounded-md cursor-pointer hover:bg-white hover:bg-opacity-10 text-gray-500"
+                    >
+                      <Upload size={16} className="mr-2" />
+                      {uploadingExperienceLetter ? 'Uploading...' : 'Upload File'}
+                    </label>
+                    {formData.experienceLetter && !uploadingExperienceLetter && (
+                      <span className="text-sm text-gray-500 opacity-80">{formData.experienceLetter.name}</span>
+                    )}
+                    {uploadingExperienceLetter && (
+                      <div className="flex items-center">
+                        <div className="w-4 h-4 border-2 border-indigo-500 border-dashed rounded-full animate-spin mr-2"></div>
+                        <span className="text-sm text-gray-500">Uploading experience letter...</span>
+                      </div>
+                    )}
+                  </div>
+                  {/* <p className="text-xs text-gray-400 mt-1">Max 10MB. Supports: PDF, DOC, DOCX, JPG, JPEG, PNG</p> */}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Relieving Letter</label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      onChange={(e) => handleFileChange(e, 'relievingLetter')}
+                      className="hidden"
+                      id="relieving-letter-upload"
+                    />
+                    <label
+                      htmlFor="relieving-letter-upload"
+                      className="flex items-center px-4 py-2 border border-gray-300 border-opacity-30 rounded-md cursor-pointer hover:bg-white hover:bg-opacity-10 text-gray-500"
+                    >
+                      <Upload size={16} className="mr-2" />
+                      {uploadingRelievingLetter ? 'Uploading...' : 'Upload File'}
+                    </label>
+                    {formData.relievingLetter && !uploadingRelievingLetter && (
+                      <span className="text-sm text-gray-500 opacity-80">{formData.relievingLetter.name}</span>
+                    )}
+                    {uploadingRelievingLetter && (
+                      <div className="flex items-center">
+                        <div className="w-4 h-4 border-2 border-indigo-500 border-dashed rounded-full animate-spin mr-2"></div>
+                        <span className="text-sm text-gray-500">Uploading relieving letter...</span>
+                      </div>
+                    )}
+                  </div>
+                  {/* <p className="text-xs text-gray-400 mt-1">Max 10MB. Supports: PDF, DOC, DOCX, JPG, JPEG, PNG</p> */}
                 </div>
 
               </div>
@@ -893,14 +1066,14 @@ const FindEnquiry = () => {
                   type="button"
                   onClick={() => setShowModal(false)}
                   className="px-6 py-2.5 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-all duration-200"
-                  disabled={submitting || uploadingPhoto || uploadingResume}
+                  disabled={submitting || uploadingPhoto || uploadingResume || uploadingSalarySlip || uploadingExperienceLetter || uploadingRelievingLetter}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   className="px-8 py-2.5 bg-indigo-700 text-white rounded-xl font-medium hover:bg-indigo-800 shadow-lg shadow-indigo-100 flex items-center justify-center"
-                  disabled={submitting || uploadingPhoto || uploadingResume}
+                  disabled={submitting || uploadingPhoto || uploadingResume || uploadingSalarySlip || uploadingExperienceLetter || uploadingRelievingLetter}
                 >
                   {submitting ? (
                     <>
