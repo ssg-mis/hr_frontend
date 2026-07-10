@@ -13,8 +13,6 @@ import {
   Users,
   Calendar,
   DollarSign,
-  FileText as LeaveIcon,
-  User as ProfileIcon,
   Clock,
   LogOut as LogOutIcon,
   X,
@@ -28,6 +26,11 @@ import {
   BookPlus,
   CreditCard,
   Settings,
+  ClipboardCheck,
+  CalendarClock,
+  ClipboardList,
+  FileCheck,
+  Mail,
 } from "lucide-react";
 import useAuthStore from "../store/authStore";
 
@@ -36,6 +39,7 @@ const Sidebar = ({ onClose }) => {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [isAttendanceOpen, setIsAttendanceOpen] = useState(false);
+  const [isRecruitmentOpen, setIsRecruitmentOpen] = useState(false);
 
   const userString = localStorage.getItem("user");
   const user = userString ? JSON.parse(userString) : null;
@@ -48,21 +52,26 @@ const Sidebar = ({ onClose }) => {
 
   const adminMenuItems = [
     { path: "/", icon: LayoutDashboard, label: "Dashboard" },
-    { path: "/indent", icon: FileText, label: "Indent" },
-    { path: "/find-enquiry", icon: Search, label: "Find Enquiry" },
-    { path: "/call-tracker", icon: Phone, label: "Call Tracker" },
-    { path: "/joining", icon: UserCheck, label: "Joining" },
     {
-      path: "/after-joining-work",
-      icon: UserCheck,
-      label: "After Joining Work",
+      type: "dropdown",
+      icon: NotebookPen,
+      label: "Recruitment Module",
+      isOpen: isRecruitmentOpen,
+      toggle: () => setIsRecruitmentOpen(!isRecruitmentOpen),
+      items: [
+        { path: "/vacancy", label: "Vacancy" },
+        { path: "/vacancy-approval", label: "Vacancy Approval" },
+        { path: "/job-application", label: "Job Application" },
+        { path: "/call-tracker", label: "Call Tracker" },
+        { path: "/interview-management", label: "Interview Management" },
+        { path: "/selection-process", label: "Selection Process" },
+        { path: "/offer-management", label: "Offer Management" },
+        { path: "/document-verification", label: "Document Verification" },
+        { path: "/joining", label: "Joining" },
+      ],
     },
-    { path: "/leaving", icon: UserX, label: "Leaving" },
-    {
-      path: "/after-leaving-work",
-      icon: UserMinus,
-      label: "After Leaving Work",
-    },
+    { path: "/resignation-module", icon: UserX, label: "Resignation Module" },
+    { path: "/after-leaving-work", icon: ClipboardCheck, label: "After Leaving Work" },
     { path: "/employee", icon: Users, label: "Employee" },
     { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
     { path: "/leave-policy", icon: BookPlus, label: "Leave Policy" },
@@ -79,21 +88,11 @@ const Sidebar = ({ onClose }) => {
       ],
     },
     // { path: '/report', icon: NotebookPen, label: 'Report' },
-    { path: "/payroll", icon: BadgeDollarSign, label: "Payroll" },
     // { path: "/misreport", icon: AlarmClockCheck, label: "MIS Report" },
     { path: "/settings", icon: Settings, label: "Settings" },
   ];
 
-  const employeeMenuItems = [
-    { path: "/", icon: LayoutDashboard, label: "Dashboard" },
-    { path: "/my-profile", icon: ProfileIcon, label: "My Profile" },
-    { path: "/my-attendance", icon: Clock, label: "My Attendance" },
-    { path: "/leave-request", icon: LeaveIcon, label: "Leave Request" },
-    { path: "/my-salary", icon: DollarSign, label: "My Salary" },
-    { path: "/company-calendar", icon: Calendar, label: "Company Calendar" },
-  ];
-
-  const menuItems = user?.Admin === "Yes" ? adminMenuItems : employeeMenuItems;
+  const menuItems = adminMenuItems;
 
   return (
     <>

@@ -457,12 +457,7 @@ const LeaveRequest = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{request.days}</td>
                         <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">{request.reason}</td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs rounded-full ${request.status === 'approved'
-                              ? 'bg-green-100 text-green-800'
-                              : request.status === 'rejected'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}>
+                          <span className="text-sm text-gray-700">
                             {request.status}
                           </span>
                         </td>

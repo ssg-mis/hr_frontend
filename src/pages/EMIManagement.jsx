@@ -222,16 +222,14 @@ const EMIManagement = () => {
                                         <div className="text-[10px] text-gray-500">{item.paidEmis}/{item.tenure} EMIs Paid</div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-                                            item.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
-                                        }`}>
+                                        <span className="text-sm text-gray-700">
                                             {item.status}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right">
                                         <button 
                                             onClick={() => handleActionClick(item)}
-                                            className="text-indigo-600 hover:text-indigo-900 transition-colors p-2 rounded-lg hover:bg-indigo-50"
+                                            className="text-blue-600 hover:text-blue-800 transition-colors p-2 rounded-lg hover:bg-blue-50"
                                             title="Update EMI"
                                         >
                                             <Eye size={18} />

@@ -160,29 +160,14 @@ const Payroll = () => {
   useEffect(() => {
     const fetchEmployeeData = async () => {
       try {
-        const response = await fetch(
-          "https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=JOINING&action=fetch"
-        );
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/employee?limit=1000`);
         const data = await response.json();
 
-        if (data && data.success && data.data) {
-          // Use row 6 (index 6) as header
-          const headers = data.data[6];
-          // Start actual rows from row 7 (index 7)
-          const rows = data.data.slice(6);
-
-          // Map column names to indices
-          const columnMap = {};
-          headers.forEach((header, index) => {
-            columnMap[header.trim().toLowerCase()] = index;
-          });
-
-          // Extract Employee ID (Column B → index 1) and Employee Name (Column C → index 2)
-          const employeeData = rows.map((row) => ({
-            employeeId: row[1] || "", // Column B
-            employeeName: row[4] || "", // Column E
+        if (data && data.success && data.data?.staff) {
+          const employeeData = data.data.staff.map((s) => ({
+            employeeId: s.employee_id.toString(),
+            employeeName: s.name_as_per_aadhar,
           }));
-
           setEmployeesList(employeeData);
         }
       } catch (error) {
@@ -209,72 +194,8 @@ const Payroll = () => {
   // Fetch data from Google Sheets
   useEffect(() => {
     const fetchData = async () => {
-      setLoading(true);
-      try {
-        // Fetch data from Google Sheets using the provided AppScript URL
-        const response = await fetch(
-          "https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=Salary&action=fetch"
-        );
-        const data = await response.json();
-
-        if (data && data.success && data.data) {
-          // Extract headers and data rows
-          const headers = data.data[0];
-          const rows = data.data.slice(1);
-
-          // Map column names to indices
-          const columnMap = {};
-          headers.forEach((header, index) => {
-            columnMap[header.trim().toLowerCase()] = index;
-          });
-
-          // Transform the data to match our structure
-          const transformedData = rows.map((row) => ({
-            employeeId: row[1] || "",
-            employeeName: row[2] || "",
-            year: row[columnMap["year"]] || "",
-            month: row[columnMap["month"]] || "",
-            basic: parseFloat(row[columnMap["basic salary"]]) || 0,
-            lta: parseFloat(row[columnMap["leave travel allowance"]]) || 0,
-            bonus: parseFloat(row[columnMap["bonus"]]) || 0,
-            otherAllowances: parseFloat(row[columnMap["other allowance"]]) || 0,
-            overtime: parseFloat(row[columnMap["overtime"]]) || 0,
-            gross: parseFloat(row[columnMap["gross salary"]]) || 0,
-            pf: parseFloat(row[columnMap["pf"]]) || 0,
-            loan: parseFloat(row[columnMap["loan"]]) || 0,
-            otherDeductions: parseFloat(row[columnMap["other deduction"]]) || 0,
-            totalDeductions: parseFloat(row[columnMap["total deduction"]]) || 0,
-            net: parseFloat(row[columnMap["net salary"]]) || 0,
-            status: row[columnMap["status"]] || "",
-            payDate: row[columnMap["pay date"]] || "",
-          }));
-
-          setPayrollData(transformedData);
-
-          // Create employees list from the payroll data
-          const uniqueEmployees = transformedData.reduce((acc, item) => {
-            if (!acc.find((e) => e.employeeId === item.employeeId)) {
-              acc.push({
-                employeeId: item.employeeId,
-                employeeName: item.employeeName,
-                designation: "", // Not available in the sheet
-                department: "", // Not available in the sheet
-                status: "active",
-              });
-            }
-            return acc;
-          }, []);
-
-          setEmployees(uniqueEmployees);
-        } else {
-          throw new Error(data.error || "Failed to fetch data");
-        }
-      } catch (error) {
-        setError(error.message);
-        showNotification(`Failed to load data: ${error.message}`, "error");
-      } finally {
-        setLoading(false);
-      }
+      setLoading(false);
+      setError("Payroll Google Sheets synchronization is disabled.");
     };
 
     fetchData();
@@ -306,107 +227,11 @@ const Payroll = () => {
         net,
       };
 
-      // Prepare data for Google Sheets
-      const sheetData = [
-        payrollWithCalculations.employeeId,
-        payrollWithCalculations.employeeName,
-        payrollWithCalculations.year,
-        payrollWithCalculations.month,
-        payrollWithCalculations.basic,
-        payrollWithCalculations.lta,
-        payrollWithCalculations.bonus,
-        payrollWithCalculations.otherAllowances,
-        payrollWithCalculations.overtime,
-        payrollWithCalculations.gross,
-        payrollWithCalculations.pf,
-        payrollWithCalculations.loan,
-        payrollWithCalculations.otherDeductions,
-        payrollWithCalculations.totalDeductions,
-        payrollWithCalculations.net,
-        payrollWithCalculations.status,
-        payrollWithCalculations.payDate,
-      ];
+      // Since Google Sheets integration is disabled, we just mock the success locally:
+      setPayrollData((prev) => [payrollWithCalculations, ...prev]);
 
-      // Create a form data approach to avoid CORS preflight
-      const formData = new URLSearchParams();
-      formData.append('sheet', 'Salary');
-      formData.append('action', 'append');
-      formData.append('rowData', JSON.stringify(sheetData));
-
-      // Use a proxy or direct URL with different approach
-      const scriptUrl = 'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec';
-
-      // Method 1: Use a GET request instead (if your AppScript supports it)
-      const getUrl = `${scriptUrl}?sheet=Salary&action=insert&rowData=${encodeURIComponent(JSON.stringify(sheetData))}`;
-
-      try {
-        // Try GET approach first
-        const response = await fetch(getUrl, {
-          method: 'GET',
-          mode: 'no-cors' // This might help in some cases
-        });
-
-        // If GET doesn't work, try POST with form data
-        if (!response.ok) {
-          const postResponse = await fetch(scriptUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: formData.toString()
-          });
-
-          if (!postResponse.ok) {
-            throw new Error('Failed to add payroll entry');
-          }
-        }
-
-        showNotification("Payroll entry added successfully!");
-        setShowNewPayrollModal(false);
-
-        // Refresh the data
-        const fetchResponse = await fetch(
-          "https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=Salary&action=fetch"
-        );
-        const fetchData = await fetchResponse.json();
-
-        if (fetchData && fetchData.success && fetchData.data) {
-          const headers = fetchData.data[0];
-          const rows = fetchData.data.slice(1);
-
-          const columnMap = {};
-          headers.forEach((header, index) => {
-            columnMap[header.trim().toLowerCase()] = index;
-          });
-
-          const transformedData = rows.map((row) => ({
-            employeeId: row[1] || "",
-            employeeName: row[2] || "",
-            year: row[columnMap["year"]] || "",
-            month: row[columnMap["month"]] || "",
-            basic: parseFloat(row[columnMap["basic salary"]]) || 0,
-            lta: parseFloat(row[columnMap["leave travel allowance"]]) || 0,
-            bonus: parseFloat(row[columnMap["bonus"]]) || 0,
-            otherAllowances: parseFloat(row[columnMap["other allowance"]]) || 0,
-            overtime: parseFloat(row[columnMap["overtime"]]) || 0,
-            gross: parseFloat(row[columnMap["gross salary"]]) || 0,
-            pf: parseFloat(row[columnMap["pf"]]) || 0,
-            loan: parseFloat(row[columnMap["loan"]]) || 0,
-            otherDeductions: parseFloat(row[columnMap["other deduction"]]) || 0,
-            totalDeductions: parseFloat(row[columnMap["total deduction"]]) || 0,
-            net: parseFloat(row[columnMap["net salary"]]) || 0,
-            status: row[columnMap["status"]] || "",
-            payDate: row[columnMap["pay date"]] || "",
-          }));
-
-          setPayrollData(transformedData);
-        }
-      } catch (error) {
-        // If both methods fail, try using a JSONP approach (for GET requests)
-        console.error('Both GET and POST failed, trying alternative approach');
-        showNotification("Payroll entry might have been added. Please refresh to see changes.", "info");
-        setShowNewPayrollModal(false);
-      }
+      showNotification("Payroll entry added locally (Google Sheets sync is disabled)!");
+      setShowNewPayrollModal(false);
     } catch (error) {
       setError(error.message);
       showNotification(

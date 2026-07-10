@@ -4,13 +4,13 @@ import { persist } from 'zustand/middleware';
 const useDataStore = create(
   persist(
     (set, get) => ({
-      // Indent Data
-      indentData: [],
-      addIndent: (data) => set((state) => ({
-        indentData: [...state.indentData, { 
+      // Vacancy Data
+      vacancyData: [],
+      addVacancy: (data) => set((state) => ({
+        vacancyData: [...state.vacancyData, { 
           ...data, 
           id: Date.now(), 
-          indentNo: `IND-${String(state.indentData.length + 1).padStart(3, '0')}`,
+          vacancyNo: `VAC-${String(state.vacancyData.length + 1).padStart(3, '0')}`,
           createdAt: new Date().toISOString() 
         }]
       })),
@@ -223,14 +223,14 @@ const useDataStore = create(
       },
 
       // Initialize data from other stores
-      initializeFromIndent: () => {
+      initializeFromVacancy: () => {
         const state = get();
-        state.indentData.forEach(indent => {
-          const existsInSocial = state.socialSiteData.find(item => item.indentId === indent.id);
+        state.vacancyData.forEach(vacancy => {
+          const existsInSocial = state.socialSiteData.find(item => item.vacancyId === vacancy.id);
           if (!existsInSocial) {
             state.socialSiteData.push({
-              ...indent,
-              indentId: indent.id,
+              ...vacancy,
+              vacancyId: vacancy.id,
               status: 'pending'
             });
           }
@@ -241,7 +241,7 @@ const useDataStore = create(
         const state = get();
         const completedSocial = state.socialSiteData.filter(item => item.status === 'completed');
         completedSocial.forEach(social => {
-          const existsInEnquiry = state.findEnquiryData.find(item => item.indentId === social.indentId);
+          const existsInEnquiry = state.findEnquiryData.find(item => item.vacancyId === social.vacancyId);
           if (!existsInEnquiry) {
             // This will be handled when enquiry is created
           }

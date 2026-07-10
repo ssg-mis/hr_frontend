@@ -4,15 +4,15 @@ import useDataStore from '../store/dataStore';
 import toast from 'react-hot-toast';
 
 const SocialSite = () => {
-  const { indentData, socialSiteData, moveSocialSiteToHistory, initializeFromIndent } = useDataStore();
+  const { vacancyData, socialSiteData, moveSocialSiteToHistory, initializeFromVacancy } = useDataStore();
   const [activeTab, setActiveTab] = useState('pending');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedItems, setSelectedItems] = useState({});
 
-  // Initialize social site data from indent data
+  // Initialize social site data from vacancy data
   useEffect(() => {
-    initializeFromIndent();
-  }, [indentData]);
+    initializeFromVacancy();
+  }, [vacancyData]);
 
   const pendingData = socialSiteData.filter(item => item.status === 'pending');
   const historyData = socialSiteData.filter(item => item.status === 'completed');
@@ -32,13 +32,13 @@ const SocialSite = () => {
 
   const filteredPendingData = pendingData.filter(item => {
     const matchesSearch = item.post?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.indentNo?.toLowerCase().includes(searchTerm.toLowerCase());
+                          item.vacancyNo?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
 
   const filteredHistoryData = historyData.filter(item => {
     const matchesSearch = item.post?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.indentNo?.toLowerCase().includes(searchTerm.toLowerCase());
+                          item.vacancyNo?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
 
@@ -51,7 +51,7 @@ const SocialSite = () => {
           <div className="relative w-full">
             <input
               type="text"
-              placeholder="Search by post or indent number..."
+              placeholder="Search by post or vacancy number..."
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -74,7 +74,7 @@ const SocialSite = () => {
               onClick={() => setActiveTab('pending')}
             >
               <Clock size={16} className="inline mr-2" />
-              Pending ({filteredPendingData.length})
+              Pending
             </button>
             <button
               className={`py-4 px-6 font-medium text-sm border-b-2 ${
@@ -85,7 +85,7 @@ const SocialSite = () => {
               onClick={() => setActiveTab('history')}
             >
               <CheckCircle size={16} className="inline mr-2" />
-              History ({filteredHistoryData.length})
+              History
             </button>
           </nav>
         </div>
@@ -97,41 +97,43 @@ const SocialSite = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indent No.</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vacancy No.</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Post</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gender</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prefer</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Number Of Post</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Competition Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredPendingData.map((item) => (
                     <tr key={item.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <input
-                          type="checkbox"
-                          checked={selectedItems[item.id] || false}
-                          onChange={() => handleCheckboxChange(item.id)}
-                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                        />
-                        {selectedItems[item.id] && (
-                          <button
-                            onClick={() => handleMoveToHistory(item.id)}
-                            className="ml-2 px-2 py-1 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700"
-                          >
-                            Move
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.indentNo}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.vacancyNo}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.post}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.gender}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.prefer || '-'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.numberOfPost}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {item.competitionDate ? new Date(item.competitionDate).toLocaleDateString() : '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedItems[item.id] || false}
+                            onChange={() => handleCheckboxChange(item.id)}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          {selectedItems[item.id] && (
+                            <button
+                              onClick={() => handleMoveToHistory(item.id)}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition-all duration-150 shadow-sm shadow-blue-100"
+                            >
+                              Move
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -150,7 +152,7 @@ const SocialSite = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indent No.</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vacancy No.</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Post</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gender</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prefer</th>
@@ -161,7 +163,7 @@ const SocialSite = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredHistoryData.map((item) => (
                     <tr key={item.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.indentNo}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.vacancyNo}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.post}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.gender}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.prefer || '-'}</td>

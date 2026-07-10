@@ -6,35 +6,117 @@ const Header = ({ onMenuClick }) => {
   const { user } = useAuthStore();
   const location = useLocation();
 
-  const getPageTitle = (pathname) => {
-    const titles = {
-      '/': 'Dashboard',
-      '/indent': 'Indent',
-      '/find-enquiry': 'Find Enquiry',
-      '/call-tracker': 'Call Tracker',
-      '/joining': 'Joining',
-      '/after-joining-work': 'After Joining Work',
-      '/leaving': 'Leaving',
-      '/after-leaving-work': 'After Leaving Work',
-      '/employee': 'Employee',
-      '/leave-management': 'Leave Management',
-      '/leave-policy': 'Leave Policy',
-      '/emi-management': 'EMI Management',
-      '/attendance': 'Daily Attendance',
-      '/attendance-monthly': 'Monthly Attendance',
-      '/attendancedaily': 'Daily Attendance',
-      '/report': 'Reports',
-      '/social-site': 'Social Site',
-      '/payroll': 'Payroll',
-      '/misreport': 'MIS Reports',
-      '/my-profile': 'My Profile',
-      '/my-attendance': 'My Attendance',
-      '/leave-request': 'Leave Request',
-      '/my-salary': 'My Salary',
-      '/company-calendar': 'Company Calendar',
+  const getPageInfo = (pathname) => {
+    const pages = {
+      '/': {
+        title: 'Dashboard',
+        description: 'Welcome back! Here is a summary of the system stats and hiring data.'
+      },
+      '/vacancy': {
+        title: 'Vacancy Dashboard',
+        description: 'Create, track, and manage job openings and social sharing statistics.'
+      },
+      '/vacancy-approval': {
+        title: 'Vacancy Approval Panel',
+        description: 'Review submitted vacancy indents. Approve to open postings, or reject with feedback.'
+      },
+      '/job-application': {
+        title: 'Job Application',
+        description: 'Review candidate job applications and follow up on pending hiring requests.'
+      },
+      '/call-tracker': {
+        title: 'Call Tracker',
+        description: 'Manage and track follow-up calls with candidates and applicants.'
+      },
+      '/joining': {
+        title: 'Joining',
+        description: 'Track candidates that are joining the company and manage their onboarding paperwork.'
+      },
+      '/after-joining-work': {
+        title: 'After Joining Work',
+        description: 'Track post-joining details, employee assets, and registration status.'
+      },
+      '/leaving': {
+        title: 'Leaving',
+        description: 'Manage exit requests, resignations, and employee offboarding processes.'
+      },
+      '/after-leaving-work': {
+        title: 'After Leaving Work',
+        description: 'Track post-exit status, final settlement, and handover documentation.'
+      },
+      '/employee': {
+        title: 'Employee Database',
+        description: 'View and manage employee profiles, history, and status.'
+      },
+      '/leave-management': {
+        title: 'Leave Management',
+        description: 'Approve or reject employee leave requests and track leave balances.'
+      },
+      '/leave-policy': {
+        title: 'Leave Policy & Holidays',
+        description: 'Define company leave policies and holiday calendars.'
+      },
+      '/emi-management': {
+        title: 'EMI Management',
+        description: 'Track employee loans, advances, and monthly EMI deduction schemes.'
+      },
+      '/attendance': {
+        title: 'Daily Attendance',
+        description: 'Track daily employee attendance and check-in/check-out logs.'
+      },
+      '/attendance-monthly': {
+        title: 'Monthly Attendance',
+        description: 'Review monthly attendance reports, working hours, and overtimes.'
+      },
+      '/attendancedaily': {
+        title: 'Daily Attendance',
+        description: 'Track daily employee attendance records.'
+      },
+      '/report': {
+        title: 'Reports',
+        description: 'Generate and download custom HR reports and summaries.'
+      },
+      '/social-site': {
+        title: 'Social Site',
+        description: 'Manage company social media pages and integration.'
+      },
+      '/payroll': {
+        title: 'Payroll Management',
+        description: 'Calculate monthly salaries, payslips, and payroll distributions.'
+      },
+      '/misreport': {
+        title: 'MIS Reports',
+        description: 'Management Information System reports and analytics.'
+      },
+      '/my-profile': {
+        title: 'My Profile',
+        description: 'View and edit your personal employee details.'
+      },
+      '/my-attendance': {
+        title: 'My Attendance',
+        description: 'Check your personal attendance history and monthly summary.'
+      },
+      '/leave-request': {
+        title: 'Leave Request',
+        description: 'Apply for leave and track the status of your applications.'
+      },
+      '/my-salary': {
+        title: 'My Salary',
+        description: 'View and download your monthly payslips.'
+      },
+      '/company-calendar': {
+        title: 'Company Calendar',
+        description: 'View upcoming company events, holidays, and schedules.'
+      },
+      '/settings': {
+        title: 'Settings',
+        description: 'Manage system users and administrators.'
+      }
     };
-    return titles[pathname] || 'HR FMS';
+    return pages[pathname] || { title: 'HR FMS', description: '' };
   };
+
+  const pageInfo = getPageInfo(location.pathname);
 
   return (
     <header className="bg-white border-b border-gray-200 shadow-sm flex-shrink-0">
@@ -47,9 +129,16 @@ const Header = ({ onMenuClick }) => {
             <Menu size={24} />
           </button>
 
-          <h1 className="text-xl font-bold text-gray-800 ml-2">
-            {getPageTitle(location.pathname)}
-          </h1>
+          <div className="flex flex-col ml-2">
+            <h1 className="text-xl font-bold text-gray-800 leading-tight">
+              {pageInfo.title}
+            </h1>
+            {pageInfo.description && (
+              <p className="text-xs text-gray-500 font-normal mt-0.5 hidden md:block">
+                {pageInfo.description}
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center space-x-4">

@@ -628,7 +628,7 @@ const LeaveManagement = () => {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
             >
-              Pending ({pendingLeaves.length})
+              Pending
             </button>
             <button
               onClick={() => setActiveTab('approved')}
@@ -637,7 +637,7 @@ const LeaveManagement = () => {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
             >
-              Approved ({approvedLeaves.length})
+              Approved
             </button>
             <button
               onClick={() => setActiveTab('rejected')}
@@ -646,7 +646,7 @@ const LeaveManagement = () => {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
             >
-              Rejected ({rejectedLeaves.length})
+              Rejected
             </button>
           </nav>
         </div>

@@ -349,13 +349,7 @@ const MyAttendance = () => {
                           {record.Out || record.outTime || '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs rounded-full ${
-                            status === 'Present' 
-                              ? 'bg-green-100 text-green-800' 
-                              : status === 'Leave'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-red-100 text-red-800'
-                          }`}>
+                          <span className="text-sm text-gray-700">
                             {status}
                           </span>
                         </td>

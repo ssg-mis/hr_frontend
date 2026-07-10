@@ -266,7 +266,7 @@ const Leaving = () => {
               onClick={() => setActiveTab('pending')}
             >
               <Clock size={16} className="inline mr-2" />
-              Pending ({filteredPendingData.length})
+              Pending
             </button>
             <button
               className={`py-4 px-6 font-medium text-sm border-b-2 ${
@@ -277,7 +277,7 @@ const Leaving = () => {
               onClick={() => setActiveTab('history')}
             >
               <CheckCircle size={16} className="inline mr-2" />
-              History ({filteredHistoryData.length})
+              History
             </button>
           </nav>
         </div>
@@ -289,19 +289,19 @@ const Leaving = () => {
               <table className="min-w-full divide-y divide-white  ">
                 <thead className="bg-gray-100 ">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee ID</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Father Name</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Of Joining</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Designation</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Salary</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white  ">
                   {tableLoading ? (
             <tr>
-              <td colSpan="7" className="px-6 py-12 text-center">
+              <td colSpan="8" className="px-6 py-12 text-center">
                 <div className="flex justify-center flex-col items-center">
                   <div className="w-6 h-6 border-4 border-indigo-500 border-dashed rounded-full animate-spin mb-2"></div>
                   <span className="text-gray-600 text-sm">Loading pending calls...</span>
@@ -310,7 +310,7 @@ const Leaving = () => {
             </tr>
           ) : error ? (
             <tr>
-              <td colSpan="7" className="px-6 py-12 text-center">
+              <td colSpan="8" className="px-6 py-12 text-center">
                 <p className="text-red-500">Error: {error}</p>
                 <button 
                   onClick={() => fetchJoiningData(1)}
@@ -322,14 +322,6 @@ const Leaving = () => {
             </tr>
           ) :filteredPendingData.map((item,index) => (
                     <tr key={index} className="hover:bg-white hover: ">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <button
-                          onClick={() => handleLeavingClick(item)}
-                          className="px-3 py-1  bg-indigo-700 text-white rounded-md  text-sm"
-                        >
-                          Leaving
-                        </button>
-                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeNo}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.candidateName}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.fatherName}</td>
@@ -338,6 +330,14 @@ const Leaving = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.designation}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.salary}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <button
+                          onClick={() => handleLeavingClick(item)}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition-all duration-150 shadow-sm shadow-blue-100"
+                        >
+                          Leaving
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -21,90 +21,9 @@ const MySalary = () => {
   });
 
 const fetchSalaryData = async () => { 
-  setLoading(true);
-  setTableLoading(true);
-  setError(null);
-
-  try {
-    // Get user info from localStorage
-    const user = JSON.parse(localStorage.getItem("user") || "{}");
-    const employeeId =localStorage.getItem("employeeId") 
-    const employeeName = user?.Name;
-
-    if (!employeeId || !employeeName) {
-      throw new Error("User info missing in localStorage");
-    }
-
-    const response = await fetch(
-      'https://script.google.com/macros/s/AKfycbzF-ERpUfrb0figpapH5q5-J1KRAnBHt-OaXYrN9Cw4wzwaacKhUPwGgtCIWfxw2Ruz9g/exec?sheet=Salary&action=fetch'
-    );
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const result = await response.json();
-    
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to fetch salary data');
-    }
-    
-    const rawData = result.data || result;
-    console.log("Raw data from API:", rawData);
-    
-    if (!Array.isArray(rawData)) {
-      throw new Error('Expected array data not received');
-    }
-
-    // Skip header row
-    const dataRows = rawData.length > 1 ? rawData.slice(1) : [];
-
-    // Map rows to structured data
-   // Map rows to structured data - PROPERLY CONVERT STRINGS TO NUMBERS
-const processedData = dataRows
-  .map((row, index) => {
-    // Helper function to safely convert to number
-    const toNumber = (value) => {
-      if (typeof value === 'number') return value;
-      if (typeof value === 'string') {
-        // Remove commas and any non-numeric characters except decimal point
-        const cleaned = value.replace(/[^\d.]/g, '');
-        return parseFloat(cleaned) || 0;
-      }
-      return 0;
-    };
-
-    return {
-      id: index + 1,
-      timestamp: row[0] || '',
-      employeeId: row[1] || '',
-      employeeName: row[2] || '',
-      year: row[3] || '',
-      month: row[4] || '',
-      basicSalary: toNumber(row[5]),
-      allowances: toNumber(row[6]),
-      overtime: toNumber(row[7]),
-      deductions: toNumber(row[8]),
-      netSalary: toNumber(row[9]),
-      status: row[10] || '',
-      payDate: row[11] || '',
-    };
-  })
-  .filter(item => 
-    item.employeeId === employeeId && item.employeeName === employeeName
-  );
-    
-    console.log("Filtered salary data:", processedData);
-    setSalaryData(processedData);
-
-  } catch (error) {
-    console.error('Error fetching salary data:', error);
-    setError(error.message);
-    toast.error(`Failed to load salary data: ${error.message}`);
-  } finally {
-    setLoading(false);
-    setTableLoading(false);
-  }
+  setLoading(false);
+  setTableLoading(false);
+  setError("Salary tracking has been disabled as Google Script integration has been removed.");
 };
 
  useEffect(() => {
@@ -278,11 +197,7 @@ const totalOvertime = filteredSalary.reduce((sum, record) => {
                       ₹{record.netSalary.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        record.status === 'Paid' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
+                      <span className="text-sm text-gray-700">
                         {record.status}
                       </span>
                     </td>

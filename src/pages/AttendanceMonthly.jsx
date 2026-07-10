@@ -212,10 +212,10 @@ const AttendanceMonthly = () => {
                         {formatDate(item.fromDate)} - {formatDate(item.toDate)}
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-center">
-                        <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-bold">{item.presentDays}</span>
+                        <span className="text-xs font-bold text-gray-700">{item.presentDays}</span>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-center">
-                        <span className={`px-2 py-1 rounded text-xs font-bold ${item.absentDays > 5 ? 'bg-red-100 text-red-800' : 'bg-orange-100 text-orange-800'}`}>{item.absentDays}</span>
+                        <span className="text-xs font-bold text-gray-700">{item.absentDays}</span>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-center text-xs font-bold text-gray-700">{item.workHrs}</td>
                       <td className="px-4 py-4 whitespace-nowrap text-center text-xs font-bold text-indigo-600">{item.otHrs}</td>
