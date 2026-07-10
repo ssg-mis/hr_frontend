@@ -28,6 +28,9 @@ const SelectionProcess = () => {
   const [decision, setDecision] = useState('Offer');
   const [remark, setRemark] = useState('');
 
+  const [selectionWarning, setSelectionWarning] = useState('');
+  const [shouldBypassLimit, setShouldBypassLimit] = useState(false);
+
   const load = async () => {
     setTableLoading(true);
     try {
@@ -57,6 +60,8 @@ const SelectionProcess = () => {
   const openReview = (candidate) => {
     setDecision('Offer');
     setRemark('');
+    setSelectionWarning('');
+    setShouldBypassLimit(false);
     setReviewing(candidate);
   };
 
@@ -68,6 +73,7 @@ const SelectionProcess = () => {
       await jobApplicationApi.updateStage(reviewing.applicationNumber, {
         stage,
         selectionRemark: remark || null,
+        bypassLimit: shouldBypassLimit,
       });
       toast.success(
         decision === 'Offer'
@@ -77,9 +83,16 @@ const SelectionProcess = () => {
           : 'Candidate rejected'
       );
       setReviewing(null);
+      setSelectionWarning('');
+      setShouldBypassLimit(false);
       load();
     } catch (err) {
-      toast.error(err.message || 'Failed to record decision');
+      if ((err.body && err.body.isLimitExceeded) || err.message?.includes('exceed') || err.message?.includes('limit')) {
+        setSelectionWarning(err.message);
+        setShouldBypassLimit(true);
+      } else {
+        toast.error(err.message || 'Failed to record decision');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -220,10 +233,21 @@ const SelectionProcess = () => {
                 <h3 className="text-lg font-bold text-gray-900">Record Selection Decision</h3>
                 <p className="text-sm text-gray-500 mt-0.5">{reviewing.candidateName} · {reviewing.applicationNumber}</p>
               </div>
-              <button onClick={() => setReviewing(null)} className="text-gray-500 hover:text-gray-700"><X size={20} /></button>
+              <button onClick={() => { setReviewing(null); setSelectionWarning(''); setShouldBypassLimit(false); }} className="text-gray-500 hover:text-gray-700"><X size={20} /></button>
             </div>
             <form onSubmit={submitDecision} className="flex flex-col">
               <div className="p-6 space-y-4">
+                {selectionWarning && (
+                  <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 text-sm font-semibold flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-650 animate-pulse" />
+                      <span>Slots Limit Exceeded Warning</span>
+                    </div>
+                    <p className="text-xs text-red-600 font-medium leading-relaxed mt-1">
+                      {selectionWarning}
+                    </p>
+                  </div>
+                )}
                 {reviewing.interviewRemark && (
                   <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100">
                     <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">Interview Feedback</span>
@@ -251,8 +275,18 @@ const SelectionProcess = () => {
                 </div>
               </div>
               <div className="flex justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50/50">
-                <button type="button" onClick={() => setReviewing(null)} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl">{submitting ? 'Saving...' : 'Confirm Decision'}</button>
+                <button type="button" onClick={() => { setReviewing(null); setSelectionWarning(''); setShouldBypassLimit(false); }} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className={`px-5 py-2.5 font-semibold rounded-xl text-white transition-colors ${
+                    shouldBypassLimit
+                      ? 'bg-red-600 hover:bg-red-700 shadow-md shadow-red-100'
+                      : 'bg-indigo-650 hover:bg-indigo-700 shadow-md shadow-indigo-100'
+                  }`}
+                >
+                  {submitting ? 'Saving...' : shouldBypassLimit ? 'Proceed & Confirm Anyway' : 'Confirm Decision'}
+                </button>
               </div>
             </form>
           </div>

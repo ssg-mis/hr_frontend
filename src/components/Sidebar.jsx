@@ -40,6 +40,7 @@ const Sidebar = ({ onClose }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isAttendanceOpen, setIsAttendanceOpen] = useState(false);
   const [isRecruitmentOpen, setIsRecruitmentOpen] = useState(false);
+  const [isResignationOpen, setIsResignationOpen] = useState(false);
 
   const userString = localStorage.getItem("user");
   const user = userString ? JSON.parse(userString) : null;
@@ -70,8 +71,18 @@ const Sidebar = ({ onClose }) => {
         { path: "/joining", label: "Joining" },
       ],
     },
-    { path: "/resignation-module", icon: UserX, label: "Resignation Module" },
-    { path: "/after-leaving-work", icon: ClipboardCheck, label: "After Leaving Work" },
+    {
+      type: "dropdown",
+      icon: UserX,
+      label: "Resignation Module",
+      isOpen: isResignationOpen,
+      toggle: () => setIsResignationOpen(!isResignationOpen),
+      items: [
+        { path: "/resignation-module", label: "Resignation Requests" },
+        { path: "/leaving", label: "Exit Clearance" },
+        { path: "/after-leaving-work", label: "After Leaving Work" },
+      ],
+    },
     { path: "/employee", icon: Users, label: "Employee" },
     { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
     { path: "/leave-policy", icon: BookPlus, label: "Leave Policy" },

@@ -6,6 +6,12 @@ import { vacancyApi } from '../vacancy/vacancy.api';
 import { jobApplicationApi } from './jobApplication.api';
 import { uploadFile } from '../upload/upload.api';
 
+const getMaxDobDate = () => {
+  const date = new Date();
+  date.setFullYear(date.getFullYear() - 16);
+  return date.toISOString().split('T')[0];
+};
+
 const emptyForm = {
   candidateName: '',
   candidateDob: '',
@@ -91,11 +97,11 @@ const JobApplicationPage = () => {
     );
   });
 
-  const copyLink = (vacancyNumber) => {
-    const url = `${window.location.origin}/apply/${vacancyNumber}`;
+  const copyLink = (token) => {
+    const url = `${window.location.origin}/apply/${token}`;
     navigator.clipboard
       .writeText(url)
-      .then(() => toast.success(`Public apply link for ${vacancyNumber} copied!`))
+      .then(() => toast.success('Public apply link copied!'))
       .catch(() => toast.error('Failed to copy link'));
   };
 
@@ -122,6 +128,21 @@ const JobApplicationPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (formData.candidateDob) {
+      const birthDate = new Date(formData.candidateDob);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const m = today.getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      if (age < 16) {
+        toast.error('Candidate must be at least 16 years old');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       // Upload any attached files first.
@@ -317,7 +338,7 @@ const JobApplicationPage = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="flex items-center justify-center gap-2">
                           <button
-                            onClick={() => copyLink(v.vacancyNumber)}
+                            onClick={() => copyLink(v.shareToken || v.vacancyNumber)}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-200 text-gray-600 hover:text-emerald-600 hover:border-emerald-200 rounded-lg text-xs font-semibold transition-colors"
                             title="Copy public apply link"
                           >
@@ -529,7 +550,7 @@ const JobApplicationPage = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Date of Birth</label>
-                    <input type="date" name="candidateDob" value={formData.candidateDob} onChange={handleInputChange} className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <input type="date" name="candidateDob" max={getMaxDobDate()} value={formData.candidateDob} onChange={handleInputChange} className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Phone *</label>

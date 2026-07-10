@@ -36,7 +36,7 @@ function App() {
   return (
     <div className="bg-white min-h-screen">
       <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <Toaster position="top-right" containerStyle={{ zIndex: 9999 }} />
+        <Toaster position="top-right" containerStyle={{ zIndex: 999999 }} />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/apply/:vacancyNumber" element={<PublicApply />} />

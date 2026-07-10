@@ -4,12 +4,16 @@ import { api } from "../../lib/api";
 // The backend contract is camelCase throughout.
 export const vacancyApi = {
   // Returns the full response: { success, message, data: [...], pagination }
-  list: ({ page = 1, limit = 10, search = "" } = {}) => {
-    const qs = new URLSearchParams({
+  list: ({ page = 1, limit = 10, search = "", excludeRejected = false } = {}) => {
+    const params = {
       page: String(page),
       limit: String(limit),
       search,
-    });
+    };
+    if (excludeRejected) {
+      params.excludeRejected = "true";
+    }
+    const qs = new URLSearchParams(params);
     return api.get(`/vacancies?${qs.toString()}`);
   },
 

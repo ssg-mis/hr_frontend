@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Search, Check, X, Briefcase, Calendar, MapPin, DollarSign, Users, Award, Layers, Info, Link } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { vacancyApi } from './vacancy.api';
@@ -14,6 +14,25 @@ const VacancyApprovalPage = () => {
 
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectionRemark, setRejectionRemark] = useState('');
+
+  const modalContentRef = useRef(null);
+  const rejectTextAreaRef = useRef(null);
+
+  useEffect(() => {
+    if (showRejectForm) {
+      setTimeout(() => {
+        if (modalContentRef.current) {
+          modalContentRef.current.scrollTo({
+            top: modalContentRef.current.scrollHeight,
+            behavior: 'smooth',
+          });
+        }
+        if (rejectTextAreaRef.current) {
+          rejectTextAreaRef.current.focus();
+        }
+      }, 100);
+    }
+  }, [showRejectForm]);
 
   const [pagination, setPagination] = useState({
     page: 1,
@@ -149,7 +168,7 @@ const VacancyApprovalPage = () => {
             </div>
 
             {/* Content (Scrollable & Read Only) */}
-            <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
+            <div ref={modalContentRef} className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
@@ -288,6 +307,7 @@ const VacancyApprovalPage = () => {
                       Reason for Rejection *
                     </label>
                     <textarea
+                      ref={rejectTextAreaRef}
                       placeholder="Explain why this vacancy is rejected (e.g. Budget constraints, changes in headcounts)..."
                       value={rejectionRemark}
                       onChange={(e) => setRejectionRemark(e.target.value)}

@@ -26,6 +26,9 @@ const OfferManagement = () => {
   const [offering, setOffering] = useState(null); // candidate row being offered/responded to
   const [form, setForm] = useState({ offeredDesignation: '', offeredSalary: '', offeredJoiningDate: '', offerRemark: '' });
 
+  const [offerWarning, setOfferWarning] = useState('');
+  const [shouldBypassLimit, setShouldBypassLimit] = useState(false);
+
   const load = async () => {
     setTableLoading(true);
     try {
@@ -59,6 +62,8 @@ const OfferManagement = () => {
       offeredJoiningDate: candidate.offeredJoiningDate ? candidate.offeredJoiningDate.slice(0, 10) : '',
       offerRemark: candidate.offerRemark || '',
     });
+    setOfferWarning('');
+    setShouldBypassLimit(false);
     setOffering(candidate);
   };
 
@@ -78,12 +83,20 @@ const OfferManagement = () => {
         offeredJoiningDate: form.offeredJoiningDate,
         offerRemark: form.offerRemark || null,
         offerStatus: 'Sent',
+        bypassLimit: shouldBypassLimit,
       });
       toast.success('Offer sent to candidate');
       setOffering(null);
+      setOfferWarning('');
+      setShouldBypassLimit(false);
       load();
     } catch (err) {
-      toast.error(err.message || 'Failed to send offer');
+      if ((err.body && err.body.isLimitExceeded) || err.message?.includes('exceed') || err.message?.includes('limit')) {
+        setOfferWarning(err.message);
+        setShouldBypassLimit(true);
+      } else {
+        toast.error(err.message || 'Failed to send offer');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -92,10 +105,13 @@ const OfferManagement = () => {
   const recordResponse = async (candidate, accepted) => {
     if (!window.confirm(`Mark this offer as ${accepted ? 'Accepted' : 'Declined'}?`)) return;
     try {
-      await jobApplicationApi.updateStage(candidate.applicationNumber, {
+      const payload = {
         offerStatus: accepted ? 'Accepted' : 'Declined',
-        stage: accepted ? 'Offered' : 'Rejected',
-      });
+      };
+      if (!accepted) {
+        payload.stage = 'Rejected';
+      }
+      await jobApplicationApi.updateStage(candidate.applicationNumber, payload);
       toast.success(accepted ? 'Offer accepted — ready for Document Verification' : 'Offer declined');
       load();
     } catch (err) {
@@ -235,10 +251,21 @@ const OfferManagement = () => {
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Mail size={18} /> Send Offer</h3>
                 <p className="text-xs text-gray-500 mt-0.5">{offering.candidateName} · {offering.applicationNumber}</p>
               </div>
-              <button onClick={() => setOffering(null)} className="text-gray-500 hover:text-gray-700"><X size={20} /></button>
+              <button onClick={() => { setOffering(null); setOfferWarning(''); setShouldBypassLimit(false); }} className="text-gray-500 hover:text-gray-700"><X size={20} /></button>
             </div>
             <form onSubmit={sendOffer} className="flex flex-col">
               <div className="p-6 space-y-4">
+                {offerWarning && (
+                  <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 text-sm font-semibold flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-650 animate-pulse" />
+                      <span>Slots Limit Exceeded Warning</span>
+                    </div>
+                    <p className="text-xs text-red-600 font-medium leading-relaxed mt-1">
+                      {offerWarning}
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Designation</label>
                   <input type="text" name="offeredDesignation" value={form.offeredDesignation} onChange={handleChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -259,8 +286,18 @@ const OfferManagement = () => {
                 </div>
               </div>
               <div className="flex justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50/50">
-                <button type="button" onClick={() => setOffering(null)} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl">{submitting ? 'Sending...' : 'Send Offer'}</button>
+                <button type="button" onClick={() => { setOffering(null); setOfferWarning(''); setShouldBypassLimit(false); }} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className={`px-5 py-2.5 font-semibold rounded-xl text-white transition-colors ${
+                    shouldBypassLimit
+                      ? 'bg-red-600 hover:bg-red-700 shadow-md shadow-red-100'
+                      : 'bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-100'
+                  }`}
+                >
+                  {submitting ? 'Sending...' : shouldBypassLimit ? 'Proceed & Send Anyway' : 'Send Offer'}
+                </button>
               </div>
             </form>
           </div>
