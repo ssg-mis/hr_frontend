@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { DollarSign, Download, Eye, Calendar, TrendingUp } from 'lucide-react';
+import { IndianRupee, Download, Eye, Calendar, TrendingUp } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 import useDataStore from '../store/dataStore';
 import toast from 'react-hot-toast';
@@ -13,47 +13,47 @@ const MySalary = () => {
   const [salaryData, setSalaryData] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
-//  const salaryData = getFilteredData('salaryData', user);
- 
-//  Filter salary by selected year
+  //  const salaryData = getFilteredData('salaryData', user);
+
+  //  Filter salary by selected year
   const filteredSalary = salaryData.filter(record => {
     return record.year.includes(selectedYear.toString());
   });
 
-const fetchSalaryData = async () => { 
-  setLoading(false);
-  setTableLoading(false);
-  setError("Salary tracking has been disabled as Google Script integration has been removed.");
-};
+  const fetchSalaryData = async () => {
+    setLoading(false);
+    setTableLoading(false);
+    setError("Salary tracking has been disabled as Google Script integration has been removed.");
+  };
 
- useEffect(() => {
+  useEffect(() => {
     fetchSalaryData();
   }, []);
 
   // Calculate yearly statistics
-// Calculate yearly statistics with type safety
-const totalEarnings = filteredSalary.reduce((sum, record) => {
-  const netSalary = typeof record.netSalary === 'string' 
-    ? parseFloat(record.netSalary.replace(/[^\d.]/g, '')) || 0 
-    : record.netSalary || 0;
-  return sum + netSalary;
-}, 0);
+  // Calculate yearly statistics with type safety
+  const totalEarnings = filteredSalary.reduce((sum, record) => {
+    const netSalary = typeof record.netSalary === 'string'
+      ? parseFloat(record.netSalary.replace(/[^\d.]/g, '')) || 0
+      : record.netSalary || 0;
+    return sum + netSalary;
+  }, 0);
 
-const averageSalary = filteredSalary.length > 0 ? totalEarnings / filteredSalary.length : 0;
+  const averageSalary = filteredSalary.length > 0 ? totalEarnings / filteredSalary.length : 0;
 
-const totalDeductions = filteredSalary.reduce((sum, record) => {
-  const deductions = typeof record.deductions === 'string' 
-    ? parseFloat(record.deductions.replace(/[^\d.]/g, '')) || 0 
-    : record.deductions || 0;
-  return sum + deductions;
-}, 0);
+  const totalDeductions = filteredSalary.reduce((sum, record) => {
+    const deductions = typeof record.deductions === 'string'
+      ? parseFloat(record.deductions.replace(/[^\d.]/g, '')) || 0
+      : record.deductions || 0;
+    return sum + deductions;
+  }, 0);
 
-const totalOvertime = filteredSalary.reduce((sum, record) => {
-  const overtime = typeof record.overtime === 'string' 
-    ? parseFloat(record.overtime.replace(/[^\d.]/g, '')) || 0 
-    : record.overtime || 0;
-  return sum + overtime;
-}, 0);
+  const totalOvertime = filteredSalary.reduce((sum, record) => {
+    const overtime = typeof record.overtime === 'string'
+      ? parseFloat(record.overtime.replace(/[^\d.]/g, '')) || 0
+      : record.overtime || 0;
+    return sum + overtime;
+  }, 0);
 
   const years = [2023, 2024, 2025];
 
@@ -89,7 +89,7 @@ const totalOvertime = filteredSalary.reduce((sum, record) => {
         <div className="bg-white rounded-xl shadow-lg border p-6">
           <div className="flex items-center">
             <div className="p-3 rounded-full bg-green-100 mr-4">
-              <DollarSign size={24} className="text-green-600" />
+              <IndianRupee size={24} className="text-green-600" />
             </div>
             <div>
               <p className="text-sm text-gray-600 font-medium">Total Earnings</p>
@@ -113,7 +113,7 @@ const totalOvertime = filteredSalary.reduce((sum, record) => {
         <div className="bg-white rounded-xl shadow-lg border p-6">
           <div className="flex items-center">
             <div className="p-3 rounded-full bg-red-100 mr-4">
-              <DollarSign size={24} className="text-red-600" />
+              <IndianRupee size={24} className="text-red-600" />
             </div>
             <div>
               <p className="text-sm text-gray-600 font-medium">Total Deductions</p>
@@ -125,7 +125,7 @@ const totalOvertime = filteredSalary.reduce((sum, record) => {
         <div className="bg-white rounded-xl shadow-lg border p-6">
           <div className="flex items-center">
             <div className="p-3 rounded-full bg-amber-100 mr-4">
-              <DollarSign size={24} className="text-amber-600" />
+              <IndianRupee size={24} className="text-amber-600" />
             </div>
             <div>
               <p className="text-sm text-gray-600 font-medium">Total Overtime</p>
@@ -168,7 +168,7 @@ const totalOvertime = filteredSalary.reduce((sum, record) => {
                   <tr>
                     <td colSpan="7" className="px-6 py-12 text-center">
                       <p className="text-red-500">Error: {error}</p>
-                      <button 
+                      <button
                         onClick={fetchSalaryData}
                         className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
                       >
@@ -226,7 +226,7 @@ const totalOvertime = filteredSalary.reduce((sum, record) => {
                 ))}
               </tbody>
             </table>
-            {!tableLoading &&filteredSalary.length === 0 && (
+            {!tableLoading && filteredSalary.length === 0 && (
               <div className="px-6 py-12 text-center">
                 <p className="text-gray-500">No salary records found for the selected year.</p>
               </div>

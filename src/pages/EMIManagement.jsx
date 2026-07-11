@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, CreditCard, DollarSign, Calendar, Filter, Eye, Plus, X, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Search, CreditCard, IndianRupee, Calendar, Filter, Eye, Plus, X, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
 const EMIManagement = () => {
     const employeeList = [
@@ -41,12 +41,12 @@ const EMIManagement = () => {
 
     const stats = [
         { label: 'Total active Loans', value: `₹${emiData.filter(e => e.status === 'Active').reduce((sum, e) => sum + e.loanAmount, 0).toLocaleString()}`, icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-100' },
-        { label: 'Monthly EMI Collection', value: `₹${emiData.filter(e => e.status === 'Active').reduce((sum, e) => sum + e.emiAmount, 0).toLocaleString()}`, icon: DollarSign, color: 'text-green-600', bg: 'bg-green-100' },
+        { label: 'Monthly EMI Collection', value: `₹${emiData.filter(e => e.status === 'Active').reduce((sum, e) => sum + e.emiAmount, 0).toLocaleString()}`, icon: IndianRupee, color: 'text-green-600', bg: 'bg-green-100' },
         { label: 'Pending EMIs', value: emiData.reduce((sum, e) => sum + e.remainingEmis, 0).toString(), icon: Calendar, color: 'text-amber-600', bg: 'bg-amber-100' },
         { label: 'Completed Loans', value: emiData.filter(e => e.status === 'Completed').length.toString(), icon: Eye, color: 'text-indigo-600', bg: 'bg-indigo-100' },
     ];
 
-    const filteredData = emiData.filter(item => 
+    const filteredData = emiData.filter(item =>
         item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.empId.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.loanType.toLowerCase().includes(searchTerm.toLowerCase())
@@ -54,7 +54,7 @@ const EMIManagement = () => {
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
-        
+
         setNewEmiFormData(prev => {
             const updated = { ...prev, [name]: value };
             const loanAmount = parseFloat(updated.loanAmount) || 0;
@@ -133,7 +133,7 @@ const EMIManagement = () => {
     return (
         <div className="space-y-6 page-content p-6">
             <div className="flex items-center justify-end">
-                <button 
+                <button
                     onClick={() => setShowAddModal(true)}
                     className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md"
                 >
@@ -214,8 +214,8 @@ const EMIManagement = () => {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="w-full bg-gray-200 rounded-full h-2 mb-1 max-w-[100px]">
-                                            <div 
-                                                className="bg-indigo-600 h-2 rounded-full" 
+                                            <div
+                                                className="bg-indigo-600 h-2 rounded-full"
                                                 style={{ width: `${(item.paidEmis / item.tenure) * 100}%` }}
                                             ></div>
                                         </div>
@@ -227,7 +227,7 @@ const EMIManagement = () => {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right">
-                                        <button 
+                                        <button
                                             onClick={() => handleActionClick(item)}
                                             className="text-blue-600 hover:text-blue-800 transition-colors p-2 rounded-lg hover:bg-blue-50"
                                             title="Update EMI"
@@ -256,11 +256,11 @@ const EMIManagement = () => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID *</label>
-                                    <select 
-                                        name="empId" 
-                                        value={newEmiFormData.empId} 
-                                        onChange={handleInputChange} 
-                                        required 
+                                    <select
+                                        name="empId"
+                                        value={newEmiFormData.empId}
+                                        onChange={handleInputChange}
+                                        required
                                         className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
                                     >
                                         <option value="">Select ID</option>
@@ -271,11 +271,11 @@ const EMIManagement = () => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Employee Name *</label>
-                                    <select 
-                                        name="name" 
-                                        value={newEmiFormData.name} 
-                                        onChange={handleInputChange} 
-                                        required 
+                                    <select
+                                        name="name"
+                                        value={newEmiFormData.name}
+                                        onChange={handleInputChange}
+                                        required
                                         className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
                                     >
                                         <option value="">Select Name</option>
@@ -334,20 +334,20 @@ const EMIManagement = () => {
                         <form onSubmit={handleUpdateEmi} className="p-6 space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Paid EMIs (Current: {selectedEmi?.paidEmis}/{selectedEmi?.tenure})</label>
-                                <input 
-                                    type="number" 
+                                <input
+                                    type="number"
                                     max={selectedEmi?.tenure}
                                     min="0"
-                                    value={updateFormData.paidEmis} 
-                                    onChange={(e) => setUpdateFormData({...updateFormData, paidEmis: e.target.value})} 
+                                    value={updateFormData.paidEmis}
+                                    onChange={(e) => setUpdateFormData({ ...updateFormData, paidEmis: e.target.value })}
                                     className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
                                 />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                                <select 
-                                    value={updateFormData.status} 
-                                    onChange={(e) => setUpdateFormData({...updateFormData, status: e.target.value})}
+                                <select
+                                    value={updateFormData.status}
+                                    onChange={(e) => setUpdateFormData({ ...updateFormData, status: e.target.value })}
                                     className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
                                 >
                                     <option value="Active">Active</option>

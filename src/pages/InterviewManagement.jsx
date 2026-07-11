@@ -53,7 +53,7 @@ const InterviewManagement = () => {
 
       // History: anyone who has been through an interview and moved past it.
       const historyRes = await jobApplicationApi.list({
-        stage: 'Selected,Rejected,OnHold,Offered,Verified,Onboarded',
+        stage: 'Selected,Rejected,OnHold,OfferReleased,OfferAccepted,OfferDeclined,Verified,Hired',
         limit: 1000,
         search: searchTerm,
       });

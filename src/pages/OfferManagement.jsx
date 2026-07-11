@@ -6,13 +6,22 @@ import { jobApplicationApi } from '../features/jobApplication/jobApplication.api
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
 
-const offerBadge = (status) => {
+const offerBadge = (stage) => {
   const style = {
-    Sent: 'bg-blue-100 text-blue-800 border border-blue-200',
-    Accepted: 'bg-green-100 text-green-800 border border-green-200',
-    Declined: 'bg-red-100 text-red-800 border border-red-200',
-  }[status] || 'bg-gray-100 text-gray-700 border border-gray-200';
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${style}`}>{status || 'Not Sent'}</span>;
+    OfferReleased: 'bg-blue-100 text-blue-800 border border-blue-200',
+    OfferAccepted: 'bg-green-100 text-green-800 border border-green-200',
+    OfferDeclined: 'bg-red-100 text-red-800 border border-red-200',
+    Rejected: 'bg-red-100 text-red-800 border border-red-200',
+  }[stage] || 'bg-gray-100 text-gray-700 border border-gray-200';
+
+  const label = {
+    OfferReleased: 'Sent',
+    OfferAccepted: 'Accepted',
+    OfferDeclined: 'Declined',
+    Rejected: 'Declined',
+  }[stage] || stage;
+
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${style}`}>{label}</span>;
 };
 
 const OfferManagement = () => {
@@ -32,17 +41,11 @@ const OfferManagement = () => {
   const load = async () => {
     setTableLoading(true);
     try {
-      const res = await jobApplicationApi.list({ stage: 'Offered', limit: 1000, search: searchTerm });
-      const all = res.data || [];
-      setPendingData(all.filter((a) => a.offerStatus !== 'Accepted' && a.offerStatus !== 'Declined'));
+      const pendingRes = await jobApplicationApi.list({ stage: 'OfferReleased', limit: 1000, search: searchTerm });
+      setPendingData(pendingRes.data || []);
 
-      const declinedRes = await jobApplicationApi.list({ stage: 'Rejected', limit: 1000, search: searchTerm });
-      const declined = (declinedRes.data || []).filter((a) => a.offerStatus === 'Declined');
-
-      setHistoryData([
-        ...all.filter((a) => a.offerStatus === 'Accepted' || a.offerStatus === 'Declined'),
-        ...declined,
-      ]);
+      const historyRes = await jobApplicationApi.list({ stage: 'OfferAccepted,OfferDeclined,Rejected', limit: 1000, search: searchTerm });
+      setHistoryData(historyRes.data || []);
     } catch (err) {
       toast.error(err.message || 'Failed to load offer data');
     } finally {
@@ -78,11 +81,12 @@ const OfferManagement = () => {
     setSubmitting(true);
     try {
       await jobApplicationApi.updateStage(offering.applicationNumber, {
+        stage: 'OfferReleased',
+        offerStatus: 'Sent',
         offeredDesignation: form.offeredDesignation || null,
         offeredSalary: form.offeredSalary,
         offeredJoiningDate: form.offeredJoiningDate,
         offerRemark: form.offerRemark || null,
-        offerStatus: 'Sent',
         bypassLimit: shouldBypassLimit,
       });
       toast.success('Offer sent to candidate');
@@ -106,11 +110,8 @@ const OfferManagement = () => {
     if (!window.confirm(`Mark this offer as ${accepted ? 'Accepted' : 'Declined'}?`)) return;
     try {
       const payload = {
-        offerStatus: accepted ? 'Accepted' : 'Declined',
+        stage: accepted ? 'OfferAccepted' : 'OfferDeclined',
       };
-      if (!accepted) {
-        payload.stage = 'Rejected';
-      }
       await jobApplicationApi.updateStage(candidate.applicationNumber, payload);
       toast.success(accepted ? 'Offer accepted — ready for Document Verification' : 'Offer declined');
       load();
@@ -231,7 +232,7 @@ const OfferManagement = () => {
                           </div>
                         )
                       ) : (
-                        offerBadge(c.offerStatus)
+                        offerBadge(c.stage)
                       )}
                     </td>
                   </tr>
@@ -272,8 +273,8 @@ const OfferManagement = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Offered Salary *</label>
-                    <input type="text" name="offeredSalary" required value={form.offeredSalary} onChange={handleChange} placeholder="e.g. 6,00,000 LPA" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Offered Salary * <span className="text-xs font-normal text-gray-400">(numbers only)</span></label>
+                    <input type="number" name="offeredSalary" required min="0" step="1" value={form.offeredSalary} onChange={handleChange} placeholder="e.g. 600000" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Target Joining Date *</label>

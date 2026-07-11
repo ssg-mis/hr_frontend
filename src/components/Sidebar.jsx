@@ -12,7 +12,6 @@ import {
   AlarmClockCheck,
   Users,
   Calendar,
-  DollarSign,
   Clock,
   LogOut as LogOutIcon,
   X,
@@ -22,7 +21,6 @@ import {
   ChevronUp,
   NotebookPen,
   Book,
-  BadgeDollarSign,
   BookPlus,
   CreditCard,
   Settings,
@@ -79,13 +77,13 @@ const Sidebar = ({ onClose }) => {
       toggle: () => setIsResignationOpen(!isResignationOpen),
       items: [
         { path: "/resignation-module", label: "Resignation Requests" },
-        { path: "/leaving", label: "Exit Clearance" },
         { path: "/after-leaving-work", label: "After Leaving Work" },
+        { path: "/leaving", label: "Exit Clearance" },
       ],
     },
     { path: "/employee", icon: Users, label: "Employee" },
     { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
-    { path: "/leave-policy", icon: BookPlus, label: "Leave Policy" },
+    { path: "/leave-policy", icon: BookPlus, label: "Leave Record" },
     { path: "/emi-management", icon: CreditCard, label: "EMI Management" },
     {
       type: "dropdown",
@@ -220,11 +218,10 @@ const SidebarContent = ({
             <div key={item.label}>
               <button
                 onClick={item.toggle}
-                className={`flex items-center justify-between w-full py-2.5 px-4 rounded-lg transition-colors ${
-                  item.isOpen
-                    ? "bg-indigo-800 text-white"
-                    : "text-indigo-100 hover:bg-indigo-800 hover:text-white"
-                }`}
+                className={`flex items-center justify-between w-full py-2.5 px-4 rounded-lg transition-colors ${item.isOpen
+                  ? "bg-indigo-800 text-white"
+                  : "text-indigo-100 hover:bg-indigo-800 hover:text-white"
+                  }`}
               >
                 <div className="flex items-center">
                   <item.icon
@@ -248,10 +245,9 @@ const SidebarContent = ({
                       key={subItem.path}
                       to={subItem.path}
                       className={({ isActive }) =>
-                        `flex items-center py-2 px-4 rounded-lg transition-colors ${
-                          isActive
-                            ? "bg-indigo-700 text-white"
-                            : "text-indigo-100 hover:bg-indigo-800 hover:text-white"
+                        `flex items-center py-2 px-4 rounded-lg transition-colors ${isActive
+                          ? "bg-indigo-700 text-white"
+                          : "text-indigo-100 hover:bg-indigo-800 hover:text-white"
                         }`
                       }
                       onClick={onClose}
@@ -270,10 +266,9 @@ const SidebarContent = ({
             key={item.path}
             to={item.path}
             className={({ isActive }) =>
-              `flex items-center py-2.5 px-4 rounded-lg transition-colors ${
-                isActive
-                  ? "bg-indigo-800 text-white"
-                  : "text-indigo-100 hover:bg-indigo-800 hover:text-white"
+              `flex items-center py-2.5 px-4 rounded-lg transition-colors ${isActive
+                ? "bg-indigo-800 text-white"
+                : "text-indigo-100 hover:bg-indigo-800 hover:text-white"
               }`
             }
             onClick={onClose}

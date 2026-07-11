@@ -40,11 +40,11 @@ const SelectionProcess = () => {
 
       // History: anyone whose selection decision has already been recorded.
       const historyRes = await jobApplicationApi.list({
-        stage: 'Offered,Rejected,OnHold,Verified,Onboarded',
+        stage: 'OfferReleased,OfferAccepted,OfferDeclined,Rejected,OnHold,Verified,Hired',
         limit: 1000,
         search: searchTerm,
       });
-      setHistoryData((historyRes.data || []).filter((a) => a.selectionRemark || a.stage === 'Offered'));
+      setHistoryData((historyRes.data || []).filter((a) => a.selectionRemark || ['OfferReleased', 'OfferAccepted', 'OfferDeclined'].includes(a.stage)));
     } catch (err) {
       toast.error(err.message || 'Failed to load selection data');
     } finally {
@@ -69,7 +69,7 @@ const SelectionProcess = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const stage = decision === 'Offer' ? 'Offered' : decision === 'Hold' ? 'OnHold' : 'Rejected';
+      const stage = decision === 'Offer' ? 'OfferReleased' : decision === 'Hold' ? 'OnHold' : 'Rejected';
       await jobApplicationApi.updateStage(reviewing.applicationNumber, {
         stage,
         selectionRemark: remark || null,
@@ -282,7 +282,7 @@ const SelectionProcess = () => {
                   className={`px-5 py-2.5 font-semibold rounded-xl text-white transition-colors ${
                     shouldBypassLimit
                       ? 'bg-red-600 hover:bg-red-700 shadow-md shadow-red-100'
-                      : 'bg-indigo-650 hover:bg-indigo-700 shadow-md shadow-indigo-100'
+                      : 'bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-100'
                   }`}
                 >
                   {submitting ? 'Saving...' : shouldBypassLimit ? 'Proceed & Confirm Anyway' : 'Confirm Decision'}

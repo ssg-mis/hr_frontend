@@ -39,12 +39,12 @@ const DocumentVerification = () => {
   const load = async () => {
     setTableLoading(true);
     try {
-      const res = await jobApplicationApi.list({ stage: 'Offered', limit: 1000, search: searchTerm });
-      const accepted = (res.data || []).filter((a) => a.offerStatus === 'Accepted');
+      const res = await jobApplicationApi.list({ stage: 'OfferAccepted', limit: 1000, search: searchTerm });
+      const accepted = res.data || [];
       setPendingData(accepted.filter((a) => !a.documentChecklist));
 
       const historyRes = await jobApplicationApi.list({
-        stage: 'Verified,Onboarded,Rejected',
+        stage: 'Verified,Hired,Rejected',
         limit: 1000,
         search: searchTerm,
       });
@@ -103,6 +103,7 @@ const DocumentVerification = () => {
 
   const submitVerification = async (decision) => {
     setSubmitting(true);
+    const verifyingAppNumber = verifying.applicationNumber;
     try {
       await jobApplicationApi.updateStage(verifying.applicationNumber, {
         documentChecklist: checklist,
@@ -112,7 +113,23 @@ const DocumentVerification = () => {
       });
       toast.success(decision === 'Verified' ? 'Documents verified — ready for Joining' : 'Candidate rejected at document verification');
       setVerifying(null);
-      load();
+      // Re-fetch and then auto-open viewingDetails for this candidate so uploads are visible
+      setTableLoading(true);
+      try {
+        const res = await jobApplicationApi.list({ stage: 'OfferAccepted', limit: 1000, search: searchTerm });
+        const accepted = res.data || [];
+        setPendingData(accepted.filter((a) => !a.documentChecklist));
+        const historyRes = await jobApplicationApi.list({ stage: 'Verified,Hired,Rejected', limit: 1000, search: searchTerm });
+        const historyList = (historyRes.data || []).filter((a) => a.documentChecklist);
+        setHistoryData(historyList);
+        // Auto-refresh viewingDetails if it was the same candidate
+        const refreshed = historyList.find((a) => a.applicationNumber === verifyingAppNumber);
+        if (refreshed) setViewingDetails(refreshed);
+      } catch (err) {
+        toast.error(err.message || 'Failed to reload verification data');
+      } finally {
+        setTableLoading(false);
+      }
     } catch (err) {
       toast.error(err.message || 'Failed to save verification');
     } finally {

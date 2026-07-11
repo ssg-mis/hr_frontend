@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Briefcase, Calendar, MapPin, DollarSign, Upload, CheckCircle, AlertCircle, Info, Award, User, Phone, Mail, FileText } from 'lucide-react';
+import { Briefcase, Calendar, MapPin, IndianRupee, Upload, CheckCircle, AlertCircle, Info, Award, User, Phone, Mail, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { vacancyApi } from '../vacancy/vacancy.api';
 import { jobApplicationApi } from './jobApplication.api';
@@ -261,7 +261,7 @@ const PublicApplyPage = () => {
               <span>{vacancy.preferredLocation || 'Not Specified'}</span>
             </div>
             <div className="flex items-center space-x-2">
-              <DollarSign size={14} className="text-indigo-300" />
+              <IndianRupee size={14} className="text-indigo-300" />
               <span>{vacancy.salaryCriteria || 'Negotiable'}</span>
             </div>
             <div className="flex items-center space-x-2">

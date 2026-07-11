@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Plus, X, ChevronLeft, ChevronRight, Search, Trash2, Edit2, Link, Briefcase, Calendar, MapPin, DollarSign, Award, Layers, Users, Info, AlertCircle, Clock, Lock } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Plus, X, ChevronLeft, ChevronRight, Search, Trash2, Edit2, Link, Briefcase, Calendar, MapPin, IndianRupee, Award, Layers, Users, Info, AlertCircle, Clock, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { vacancyApi } from './vacancy.api';
 import { designationApi } from '../designation/designation.api';
@@ -56,6 +56,7 @@ const VacancyPage = () => {
   const [designations, setDesignations] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [formError, setFormError] = useState('');
+  const formScrollRef = useRef(null);
 
   const [showAddDept, setShowAddDept] = useState(false);
   const [newDeptName, setNewDeptName] = useState('');
@@ -215,6 +216,7 @@ const VacancyPage = () => {
     e.preventDefault();
 
     setFormError('');
+    if (formScrollRef.current) formScrollRef.current.scrollTop = 0;
     if (
       !formData.designationId ||
       !formData.departmentId ||
@@ -223,6 +225,7 @@ const VacancyPage = () => {
       !formData.competitionDate
     ) {
       setFormError('Please fill all required fields');
+      if (formScrollRef.current) formScrollRef.current.scrollTop = 0;
       return;
     }
 
@@ -231,6 +234,7 @@ const VacancyPage = () => {
       const salaryRegex = /^\s*\d+(?:,\d+)*(?:\.\d+)?\s*[kK]?\s*(?:-\s*\d+(?:,\d+)*(?:\.\d+)?\s*[kK]?)?\s*(?:LPA|PM|Monthly|Per Month|Per Annum|Lakhs|L)\s*$/i;
       if (!salaryRegex.test(formData.salaryCriteria)) {
         setFormError('Salary must be a number or range followed by a unit (e.g., "20,000 - 25,000 PM" or "8 - 12 LPA")');
+        if (formScrollRef.current) formScrollRef.current.scrollTop = 0;
         return;
       }
     }
@@ -240,12 +244,14 @@ const VacancyPage = () => {
       if (platform === 'Others') {
         if (!customPlatformName.trim() || !customLinkUrl.trim()) {
           setFormError('Please specify the custom platform name and link');
+          if (formScrollRef.current) formScrollRef.current.scrollTop = 0;
           return;
         }
       } else {
         const link = formData.postingLinks?.[platform];
         if (!link || !link.trim()) {
           setFormError(`Please fill the link URL for the selected platform: ${platform}`);
+          if (formScrollRef.current) formScrollRef.current.scrollTop = 0;
           return;
         }
       }
@@ -808,7 +814,7 @@ const VacancyPage = () => {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="flex flex-col overflow-hidden">
-              <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+              <div ref={formScrollRef} className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
                 {formError && (
                   <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 text-sm font-semibold flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
@@ -1194,7 +1200,7 @@ const VacancyPage = () => {
 
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
                   <div className="flex items-center space-x-2 text-gray-400 mb-1">
-                    <DollarSign size={14} />
+                    <IndianRupee size={14} />
                     <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Salary Range</span>
                   </div>
                   <p className="text-sm font-semibold text-gray-800">{viewingVacancy.salaryCriteria || '—'}</p>

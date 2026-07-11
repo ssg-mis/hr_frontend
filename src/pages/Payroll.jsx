@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Calendar, Clock, Download, Upload, Check, X, DollarSign, FileText, BarChart3, CreditCard, Receipt, Calculator, Filter, Eye, MoreVertical, Printer } from 'lucide-react';
+import { Search, Plus, Calendar, Clock, Download, Upload, Check, X, FileText, BarChart3, CreditCard, Receipt, Calculator, Filter, Eye, MoreVertical, Printer } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 
@@ -729,10 +729,10 @@ const Payroll = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
                       className={`px-2 py-1 rounded-full text-xs font-medium ${item.status === "processed" || item.status === "paid"
-                          ? "bg-green-100 text-green-800"
-                          : item.status === "draft"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-blue-100 text-blue-800"
+                        ? "bg-green-100 text-green-800"
+                        : item.status === "draft"
+                          ? "bg-yellow-100 text-yellow-800"
+                          : "bg-blue-100 text-blue-800"
                         }`}
                     >
                       {item.status}
@@ -810,8 +810,8 @@ const Payroll = () => {
       {notification && (
         <div
           className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transition-all duration-300 ${notification.type === "error"
-              ? "bg-red-100 text-red-800 border border-red-300"
-              : "bg-green-100 text-green-800 border border-green-300"
+            ? "bg-red-100 text-red-800 border border-red-300"
+            : "bg-green-100 text-green-800 border border-green-300"
             }`}
         >
           {notification.message}
@@ -960,8 +960,8 @@ const Payroll = () => {
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     className={`py-4 px-6 text-center border-b-2 font-medium text-sm flex items-center whitespace-nowrap ${activeTab === tab.id
-                        ? "border-blue-600 text-blue-600"
-                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                      ? "border-blue-600 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                       }`}
                   >
                     <IconComponent size={18} className="mr-2" />

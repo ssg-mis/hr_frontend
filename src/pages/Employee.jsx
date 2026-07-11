@@ -1,479 +1,421 @@
-import React, { useEffect, useState } from 'react';
-import { Filter, Search, Clock, CheckCircle, ChevronLeft, ChevronRight, X, Eye } from 'lucide-react';
-import useDataStore from '../store/dataStore';
+import React, { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  Search, Users, UserCheck, UserMinus, Briefcase, Phone, Mail,
+  Calendar, Building2, Hash, Eye, X, RefreshCw, ChevronLeft, ChevronRight,
+} from 'lucide-react';
+import { api } from '../lib/api';
+
+/* ─── helpers ─────────────────────────────────────────────────────── */
+const fmtDate = (d) =>
+  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+const statusBadge = (status) => {
+  const map = {
+    Active: { cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200', label: 'Working' },
+    Pending: { cls: 'bg-amber-50  text-amber-700  border border-amber-200', label: 'Resignation Requested' },
+    Relieved: { cls: 'bg-red-50    text-red-700    border border-red-200', label: 'Relieved' },
+  };
+  const { cls = 'bg-gray-100 text-gray-600 border border-gray-200', label = status } = map[status] || {};
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${cls}`}>
+      {label}
+    </span>
+  );
+};
+
+const Avatar = ({ name, size = 'md' }) => {
+  const initials = (name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+  const colors = ['bg-violet-500', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-cyan-500', 'bg-indigo-500'];
+  const color = colors[(name || '').charCodeAt(0) % colors.length];
+  const sz = size === 'lg' ? 'w-14 h-14 text-lg' : 'w-9 h-9 text-sm';
+  return (
+    <div className={`${sz} rounded-full ${color} flex items-center justify-center text-white font-bold shrink-0`}>
+      {initials}
+    </div>
+  );
+};
+
+/* ─── Stat Card ────────────────────────────────────────────────────── */
+const StatCard = ({ icon: Icon, label, value, color, sub }) => (
+  <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
+    <div className={`w-13 h-13 w-12 h-12 rounded-xl flex items-center justify-center ${color}`}>
+      <Icon size={22} className="text-white" />
+    </div>
+    <div>
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{label}</p>
+      <p className="text-2xl font-bold text-gray-900 mt-0.5">{value}</p>
+      {sub && <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  </div>
+);
+
+/* ─── Detail Modal ─────────────────────────────────────────────────── */
+const DetailModal = ({ employee, onClose }) => {
+  if (!employee) return null;
+
+  const fields = [
+    { label: 'Employee Code', value: employee.employeeCode, icon: Hash },
+    { label: 'Full Name', value: employee.candidateName, icon: Users },
+    { label: 'Department', value: employee.departmentName, icon: Building2 },
+    { label: 'Designation', value: employee.applyingForPost, icon: Briefcase },
+    { label: 'Phone', value: employee.candidatePhone, icon: Phone },
+    { label: 'Email', value: employee.candidateEmail, icon: Mail },
+    { label: 'Date of Joining', value: fmtDate(employee.joiningDate), icon: Calendar },
+    { label: 'Vacancy No.', value: employee.vacancyNumber, icon: Hash },
+    { label: 'Status', value: employee.status, icon: UserCheck, isStatus: true },
+    { label: 'Joining Remark', value: employee.joiningRemark, icon: null },
+  ];
+
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-100 overflow-hidden"
+        style={{ animation: 'modalIn .2s ease' }}
+      >
+        {/* Modal header */}
+        <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Avatar name={employee.candidateName} size="lg" />
+            <div>
+              <h3 className="text-white font-bold text-base leading-tight">{employee.candidateName}</h3>
+              <p className="text-indigo-200 text-xs mt-0.5">{employee.employeeCode}</p>
+              <div className="mt-1">{statusBadge(employee.status)}</div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-white/70 hover:text-white transition-colors rounded-lg hover:bg-white/10 p-1"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Modal body */}
+        <div className="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+          <div className="grid grid-cols-1 gap-0 divide-y divide-gray-100">
+            {fields.map(({ label, value, icon: Icon, isStatus }) => (
+              <div key={label} className="flex items-center justify-between py-3">
+                <div className="flex items-center gap-2 text-gray-400 min-w-0">
+                  {Icon && <Icon size={13} className="shrink-0" />}
+                  <span className="text-xs font-semibold uppercase tracking-wide truncate">{label}</span>
+                </div>
+                <div className="text-right ml-4 max-w-[55%]">
+                  {isStatus ? statusBadge(value) : (
+                    <span className="text-sm text-gray-800 font-medium break-words">{value || '—'}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Modal footer */}
+        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-5 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold rounded-xl transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+/* ─── Main Component ───────────────────────────────────────────────── */
+const LIMIT = 15;
+
+const TAB_CONFIG = [
+  { key: 'Active', label: 'Working', statusFilter: 'Active' },
+  { key: 'Pending', label: 'Resignation Requested', statusFilter: 'Pending' },
+  { key: 'Relieved', label: 'Relieved', statusFilter: 'Relieved' },
+];
 
 const Employee = () => {
-  //  const { employeeData, leavingData } = useDataStore();
-  const [activeTab, setActiveTab] = useState('joining');
+  const [activeTab, setActiveTab] = useState('Active');
   const [searchTerm, setSearchTerm] = useState('');
-  const [joiningData, setJoiningData] = useState([]);
-  const [leavingData, setLeavingData] = useState([]);
+  const [rows, setRows] = useState([]);
+  const [stats, setStats] = useState({ Active: 0, Pending: 0, Relieved: 0 });
   const [loading, setLoading] = useState(false);
-  const [tableLoading, setTableLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 10,
-    total: 0,
-    totalPages: 0
-  });
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [selected, setSelected] = useState(null);
+  const isFirstRun = React.useRef(true);
 
-  const formatDOB = (dateString) => {
-    if (!dateString) return '';
-
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) {
-      return dateString; // Return as-is if not a valid date
-    }
-
-    const day = date.getDate();
-    const month = date.getMonth();
-    const year = date.getFullYear();
-
-    return `${day}/${month}/${year}`;
-  };
-
-  const fetchJoiningData = async (page = 1) => {
-    setLoading(true);
-    setTableLoading(true);
-    setError(null);
-
+  /* fetch counts for all statuses once */
+  const fetchStats = useCallback(async () => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/employees/active?page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const result = await response.json();
-      if (!result.success) throw new Error(result.message);
-
-      const processedData = result.data.map(item => ({
-        ...item,
-        employeeId: item.employee_id,
-        candidateName: item.name_as_per_aadhar,
-        mobileNo: item.mobile_no,
-        blood_group_name: item.bloodGroup?.blood_group_name,
-        status: 'active'
-      }));
-
-      setJoiningData(processedData);
-      setPagination(result.pagination || {
-        page: 1,
-        limit: 10,
-        total: result.data.length,
-        totalPages: 1
+      const res = await api.get('/employees');
+      const all = res.data || [];
+      setStats({
+        Active: all.filter(e => e.status === 'Active').length,
+        Pending: all.filter(e => e.status === 'Pending').length,
+        Relieved: all.filter(e => e.status === 'Relieved').length,
       });
-    } catch (error) {
-      console.error('Error fetching joining data:', error);
-      setError(error.message);
-    } finally {
-      setLoading(false);
-      setTableLoading(false);
-    }
-  };
+    } catch (_) { }
+  }, []);
 
-  const fetchLeavingData = async (page = 1) => {
+  /* fetch + filter for the current tab */
+  const fetchList = useCallback(async (pg = 1, tab = activeTab, search = searchTerm) => {
     setLoading(true);
-    setTableLoading(true);
-    setError(null);
-
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/employees/left?page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const result = await response.json();
-      if (!result.success) throw new Error(result.message);
+      const res = await api.get(`/employees?status=${tab}`);
+      let list = res.data || [];
 
-      const processedData = result.data.map(item => ({
-        ...item,
-        ...item.joining,
-        employeeId: item.joining?.employee_id,
-        name: item.joining?.name_as_per_aadhar,
-        mobileNo: item.mobile_no || item.joining?.mobile_no,
-        blood_group_name: item.joining?.bloodGroup?.blood_group_name,
-      }));
-
-      setLeavingData(processedData);
-      setPagination(result.pagination || {
-        page: 1,
-        limit: 10,
-        total: result.data.length,
-        totalPages: 1
-      });
-    } catch (error) {
-      console.error('Error fetching leaving data:', error);
-      setError(error.message);
-    } finally {
-      setLoading(false);
-      setTableLoading(false);
-    }
-  };
-
-  const handlePageChange = (newPage) => {
-    if (newPage >= 1 && newPage <= pagination.totalPages) {
-      if (activeTab === 'joining') {
-        fetchJoiningData(newPage);
-      } else {
-        fetchLeavingData(newPage);
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        list = list.filter(e =>
+          (e.candidateName || '').toLowerCase().includes(q) ||
+          (e.employeeCode || '').toLowerCase().includes(q) ||
+          (e.candidatePhone || '').toLowerCase().includes(q) ||
+          (e.candidateEmail || '').toLowerCase().includes(q) ||
+          (e.applyingForPost || '').toLowerCase().includes(q) ||
+          (e.departmentName || '').toLowerCase().includes(q)
+        );
       }
+
+      setTotalCount(list.length);
+      setTotalPages(Math.max(1, Math.ceil(list.length / LIMIT)));
+      const start = (pg - 1) * LIMIT;
+      setRows(list.slice(start, start + LIMIT));
+    } catch {
+      setRows([]);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [activeTab, searchTerm]);
 
   useEffect(() => {
-    if (activeTab === 'joining') {
-      fetchJoiningData(1);
-    } else {
-      fetchLeavingData(1);
-    }
+    setPage(1);
+    fetchList(1, activeTab, searchTerm);
+    fetchStats();
   }, [activeTab]);
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      if (activeTab === 'joining') {
-        fetchJoiningData(1);
-      } else {
-        fetchLeavingData(1);
-      }
-    }, 500);
-
-    return () => clearTimeout(delayDebounceFn);
+    if (isFirstRun.current) {
+      isFirstRun.current = false;
+      return;
+    }
+    const t = setTimeout(() => { setPage(1); fetchList(1, activeTab, searchTerm); }, 350);
+    return () => clearTimeout(t);
   }, [searchTerm]);
 
-  const filteredJoiningData = joiningData;
-
-  const filteredLeavingData = leavingData;
+  const goPage = (p) => {
+    if (p < 1 || p > totalPages) return;
+    setPage(p);
+    fetchList(p, activeTab, searchTerm);
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 p-6 max-w-[1400px] mx-auto">
 
-      {/* Filter and Search */}
-      <div className="bg-white p-4 rounded-lg shadow flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0 md:space-x-4">
-        <div className="flex flex-1 max-w-md">
-          <div className="relative w-full">
-            <input
-              type="text"
-              placeholder="Search by name, employee ID, or designation..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300   rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-600 bg-white  text-gray-500 "
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 " />
-          </div>
+      {/* ── Header ─────────────────────────────────────────── */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <Users size={22} className="text-indigo-600" /> Employees
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">Manage and view all company employees</p>
         </div>
+        <button
+          onClick={() => { fetchList(page); fetchStats(); }}
+          className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 shadow-sm transition-colors"
+        >
+          <RefreshCw size={14} /> Refresh
+        </button>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="border-b border-gray-300 ">
-          <nav className="flex -mb-px">
-            <button
-              className={`py-4 px-6 font-medium text-sm border-b-2 ${activeTab === 'joining'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              onClick={() => setActiveTab('joining')}
-            >
-              <CheckCircle size={16} className="inline mr-2" />
-              Joining ({filteredJoiningData.length})
-            </button>
-            <button
-              className={`py-4 px-6 font-medium text-sm border-b-2 ${activeTab === 'leaving'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              onClick={() => setActiveTab('leaving')}
-            >
-              <Clock size={16} className="inline mr-2" />
-              Leaving ({filteredLeavingData.length})
-            </button>
+      {/* ── Stats — only Working + Resignation Requested ─── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <StatCard
+          icon={UserCheck}
+          label="Working"
+          value={stats.Active}
+          color="bg-emerald-500"
+          sub="Currently active employees"
+        />
+        <StatCard
+          icon={UserMinus}
+          label="Resignation Requested"
+          value={stats.Pending}
+          color="bg-amber-500"
+          sub="Pending resignation approvals"
+        />
+      </div>
+
+      {/* ── Table card ─────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+
+        {/* Toolbar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-gray-200">
+          {/* Tabs */}
+          <nav className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+            {TAB_CONFIG.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${activeTab === key
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                  }`}
+              >
+                {label}
+                <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${activeTab === key ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 text-gray-500'
+                  }`}>
+                  {stats[key]}
+                </span>
+              </button>
+            ))}
           </nav>
+
+          {/* Search */}
+          <div className="relative w-full sm:w-72">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search name, code, phone, dept…"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3 h-9 rounded-lg border border-gray-300 bg-gray-50 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+            />
+          </div>
         </div>
 
-        {/* Tab Content */}
-        <div className="p-6">
-          {activeTab === 'joining' && (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-white ">
-                <thead className="bg-gray-100 ">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-100">Emp ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-100">Name</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Father Name</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date of Joining</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Designation</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Salary</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mobile</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Blood Group</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DOB</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gender</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Addr</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aadhar Addr</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aadhar No</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bank A/C</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IFSC</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Branch</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Family Mob</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Relation</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qualification</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PF Eligible</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ESIC Eligible</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ESIC No</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Past PF ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Off. Email</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mob Issued</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lap Issued</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Att. Mode</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pay Mode</th>
+        {/* Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th className="px-5 py-3 text-left">Employee</th>
+                <th className="px-5 py-3 text-left">Code</th>
+                <th className="px-5 py-3 text-left">Department</th>
+                <th className="px-5 py-3 text-left">Designation</th>
+                <th className="px-5 py-3 text-left">Phone</th>
+                <th className="px-5 py-3 text-left">Email</th>
+                <th className="px-5 py-3 text-left">Joined</th>
+                <th className="px-5 py-3 text-center">Status</th>
+                <th className="px-5 py-3 text-center">Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-5 py-4"><div className="h-4 bg-gray-200 rounded w-24"></div></td>
+                    <td className="px-5 py-4"><div className="h-4 bg-gray-200 rounded w-12"></div></td>
+                    <td className="px-5 py-4"><div className="h-4 bg-gray-200 rounded w-20"></div></td>
+                    <td className="px-5 py-4"><div className="h-4 bg-gray-200 rounded w-24"></div></td>
+                    <td className="px-5 py-4"><div className="h-4 bg-gray-200 rounded w-24"></div></td>
+                    <td className="px-5 py-4"><div className="h-4 bg-gray-200 rounded w-36"></div></td>
+                    <td className="px-5 py-4"><div className="h-4 bg-gray-200 rounded w-16"></div></td>
+                    <td className="px-5 py-4"><div className="h-4 bg-gray-200 rounded w-16"></div></td>
+                    <td className="px-5 py-4"><div className="h-4 bg-gray-200 rounded w-12"></div></td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-white ">
-                  {tableLoading ? (
-                    <tr>
-                      <td colSpan="7" className="px-6 py-12 text-center">
-                        <div className="flex justify-center flex-col items-center">
-                          <div className="w-6 h-6 border-4 border-indigo-500 border-dashed rounded-full animate-spin mb-2"></div>
-                          <span className="text-gray-600 text-sm">Loading pending calls...</span>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : error ? (
-                    <tr>
-                      <td colSpan="7" className="px-6 py-12 text-center">
-                        <p className="text-red-500">Error: {error}</p>
-                        <button
-                          onClick={fetchLeavingData}
-                          className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-                        >
-                          Retry
-                        </button>
-                      </td>
-                    </tr>
-                  ) : filteredJoiningData.map((item, index) => (
-                    <tr key={index} className="hover:bg-gray-50 group">
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 font-mono font-bold bg-white group-hover:bg-gray-50">{item.employeeId}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 font-medium bg-white group-hover:bg-gray-50">{item.candidateName}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.father_name}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.date_of_joining ? formatDOB(item.date_of_joining) : '-'}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.designation}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.joining_company_name || '-'}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.salary}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.mobileNo}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.personal_email}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.blood_group_name || '-'}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{formatDOB(item.date_of_birth)}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.gender}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 max-w-[200px] truncate" title={item.current_address}>{item.current_address}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 max-w-[200px] truncate" title={item.address_as_per_aadhar_card}>{item.address_as_per_aadhar_card}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.aadhar_card_no}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.current_bank_ac_no}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.ifsc_code}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.branch_name}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.family_mobile_no}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.relationship_with_family_person}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.highest_qualification}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.pf_eligible}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.esic_eligible}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.esic_no}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.past_pf_id}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.email_id_to_be_issued}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.issue_mobile}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.issue_laptop}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.mode_of_attendance}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.payment_mode}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!tableLoading && filteredJoiningData.length === 0 && (
-                <div className="px-6 py-12 text-center">
-                  <p className="text-gray-500 ">No joining employees found.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'leaving' && (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-white ">
-                <thead className="bg-gray-100 ">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-100">Emp ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-100">Name</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DOL</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Father Name</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DOJ</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Designation</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Salary</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mobile</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Blood Group</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DOB</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gender</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Addr</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aadhar Addr</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aadhar No</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bank A/C</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IFSC</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Branch</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Family Mob</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Relation</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qualification</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PF Eligible</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ESIC Eligible</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ESIC No</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Past PF ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Off. Email</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mob Issued</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lap Issued</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Att. Mode</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pay Mode</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white ">
-                  {tableLoading ? (
-                    <tr>
-                      <td colSpan="7" className="px-6 py-12 text-center">
-                        <div className="flex justify-center flex-col items-center">
-                          <div className="w-6 h-6 border-4 border-indigo-500 border-dashed rounded-full animate-spin mb-2"></div>
-                          <span className="text-gray-600 text-sm">Loading pending calls...</span>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : error ? (
-                    <tr>
-                      <td colSpan="7" className="px-6 py-12 text-center">
-                        <p className="text-red-500">Error: {error}</p>
-                        <button
-                          onClick={fetchLeavingData}
-                          className="mt-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-                        >
-                          Retry
-                        </button>
-                      </td>
-                    </tr>
-                  ) : filteredLeavingData.map((item, index) => (
-                    <tr key={index} className="hover:bg-gray-50 group">
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 font-mono font-bold bg-white group-hover:bg-gray-50">{item.employeeId}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900 font-medium bg-white group-hover:bg-gray-50">{item.name}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{formatDOB(item.date_of_leaving)}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.reason_for_leaving}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.father_name}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.date_of_joining ? formatDOB(item.date_of_joining) : '-'}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.designation}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.joining_company_name || '-'}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.salary}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.mobileNo}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.personal_email}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.blood_group_name || '-'}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{formatDOB(item.date_of_birth)}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.gender}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 max-w-[200px] truncate" title={item.current_address}>{item.current_address}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 max-w-[200px] truncate" title={item.address_as_per_aadhar_card}>{item.address_as_per_aadhar_card}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.aadhar_card_no}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.current_bank_ac_no}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.ifsc_code}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.branch_name}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.family_mobile_no}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.relationship_with_family_person}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.highest_qualification}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.pf_eligible}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.esic_eligible}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.esic_no}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.past_pf_id}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.email_id_to_be_issued}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.issue_mobile}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.issue_laptop}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.mode_of_attendance}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.payment_mode}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!tableLoading && filteredLeavingData.length === 0 && (
-                <div className="px-6 py-12 text-center">
-                  <p className="text-gray-500 ">No leaving employees found.</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {pagination && pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between mt-6 px-4 py-3 bg-white border-t border-gray-200 sm:px-6">
-            <div className="flex flex-1 justify-between sm:hidden">
-              <button
-                onClick={() => handlePageChange(pagination.page - 1)}
-                disabled={pagination.page === 1}
-                className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => handlePageChange(pagination.page + 1)}
-                disabled={pagination.page === pagination.totalPages}
-                className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-            <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm text-gray-700">
-                  Showing <span className="font-medium">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="font-medium">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of{' '}
-                  <span className="font-medium">{pagination.total}</span> results
-                </p>
-              </div>
-              <div>
-                <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
-                  <button
-                    onClick={() => handlePageChange(pagination.page - 1)}
-                    disabled={pagination.page === 1}
-                    className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
-                  >
-                    <span className="sr-only">Previous</span>
-                    <ChevronLeft className="h-5 w-5" aria-hidden="true" />
-                  </button>
-
-                  {[...Array(Math.min(5, pagination.totalPages))].map((_, i) => {
-                    let pageNum;
-                    if (pagination.totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (pagination.page <= 3) {
-                      pageNum = i + 1;
-                    } else if (pagination.page >= pagination.totalPages - 2) {
-                      pageNum = pagination.totalPages - 4 + i;
-                    } else {
-                      pageNum = pagination.page - 2 + i;
-                    }
-
-                    return (
+                ))
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td colSpan="9" className="px-5 py-16 text-center">
+                    <div className="flex flex-col items-center gap-2 text-gray-400">
+                      <Users size={32} className="opacity-30" />
+                      <span className="text-sm font-semibold">
+                        {searchTerm
+                          ? 'No employees match your search.'
+                          : `No ${TAB_CONFIG.find(t => t.key === activeTab)?.label.toLowerCase()} employees found.`}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                rows.map(emp => (
+                  <tr key={emp.id} className="hover:bg-indigo-50/30 transition-colors group">
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <Avatar name={emp.candidateName} />
+                        <span className="font-semibold text-gray-900">{emp.candidateName}</span>
+                      </div>
+                    </td>
+                    <td className="px-1 py-1">
+                      <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
+                        {emp.employeeCode}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-gray-600">{emp.departmentName || '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-600">{emp.applyingForPost || '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-600 font-mono text-xs">{emp.candidatePhone}</td>
+                    <td className="px-5 py-3.5 text-gray-500 text-xs max-w-[160px] truncate" title={emp.candidateEmail}>
+                      {emp.candidateEmail || '—'}
+                    </td>
+                    <td className="px-5 py-3.5 text-gray-500 text-xs whitespace-nowrap">{fmtDate(emp.joiningDate)}</td>
+                    <td className="px-5 py-3.5 text-center">{statusBadge(emp.status)}</td>
+                    <td className="px-5 py-3.5 text-center">
                       <button
-                        key={pageNum}
-                        onClick={() => handlePageChange(pageNum)}
-                        className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${pagination.page === pageNum
-                          ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
-                          : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0'
-                          }`}
+                        onClick={() => setSelected(emp)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors text-xs font-semibold"
                       >
-                        {pageNum}
+                        <Eye size={13} /> View
                       </button>
-                    );
-                  })}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
+        {/* Pagination */}
+        {!loading && totalPages > 1 && (
+          <div className="flex items-center justify-between px-5 py-3.5 border-t border-gray-200 bg-gray-50/50">
+            <p className="text-xs text-gray-500">
+              Showing{' '}
+              <span className="font-semibold text-gray-700">{(page - 1) * LIMIT + 1}–{Math.min(page * LIMIT, totalCount)}</span>
+              {' '}of{' '}
+              <span className="font-semibold text-gray-700">{totalCount}</span> employees
+            </p>
+            <div className="flex items-center gap-1">
+              <button onClick={() => goPage(page - 1)} disabled={page === 1} className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                <ChevronLeft size={16} />
+              </button>
+              {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                let p;
+                if (totalPages <= 5) p = i + 1;
+                else if (page <= 3) p = i + 1;
+                else if (page >= totalPages - 2) p = totalPages - 4 + i;
+                else p = page - 2 + i;
+                return (
                   <button
-                    onClick={() => handlePageChange(pagination.page + 1)}
-                    disabled={pagination.page === pagination.totalPages}
-                    className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                    key={p}
+                    onClick={() => goPage(p)}
+                    className={`w-8 h-8 rounded-lg text-xs font-semibold transition-colors ${page === p ? 'bg-indigo-600 text-white shadow-sm' : 'border border-gray-200 text-gray-600 hover:bg-white'
+                      }`}
                   >
-                    <span className="sr-only">Next</span>
-                    <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                    {p}
                   </button>
-                </nav>
-              </div>
+                );
+              })}
+              <button onClick={() => goPage(page + 1)} disabled={page === totalPages} className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                <ChevronRight size={16} />
+              </button>
             </div>
           </div>
         )}
+
+        {/* Row count (no pagination) */}
+        {!loading && totalPages <= 1 && rows.length > 0 && (
+          <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+            <p className="text-xs text-gray-400">{totalCount} employee{totalCount !== 1 ? 's' : ''} found</p>
+          </div>
+        )}
       </div>
+
+      {/* Detail modal */}
+      <DetailModal employee={selected} onClose={() => setSelected(null)} />
+
+      {/* Inline keyframe for modal pop-in */}
+      <style>{`@keyframes modalIn { from { opacity:0; transform:scale(.95) } to { opacity:1; transform:scale(1) } }`}</style>
     </div>
   );
 };

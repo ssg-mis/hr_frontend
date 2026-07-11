@@ -338,7 +338,7 @@ const JobApplicationPage = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="flex items-center justify-center gap-2">
                           <button
-                            onClick={() => copyLink(v.shareToken || v.vacancyNumber)}
+                            onClick={() => copyLink(v.shareToken)}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-200 text-gray-600 hover:text-emerald-600 hover:border-emerald-200 rounded-lg text-xs font-semibold transition-colors"
                             title="Copy public apply link"
                           >
