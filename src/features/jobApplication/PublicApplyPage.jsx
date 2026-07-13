@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Briefcase, Calendar, MapPin, DollarSign, Upload, CheckCircle, AlertCircle, Info, Award, User, Phone, Mail, FileText } from 'lucide-react';
+import { Briefcase, Calendar, MapPin, IndianRupee, Upload, CheckCircle, AlertCircle, Info, Award, User, Phone, Mail, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { vacancyApi } from '../vacancy/vacancy.api';
 import { jobApplicationApi } from './jobApplication.api';
@@ -9,6 +9,12 @@ import { uploadFile } from '../upload/upload.api';
 const PHONE_REGEX = /^\d{10}$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const AADHAR_REGEX = /^\d{12}$/;
+
+const getMaxDobDate = () => {
+  const date = new Date();
+  date.setFullYear(date.getFullYear() - 16);
+  return date.toISOString().split('T')[0];
+};
 
 const PublicApplyPage = () => {
   const { vacancyNumber } = useParams();
@@ -112,6 +118,20 @@ const PublicApplyPage = () => {
       return;
     }
 
+    if (formData.candidateDob) {
+      const birthDate = new Date(formData.candidateDob);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const m = today.getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      if (age < 16) {
+        toast.error('Candidate must be at least 16 years old');
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     try {
@@ -198,7 +218,7 @@ const PublicApplyPage = () => {
           <div>
             <h2 className="text-2xl font-extrabold text-gray-900">Application Submitted!</h2>
             <p className="text-sm text-gray-500 mt-2">
-              Thank you for applying. Your application for <strong className="text-indigo-600 font-bold">{vacancyNumber}</strong> has been received.
+              Thank you for applying. Your application for <strong className="text-indigo-600 font-bold">{vacancy?.designationName || vacancy?.vacancyNumber || vacancyNumber}</strong> has been received.
             </p>
           </div>
           <div className="bg-gray-50 p-4 rounded-xl text-left border border-gray-150 space-y-2">
@@ -241,7 +261,7 @@ const PublicApplyPage = () => {
               <span>{vacancy.preferredLocation || 'Not Specified'}</span>
             </div>
             <div className="flex items-center space-x-2">
-              <DollarSign size={14} className="text-indigo-300" />
+              <IndianRupee size={14} className="text-indigo-300" />
               <span>{vacancy.salaryCriteria || 'Negotiable'}</span>
             </div>
             <div className="flex items-center space-x-2">
@@ -299,7 +319,7 @@ const PublicApplyPage = () => {
                   <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1 flex items-center">
                     <Calendar size={12} className="mr-1.5" /> Date of Birth <span className="text-red-500 ml-0.5">*</span>
                   </label>
-                  <input type="date" name="candidateDob" required value={formData.candidateDob} onChange={handleInputChange} className="w-full border border-gray-250 rounded-xl px-3.5 py-2.5 text-sm bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <input type="date" name="candidateDob" required max={getMaxDobDate()} value={formData.candidateDob} onChange={handleInputChange} className="w-full border border-gray-250 rounded-xl px-3.5 py-2.5 text-sm bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
 
                 <div>

@@ -20,23 +20,21 @@ import AfterLeavingWork from './pages/AfterLeavingWork';
 import Employee from './pages/Employee';
 import Joining from './pages/Joining';
 import MyProfile from './pages/MyProfile';
-import MyAttendance from './pages/MyAttendance';
 import LeaveRequest from './pages/LeaveRequest';
 import CompanyCalendar from './pages/CompanyCalendar';
-import Attendance from './pages/Attendance';
 import LeaveManagement from './pages/LeaveManagement';
-import AttendanceMonthly from './pages/AttendanceMonthly';
 import Report from './pages/Report';
 // import MisReport from './pages/MisReport';
 import LeavePolicy from './pages/LeavePolicy';
 import EMIManagement from './pages/EMIManagement';
 import Settings from './pages/Settings';
+import SalaryManagement from './pages/SalaryManagement';
 
 function App() {
   return (
     <div className="bg-white min-h-screen">
       <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <Toaster position="top-right" containerStyle={{ zIndex: 9999 }} />
+        <Toaster position="top-right" containerStyle={{ zIndex: 999999 }} />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/apply/:vacancyNumber" element={<PublicApply />} />
@@ -58,17 +56,15 @@ function App() {
             <Route path="employee" element={<Employee />} />
             <Route path="joining" element={<Joining />} />
             <Route path="my-profile" element={<MyProfile />} />
-            <Route path="my-attendance" element={<MyAttendance />} />
             <Route path="leave-policy" element={<LeavePolicy />} />
             <Route path="leave-request" element={<LeaveRequest />} />
             <Route path="company-calendar" element={<CompanyCalendar />} />
             <Route path="leave-management" element={<LeaveManagement />} />
-            <Route path="attendance" element={<Attendance />} />
-            <Route path="attendance-monthly" element={<AttendanceMonthly />} />
             <Route path="report" element={<Report />} />
             {/* <Route path="misreport" element={<MisReport />} /> */}
             <Route path="emi-management" element={<EMIManagement />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="salary" element={<SalaryManagement />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

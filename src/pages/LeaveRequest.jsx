@@ -15,7 +15,7 @@ const LeaveRequest = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState('all');
   const [employees, setEmployees] = useState([]);
-  const API_URL = import.meta.env.VITE_API_URL;
+  const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
   const [hods, setHods] = useState([]);
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [formData, setFormData] = useState({
@@ -46,7 +46,8 @@ const LeaveRequest = () => {
             ...prev,
             employeeId: emp.employee_id,
             department: emp.department?.department_name || '',
-            departmentId: emp.department_id || ''
+            departmentId: emp.department_id || '',
+            hodName: emp.department?.hod_name || ''
           }));
           // Fetch leave data using the resolved employee_id
           fetchLeaveData(emp.employee_id);
@@ -104,6 +105,26 @@ const LeaveRequest = () => {
         leaveType: value,
         leaveCode: selectedPolicy ? selectedPolicy.leaveCode : ''
       }));
+    } else if (name === 'fromDate') {
+      setFormData(prev => {
+        const nextToDate = prev.toDate && prev.toDate < value ? '' : prev.toDate;
+        return {
+          ...prev,
+          fromDate: value,
+          toDate: nextToDate
+        };
+      });
+    } else if (name === 'toDate') {
+      setFormData(prev => {
+        if (prev.fromDate && value < prev.fromDate) {
+          toast.error("To Date cannot be before From Date");
+          return prev;
+        }
+        return {
+          ...prev,
+          toDate: value
+        };
+      });
     } else {
       setFormData(prev => ({
         ...prev,
@@ -457,10 +478,18 @@ const LeaveRequest = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{request.days}</td>
                         <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">{request.reason}</td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm text-gray-700">
-                            {request.status}
-                          </span>
-                        </td>
+                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                             request.status === 'Approved'
+                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                               : request.status === 'Rejected'
+                               ? 'bg-red-50 text-red-700 border-red-200'
+                               : request.status === 'Pending HOD'
+                               ? 'bg-amber-50 text-amber-700 border-amber-200'
+                               : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                           }`}>
+                             {request.status}
+                           </span>
+                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {request.appliedDate}
                         </td>
@@ -581,6 +610,7 @@ const LeaveRequest = () => {
                     name="toDate"
                     value={formData.toDate}
                     onChange={handleInputChange}
+                    min={formData.fromDate}
                     className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     required
                   />

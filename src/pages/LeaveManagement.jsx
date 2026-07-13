@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Check, Clock, Calendar, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -29,6 +29,7 @@ const LeaveManagement = () => {
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [formData, setFormData] = useState({
     employeeId: '',
+    employeeCode: '',
     employeeName: '',
     department: '',
     departmentId: '',
@@ -40,7 +41,8 @@ const LeaveManagement = () => {
     reason: ''
   });
 
-  const API_URL = import.meta.env.VITE_API_URL;
+  const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
+  const isFirstRun = useRef(true);
 
   const handleCheckboxChange = (leaveId, rowData) => {
     if (selectedRow?.id === leaveId) {
@@ -86,9 +88,11 @@ const LeaveManagement = () => {
       if (result.success) {
         setEmployees(result.data.map(emp => ({
           id: emp.employee_id,
+          employeeCode: emp.employee_code,
           name: emp.name_as_per_aadhar,
           department: emp.department?.department_name || '',
-          departmentId: emp.department_id || ''
+          departmentId: emp.department_id || '',
+          hodName: emp.department?.hod_name || ''
         })));
       }
     } catch (error) {
@@ -108,7 +112,7 @@ const LeaveManagement = () => {
       console.error('Error fetching HOD data:', error);
     }
   };
-  
+
   // Fetch leave types from backend
   const fetchLeaveTypes = async () => {
     try {
@@ -130,8 +134,10 @@ const LeaveManagement = () => {
       ...prev,
       employeeName: selectedName,
       employeeId: selectedEmployee ? selectedEmployee.id : '',
+      employeeCode: selectedEmployee ? selectedEmployee.employeeCode : '',
       department: selectedEmployee ? selectedEmployee.department : '',
-      departmentId: selectedEmployee ? selectedEmployee.departmentId : ''
+      departmentId: selectedEmployee ? selectedEmployee.departmentId : '',
+      hodName: selectedEmployee ? selectedEmployee.hodName : ''
     }));
   };
 
@@ -148,6 +154,26 @@ const LeaveManagement = () => {
         leaveType: value,
         leaveCode: selectedPolicy ? selectedPolicy.leaveCode : ''
       }));
+    } else if (name === 'fromDate') {
+      setFormData(prev => {
+        const nextToDate = prev.toDate && prev.toDate < value ? '' : prev.toDate;
+        return {
+          ...prev,
+          fromDate: value,
+          toDate: nextToDate
+        };
+      });
+    } else if (name === 'toDate') {
+      setFormData(prev => {
+        if (prev.fromDate && value < prev.fromDate) {
+          toast.error("To Date cannot be before From Date");
+          return prev;
+        }
+        return {
+          ...prev,
+          toDate: value
+        };
+      });
     } else {
       setFormData(prev => ({
         ...prev,
@@ -229,6 +255,7 @@ const LeaveManagement = () => {
         toast.success('Leave Request submitted successfully!');
         setFormData({
           employeeId: '',
+          employeeCode: '',
           employeeName: '',
           department: '',
           departmentId: '',
@@ -252,40 +279,35 @@ const LeaveManagement = () => {
     }
   };
 
-  const handleLeaveAction = async (action) => {
-    if (!selectedRow) {
-      toast.error('Please select a leave request');
-      return;
-    }
-
-    setActionInProgress(action);
+  const handleLeaveAction = async (item, action) => {
+    setActionInProgress({ id: item.id, action });
     setLoading(true);
 
     try {
-      const status = action === 'accept' ? 'Approved' : 'Rejected';
-      const response = await fetch(`${API_URL}/leaves/${selectedRow.id}`, {
+      let status;
+      if (action === 'approve_hod') status = 'Pending HR';
+      else if (action === 'approve_hr') status = 'Approved';
+      else if (action === 'reject') status = 'Rejected';
+
+      const response = await fetch(`${API_URL}/leaves/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          status,
-          startDate: editableDates.from,
-          endDate: editableDates.to
+          status
         }),
       });
 
       const result = await response.json();
       if (result.success) {
-        toast.success(`Leave ${status} for ${selectedRow.employeeName}`);
+        toast.success(`Leave ${status} for ${item.employeeName}`);
         fetchLeaveData(pagination.page);
-        setSelectedRow(null);
-        setEditableDates({ from: '', to: '' });
       } else {
         throw new Error(result.message || "Update failed");
       }
 
     } catch (error) {
       console.error('Update error:', error);
-      toast.error(`Failed to ${action} leave: ${error.message}`);
+      toast.error(`Failed to perform action: ${error.message}`);
     } finally {
       setLoading(false);
       setActionInProgress(null);
@@ -310,6 +332,7 @@ const LeaveManagement = () => {
         id: leave.id,
         timestamp: leave.createdAt,
         employeeId: leave.employeeId,
+        employeeCode: leave.employeeCode,
         employeeName: leave.employeeName,
         startDate: leave.startDate.split('T')[0],
         endDate: leave.endDate.split('T')[0],
@@ -361,6 +384,10 @@ const LeaveManagement = () => {
   };
 
   useEffect(() => {
+    if (isFirstRun.current) {
+      isFirstRun.current = false;
+      return;
+    }
     const delayDebounceFn = setTimeout(() => {
       fetchLeaveData(1);
     }, 500);
@@ -378,107 +405,88 @@ const LeaveManagement = () => {
     <table className="min-w-full divide-y divide-white">
       <thead className="bg-gray-100">
         <tr>
-          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-            Select
-          </th>
-          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee ID</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee Code</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">From</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">To</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Days</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Leave Type</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-white">
-        {filteredPendingLeaves.length > 0 ? (
+        {tableLoading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <tr key={i} className="animate-pulse">
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-16"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-16"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-10"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-36"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-20"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-20"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-48"></div></td>
+            </tr>
+          ))
+        ) : filteredPendingLeaves.length > 0 ? (
           filteredPendingLeaves.map((item, index) => (
             <tr key={index} className="hover:bg-white">
-              <td className="px-6 py-4 whitespace-nowrap">
-                <input
-                  type="checkbox"
-                  checked={selectedRow?.id === item.id}
-                  onChange={() => handleCheckboxChange(item.id, item)}
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                />
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeId}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeCode}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeName}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {selectedRow?.id === item.id ? (
-                  <input
-                    type="date"
-                    value={editableDates.from}
-                    onChange={(e) => handleDateChange('from', e.target.value)}
-                    className="border rounded p-1 text-sm"
-                  />
-                ) : (
-                  formatDate(item.startDate)
-                )}
+                {formatDate(item.startDate)}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {selectedRow?.id === item.id ? (
-                  <input
-                    type="date"
-                    value={editableDates.to}
-                    onChange={(e) => handleDateChange('to', e.target.value)}
-                    className="border rounded p-1 text-sm"
-                  />
-                ) : (
-                  formatDate(item.endDate)
-                )}
+                {formatDate(item.endDate)}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {selectedRow?.id === item.id ?
-                  calculateDays(editableDates.from, editableDates.to) :
-                  item.days
-                }
+                {item.days}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.remark}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.leaveType}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                  item.status === 'Pending HOD'
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                }`}>
+                  {item.status}
+                </span>
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 <div className="flex space-x-2">
+                  {item.status === 'Pending HOD' && (
+                    <button
+                      onClick={() => handleLeaveAction(item, 'approve_hod')}
+                      disabled={loading}
+                      className={`px-3 py-1.5 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                    >
+                      {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'approve_hod' ? (
+                        <span>Approving...</span>
+                      ) : 'Approve HOD'}
+                    </button>
+                  )}
+                  {item.status === 'Pending HR' && (
+                    <button
+                      onClick={() => handleLeaveAction(item, 'approve_hr')}
+                      disabled={loading}
+                      className={`px-3 py-1.5 text-xs text-white bg-green-600 rounded-md hover:bg-green-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                    >
+                      {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'approve_hr' ? (
+                        <span>Approving...</span>
+                      ) : 'Approve HR'}
+                    </button>
+                  )}
                   <button
-                    onClick={() => handleLeaveAction('accept')}
-                    disabled={!selectedRow || selectedRow.id !== item.id || loading}
-                    className={`px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700 min-h-[42px] flex items-center justify-center ${!selectedRow || selectedRow.id !== item.id || loading ? 'opacity-75 cursor-not-allowed' : ''
-                      }`}
+                    onClick={() => handleLeaveAction(item, 'reject')}
+                    disabled={loading}
+                    className={`px-3 py-1.5 text-xs text-white bg-red-600 rounded-md hover:bg-red-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
                   >
-                    {loading && selectedRow?.id === item.id && actionInProgress === 'accept' ? (
-                      <div className="flex items-center">
-                        <svg
-                          className="animate-spin h-4 w-4 text-white mr-2"
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                        >
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span>Accepting...</span>
-                      </div>
-                    ) : 'Accept'}
-                  </button>
-                  <button
-                    onClick={() => handleLeaveAction('rejected')}
-                    disabled={selectedRow?.id !== item.id || loading}
-                    className={`px-4 py-2 text-white bg-red-600 rounded-md hover:bg-red-700 min-h-[42px] flex items-center justify-center ${selectedRow?.id !== item.id || (loading && actionInProgress === 'accept') ? 'opacity-75 cursor-not-allowed' : ''
-                      }`}
-                  >
-                    {loading && selectedRow?.id === item.id && actionInProgress === 'rejected' ? (
-                      <div className="flex items-center">
-                        <svg
-                          className="animate-spin h-4 w-4 text-white mr-2"
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                        >
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span>Rejecting...</span>
-                      </div>
+                    {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'reject' ? (
+                      <span>Rejecting...</span>
                     ) : 'Reject'}
                   </button>
                 </div>
@@ -500,7 +508,7 @@ const LeaveManagement = () => {
     <table className="min-w-full divide-y divide-white">
       <thead className="bg-gray-100">
         <tr>
-          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee ID</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee Code</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">From</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">To</th>
@@ -510,10 +518,22 @@ const LeaveManagement = () => {
         </tr>
       </thead>
       <tbody className="divide-y divide-white">
-        {filteredApprovedLeaves.length > 0 ? (
+        {tableLoading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <tr key={i} className="animate-pulse">
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-16"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-16"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-10"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-36"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-20"></div></td>
+            </tr>
+          ))
+        ) : filteredApprovedLeaves.length > 0 ? (
           filteredApprovedLeaves.map((item, index) => (
             <tr key={index} className="hover:bg-white">
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeId}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeCode}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeName}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 {formatDate(item.startDate)}
@@ -541,7 +561,7 @@ const LeaveManagement = () => {
     <table className="min-w-full divide-y divide-white">
       <thead className="bg-gray-100">
         <tr>
-          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee ID</th>
+          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee Code</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">From</th>
           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">To</th>
@@ -551,10 +571,22 @@ const LeaveManagement = () => {
         </tr>
       </thead>
       <tbody className="divide-y divide-white">
-        {filteredRejectedLeaves.length > 0 ? (
+        {tableLoading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <tr key={i} className="animate-pulse">
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-24"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-16"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-16"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-10"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-36"></div></td>
+              <td className="px-6 py-4"><div className="h-4 bg-gray-200 rounded w-20"></div></td>
+            </tr>
+          ))
+        ) : filteredRejectedLeaves.length > 0 ? (
           filteredRejectedLeaves.map((item, index) => (
             <tr key={index} className="hover:bg-white">
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeId}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeCode}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.employeeName}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 {formatDate(item.startDate)}
@@ -608,7 +640,7 @@ const LeaveManagement = () => {
           <div className="relative w-full">
             <input
               type="text"
-              placeholder="Search by name or employee ID..."
+              placeholder="Search by name or employee code..."
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-500"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -624,8 +656,8 @@ const LeaveManagement = () => {
             <button
               onClick={() => setActiveTab('pending')}
               className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${activeTab === 'pending'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
             >
               Pending
@@ -633,8 +665,8 @@ const LeaveManagement = () => {
             <button
               onClick={() => setActiveTab('approved')}
               className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${activeTab === 'approved'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
             >
               Approved
@@ -642,8 +674,8 @@ const LeaveManagement = () => {
             <button
               onClick={() => setActiveTab('rejected')}
               className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${activeTab === 'rejected'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
             >
               Rejected
@@ -653,16 +685,7 @@ const LeaveManagement = () => {
 
         <div className="p-6">
           <div className="overflow-x-auto">
-            {tableLoading ? (
-              <div className="px-6 py-12 text-center">
-                <div className="flex justify-center flex-col items-center">
-                  <div className="w-6 h-6 border-4 border-indigo-500 border-dashed rounded-full animate-spin mb-2"></div>
-                  <span className="text-gray-600 text-sm">
-                    {loading ? 'Processing request...' : 'Loading leave data...'}
-                  </span>
-                </div>
-              </div>
-            ) : error ? (
+            {error ? (
               <div className="px-6 py-12 text-center">
                 <p className="text-red-500">Error: {error}</p>
                 <button
@@ -783,11 +806,11 @@ const LeaveManagement = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Employee Code</label>
                 <input
                   type="text"
-                  name="employeeId"
-                  value={formData.employeeId}
+                  name="employeeCode"
+                  value={formData.employeeCode}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
                   readOnly
                 />
@@ -866,6 +889,7 @@ const LeaveManagement = () => {
                     name="toDate"
                     value={formData.toDate}
                     onChange={handleInputChange}
+                    min={formData.fromDate}
                     className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     required
                   />

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Search, UserX, CheckCircle, X, CalendarClock, Check, Pause, ThumbsDown, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { resignationApi } from '../features/resignation/resignation.api';
-import { jobApplicationApi } from '../features/jobApplication/jobApplication.api';
+import { employeeApi } from '../features/employee/employee.api';
 
 const REASONS = [
   'Better Opportunity',
@@ -63,17 +63,38 @@ const ResignationModule = () => {
   const [settingNotice, setSettingNotice] = useState(null); // resignation row
   const [noticeForm, setNoticeForm] = useState({ noticeStartDate: '', lastWorkingDay: '', noticeRemark: '' });
 
+  // Immediate Exit Clearance & Settlement states
+  const [allEmployees, setAllEmployees] = useState([]);
+  const [immediateExit, setImmediateExit] = useState(false);
+  const [lastWorkingDay, setLastWorkingDay] = useState(new Date().toISOString().slice(0, 10));
+  const [checklist, setChecklist] = useState({
+    assetClearance: false,
+    departmentClearance: false,
+    handover: false,
+    handoverEmployeeId: '',
+  });
+  const [clearanceRemark, setClearanceRemark] = useState('');
+  const [settlementForm, setSettlementForm] = useState({
+    pendingSalary: '',
+    bonus: '',
+    advanceDeduction: '',
+    canteenDues: '',
+    finalSettlementAmount: '',
+    settlementRemark: '',
+  });
+
   const load = async () => {
     setLoading(true);
     try {
       const [resRes, empRes, activeRes] = await Promise.all([
         resignationApi.list({ search: searchTerm }),
-        jobApplicationApi.list({ stage: 'Onboarded', limit: 1000 }),
+        employeeApi.list(),
         resignationApi.list({ stage: 'Requested,MeetingScheduled,NoticePeriod' }),
       ]);
       setRows(resRes.data || []);
+      setAllEmployees(empRes.data || []);
       const activeJobAppIds = new Set((activeRes.data || []).map((r) => r.jobApplicationId));
-      setEligibleEmployees((empRes.data || []).filter((e) => !activeJobAppIds.has(e.id)));
+      setEligibleEmployees((empRes.data || []).filter((e) => e.status === 'Active' && !activeJobAppIds.has(e.id)));
     } catch (err) {
       toast.error(err.message || 'Failed to load resignation data');
     } finally {
@@ -138,12 +159,75 @@ const ResignationModule = () => {
   const openDecision = async (row) => {
     setDecision('Stay');
     setDecisionForm({ notes: '', retainedSalary: '', retentionRemark: '', reason: row.reason || '' });
+    setImmediateExit(false);
+    setLastWorkingDay(new Date().toISOString().slice(0, 10));
+    setChecklist({
+      assetClearance: false,
+      departmentClearance: false,
+      handover: false,
+      handoverEmployeeId: '',
+    });
+    setClearanceRemark('');
+    setSettlementForm({
+      pendingSalary: '',
+      bonus: '',
+      advanceDeduction: '',
+      canteenDues: '',
+      finalSettlementAmount: '',
+      settlementRemark: '',
+    });
     setDeciding(row);
     try {
       setMeetingHistory(await resignationApi.listMeetings(row.id));
     } catch {
       setMeetingHistory([]);
     }
+  };
+
+  const sanitizeNumeric = (val, allowNegative = false) => {
+    let cleaned = val;
+    if (allowNegative) {
+      cleaned = val.replace(/[^0-9.-]/g, '');
+      if (cleaned.startsWith('-')) {
+        cleaned = '-' + cleaned.slice(1).replace(/-/g, '');
+      } else {
+        cleaned = cleaned.replace(/-/g, '');
+      }
+    } else {
+      cleaned = val.replace(/[^0-9.]/g, '');
+    }
+    const parts = cleaned.split('.');
+    if (parts.length > 2) {
+      cleaned = parts[0] + '.' + parts.slice(1).join('');
+    }
+    return cleaned;
+  };
+
+  const calculateFinalSettlement = (form) => {
+    const pending = parseFloat(form.pendingSalary) || 0;
+    const bonus = parseFloat(form.bonus) || 0;
+    const loan = parseFloat(form.advanceDeduction) || 0;
+    const canteen = parseFloat(form.canteenDues) || 0;
+    const total = pending + bonus - (loan + canteen);
+    return Number(total.toFixed(2)).toString();
+  };
+
+  const handleSettlementChange = (e) => {
+    const { name, value } = e.target;
+    const allowNegative = name === 'finalSettlementAmount';
+    
+    let sanitizedValue = value;
+    if (['pendingSalary', 'bonus', 'advanceDeduction', 'canteenDues', 'finalSettlementAmount'].includes(name)) {
+      sanitizedValue = sanitizeNumeric(value, allowNegative);
+    }
+    
+    setSettlementForm((prev) => {
+      const updated = { ...prev, [name]: sanitizedValue };
+      if (['pendingSalary', 'bonus', 'advanceDeduction', 'canteenDues'].includes(name)) {
+        updated.finalSettlementAmount = calculateFinalSettlement(updated);
+      }
+      return updated;
+    });
   };
 
   const submitDecision = async (e) => {
@@ -157,6 +241,16 @@ const ResignationModule = () => {
       toast.error('Please provide a reason for the resignation');
       return;
     }
+    if (decision === 'Negative' && immediateExit) {
+      if (!checklist.assetClearance || !checklist.departmentClearance || !checklist.handover) {
+        toast.error('All clearance checklist items must be checked for immediate exit');
+        return;
+      }
+      if (!checklist.handoverEmployeeId) {
+        toast.error('Please select an employee for task handover or select "No task handover needed"');
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       await resignationApi.recordMeetingOutcome(deciding.id, pendingMeeting.id, {
@@ -166,9 +260,41 @@ const ResignationModule = () => {
         retentionRemark: decisionForm.retentionRemark || null,
         reason: decisionForm.reason || null,
       });
-      toast.success(
-        decision === 'Stay' ? 'Employee retained' : decision === 'Negative' ? 'Moved to Notice Period' : 'Marked pending — schedule the next meeting'
-      );
+
+      if (decision === 'Negative' && immediateExit) {
+        const handoverEmp = allEmployees.find(emp => String(emp.id) === String(checklist.handoverEmployeeId));
+        const updatedChecklist = {
+          ...checklist,
+          handoverEmployeeName: handoverEmp ? handoverEmp.candidateName : (checklist.handoverEmployeeId === 'none' ? 'No task handover needed' : ''),
+          handoverEmployeeCode: handoverEmp ? handoverEmp.employeeCode : '',
+        };
+
+        await resignationApi.update(deciding.id, {
+          stage: 'Settlement',
+          lastWorkingDay: lastWorkingDay,
+          clearanceChecklist: updatedChecklist,
+          clearanceRemark: clearanceRemark || null,
+          pendingSalary: settlementForm.pendingSalary || null,
+          bonus: settlementForm.bonus || null,
+          advanceDeduction: settlementForm.advanceDeduction || null,
+          canteenDues: settlementForm.canteenDues || null,
+          finalSettlementAmount: settlementForm.finalSettlementAmount || null,
+          settlementRemark: settlementForm.settlementRemark || null,
+        });
+        toast.success('Immediate exit clearance saved. Moved to Settlement.');
+      } else {
+        toast.success(
+          decision === 'Stay' ? 'Employee retained' : decision === 'Negative' ? 'Moved to Notice Period' : 'Marked pending — schedule the next meeting'
+        );
+        if (decision === 'Negative') {
+          const updatedRow = {
+            ...deciding,
+            stage: 'NoticePeriod',
+            reason: decisionForm.reason || deciding.reason,
+          };
+          openNotice(updatedRow);
+        }
+      }
       setDeciding(null);
       load();
     } catch (err) {
@@ -190,6 +316,12 @@ const ResignationModule = () => {
   const handleNoticeChange = (e) => setNoticeForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
   const saveNotice = async () => {
+    if (noticeForm.noticeStartDate && noticeForm.lastWorkingDay) {
+      if (new Date(noticeForm.noticeStartDate) > new Date(noticeForm.lastWorkingDay)) {
+        toast.error('Notice Start Date must be on or before Last Working Day');
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       await resignationApi.update(settingNotice.id, {
@@ -212,6 +344,12 @@ const ResignationModule = () => {
       toast.error('Please set the last working day first');
       return;
     }
+    if (noticeForm.noticeStartDate && noticeForm.lastWorkingDay) {
+      if (new Date(noticeForm.noticeStartDate) > new Date(noticeForm.lastWorkingDay)) {
+        toast.error('Notice Start Date must be on or before Last Working Day');
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       await resignationApi.update(settingNotice.id, {
@@ -229,6 +367,21 @@ const ResignationModule = () => {
       setSubmitting(false);
     }
   };
+
+  const leftEmployeeIds = new Set(
+    rows
+      .filter((r) => ['Left', 'Clearance', 'Settlement', 'Relieved'].includes(r.stage))
+      .map((r) => r.jobApplicationId)
+  );
+
+  const sameDeptEmployees = deciding
+    ? allEmployees.filter(
+        (emp) =>
+          Number(emp.departmentId) === Number(deciding.departmentId) &&
+          Number(emp.id) !== Number(deciding.jobApplicationId) &&
+          !leftEmployeeIds.has(emp.id)
+      )
+    : [];
 
   const visibleRows = rows.filter((r) => (activeTab === 'active' ? ACTIVE_STAGES.includes(r.stage) : RESOLVED_STAGES.includes(r.stage)));
 
@@ -506,7 +659,10 @@ const ResignationModule = () => {
                   <>
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-1">Revised Salary (if any)</label>
-                      <input type="text" value={decisionForm.retainedSalary} onChange={(e) => setDecisionForm((f) => ({ ...f, retainedSalary: e.target.value }))} placeholder="Leave blank to keep current salary" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                      <input type="text" value={decisionForm.retainedSalary} onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9,]/g, '');
+                        setDecisionForm((f) => ({ ...f, retainedSalary: val }));
+                      }} placeholder="Leave blank to keep current salary" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                     </div>
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-1">Retention Remark</label>
@@ -516,10 +672,113 @@ const ResignationModule = () => {
                 )}
 
                 {decision === 'Negative' && (
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Reason *</label>
-                    <input type="text" required value={decisionForm.reason} onChange={(e) => setDecisionForm((f) => ({ ...f, reason: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                    <p className="text-xs text-gray-400 mt-1">Employee moves to Notice Period Management.</p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Reason *</label>
+                      <input type="text" required value={decisionForm.reason} onChange={(e) => setDecisionForm((f) => ({ ...f, reason: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                      <p className="text-xs text-gray-400 mt-1">Employee moves to Notice Period Management.</p>
+                    </div>
+
+                    <label className="flex items-center gap-2 p-2.5 rounded-xl bg-indigo-50/50 border border-indigo-100 cursor-pointer">
+                      <input type="checkbox" checked={immediateExit} onChange={(e) => setImmediateExit(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                      <span className="text-sm font-semibold text-indigo-900">Immediate Exit (Leave without Notice Period)</span>
+                    </label>
+
+                    {immediateExit && (
+                      <div className="space-y-4 p-4 border border-gray-200 rounded-xl bg-gray-50/50">
+                        <div className="text-xs font-bold text-gray-500 uppercase tracking-wide border-b pb-1">Immediate Exit Clearance &amp; Settlement</div>
+                        
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Last Working Day *</label>
+                          <input type="date" required value={lastWorkingDay} onChange={(e) => setLastWorkingDay(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+
+                        {/* Clearance Checklist */}
+                        <div className="space-y-2">
+                          <span className="block text-sm font-semibold text-gray-700">Clearance Checklist</span>
+                          
+                          <label className="flex items-start gap-2.5 p-2 rounded-lg border border-gray-250 bg-white cursor-pointer">
+                            <input type="checkbox" checked={checklist.assetClearance} onChange={() => setChecklist(prev => ({ ...prev, assetClearance: !prev.assetClearance }))} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mt-0.5" />
+                            <div>
+                              <span className="text-xs font-semibold text-gray-800">Asset Clearance</span>
+                              <p className="text-[10px] text-gray-500">Laptop, keys, badge collected</p>
+                            </div>
+                          </label>
+
+                          <label className="flex items-start gap-2.5 p-2 rounded-lg border border-gray-250 bg-white cursor-pointer">
+                            <input type="checkbox" checked={checklist.departmentClearance} onChange={() => setChecklist(prev => ({ ...prev, departmentClearance: !prev.departmentClearance }))} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mt-0.5" />
+                            <div>
+                              <span className="text-xs font-semibold text-gray-800">Department Clearance</span>
+                              <p className="text-[10px] text-gray-500">Access revoked, dues cleared</p>
+                            </div>
+                          </label>
+
+                          <div className="p-2 rounded-lg border border-gray-250 bg-white space-y-2">
+                            <label className="flex items-start gap-2.5 cursor-pointer">
+                              <input type="checkbox" checked={checklist.handover} onChange={() => setChecklist(prev => ({ ...prev, handover: !prev.handover, ...(prev.handover ? { handoverEmployeeId: '' } : {}) }))} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mt-0.5" />
+                              <div>
+                                <span className="text-xs font-semibold text-gray-800">Task Handover Completed</span>
+                                <p className="text-[10px] text-gray-500">Active tasks/files documented/assigned</p>
+                              </div>
+                            </label>
+
+                            {checklist.handover && (
+                              <div className="pt-2 pl-6 border-t border-gray-100">
+                                <label className="block text-[10px] font-semibold text-indigo-600 mb-1">Handover Employee *</label>
+                                <select
+                                  value={checklist.handoverEmployeeId}
+                                  onChange={(e) => setChecklist(prev => ({ ...prev, handoverEmployeeId: e.target.value }))}
+                                  className="w-full border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                >
+                                  <option value="">Select an employee...</option>
+                                  <option value="none">No task handover needed</option>
+                                  {sameDeptEmployees.map((emp) => (
+                                    <option key={emp.id} value={emp.id}>
+                                      {emp.candidateName} ({emp.employeeCode || emp.applicationNumber})
+                                    </option>
+                                  ))}
+                                </select>
+                                {sameDeptEmployees.length === 0 && (
+                                  <p className="text-[10px] text-amber-600 mt-1">No other active employees in this department.</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Settlement amounts */}
+                        <div className="space-y-2">
+                          <span className="block text-sm font-semibold text-gray-700">Settlement Dues (Pending Amount)</span>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-semibold text-gray-500 mb-0.5">Pending Salary</label>
+                              <input type="text" name="pendingSalary" value={settlementForm.pendingSalary} onChange={handleSettlementChange} className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-gray-500 mb-0.5">Bonus</label>
+                              <input type="text" name="bonus" value={settlementForm.bonus} onChange={handleSettlementChange} className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-gray-500 mb-0.5">Loan Deduction</label>
+                              <input type="text" name="advanceDeduction" value={settlementForm.advanceDeduction} onChange={handleSettlementChange} className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-gray-500 mb-0.5">Canteen Dues</label>
+                              <input type="text" name="canteenDues" value={settlementForm.canteenDues} onChange={handleSettlementChange} className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-gray-500 mb-0.5">Final Settlement Amount</label>
+                            <input type="text" name="finalSettlementAmount" value={settlementForm.finalSettlementAmount} onChange={handleSettlementChange} className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-gray-500 mb-0.5">Clearance / Settlement Remarks</label>
+                            <textarea rows={1.5} value={clearanceRemark} onChange={(e) => setClearanceRemark(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Remarks..." />
+                          </div>
+                        </div>
+
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -563,11 +822,11 @@ const ResignationModule = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Notice Start Date</label>
-                  <input type="date" name="noticeStartDate" value={noticeForm.noticeStartDate} onChange={handleNoticeChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <input type="date" name="noticeStartDate" max={noticeForm.lastWorkingDay || undefined} value={noticeForm.noticeStartDate} onChange={handleNoticeChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Last Working Day</label>
-                  <input type="date" name="lastWorkingDay" value={noticeForm.lastWorkingDay} onChange={handleNoticeChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  <input type="date" name="lastWorkingDay" min={noticeForm.noticeStartDate || undefined} value={noticeForm.lastWorkingDay} onChange={handleNoticeChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
               </div>
               <div>

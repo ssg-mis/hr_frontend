@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Plus, X, ChevronLeft, ChevronRight, Search, Trash2, Edit2, Link, Briefcase, Calendar, MapPin, DollarSign, Award, Layers, Users, Info, AlertCircle, Clock, Lock } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Plus, X, ChevronLeft, ChevronRight, Search, Trash2, Edit2, Link, Briefcase, Calendar, MapPin, IndianRupee, Award, Layers, Users, Info, AlertCircle, Clock, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { vacancyApi } from './vacancy.api';
 import { designationApi } from '../designation/designation.api';
@@ -55,6 +55,17 @@ const VacancyPage = () => {
   const [selectedPlatforms, setSelectedPlatforms] = useState([]);
   const [designations, setDesignations] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [formError, setFormError] = useState('');
+  const formScrollRef = useRef(null);
+
+  const [showAddDept, setShowAddDept] = useState(false);
+  const [newDeptName, setNewDeptName] = useState('');
+  const [submittingDept, setSubmittingDept] = useState(false);
+
+  const [showAddDesig, setShowAddDesig] = useState(false);
+  const [newDesigName, setNewDesigName] = useState('');
+  const [newDesigDeptId, setNewDesigDeptId] = useState('');
+  const [submittingDesig, setSubmittingDesig] = useState(false);
 
   const standardPlatforms = ['LinkedIn', 'Naukri', 'Indeed', 'Facebook'];
   const platforms = ['LinkedIn', 'Naukri', 'Indeed', 'Facebook', 'Others'];
@@ -131,7 +142,27 @@ const VacancyPage = () => {
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    setFormData((prev) => {
+      const nextData = { ...prev, [name]: type === 'checkbox' ? checked : value };
+
+      // If designation changed, auto select department
+      if (name === 'designationId' && value) {
+        const selectedDesig = designations.find(d => String(d.id) === String(value));
+        if (selectedDesig) {
+          nextData.departmentId = String(selectedDesig.departmentId);
+        }
+      }
+
+      // If department changed, check if the selected designation belongs to this department
+      if (name === 'departmentId') {
+        const selectedDesig = designations.find(d => String(d.id) === String(nextData.designationId));
+        if (selectedDesig && value && String(selectedDesig.departmentId) !== String(value)) {
+          nextData.designationId = '';
+        }
+      }
+
+      return nextData;
+    });
   };
 
   const handleLinkChange = (platform, value) => {
@@ -141,9 +172,51 @@ const VacancyPage = () => {
     }));
   };
 
+  const handleAddDeptSubmit = async (e) => {
+    e.preventDefault();
+    if (!newDeptName.trim()) return;
+    try {
+      setSubmittingDept(true);
+      const res = await departmentApi.create(newDeptName.trim());
+      toast.success('Department created successfully!');
+      setNewDeptName('');
+      setShowAddDept(false);
+      await loadMasters();
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message || 'Failed to create department');
+    } finally {
+      setSubmittingDept(false);
+    }
+  };
+
+  const handleAddDesigSubmit = async (e) => {
+    e.preventDefault();
+    if (!newDesigName.trim() || !newDesigDeptId) return;
+    try {
+      setSubmittingDesig(true);
+      const res = await designationApi.create({
+        name: newDesigName.trim(),
+        departmentId: Number(newDesigDeptId)
+      });
+      toast.success('Designation created successfully!');
+      setNewDesigName('');
+      setNewDesigDeptId('');
+      setShowAddDesig(false);
+      await loadMasters();
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message || 'Failed to create designation');
+    } finally {
+      setSubmittingDesig(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    setFormError('');
+    if (formScrollRef.current) formScrollRef.current.scrollTop = 0;
     if (
       !formData.designationId ||
       !formData.departmentId ||
@@ -151,14 +224,36 @@ const VacancyPage = () => {
       !formData.numberOfPost ||
       !formData.competitionDate
     ) {
-      toast.error('Please fill all required fields');
+      setFormError('Please fill all required fields');
+      if (formScrollRef.current) formScrollRef.current.scrollTop = 0;
       return;
     }
 
-    if (selectedPlatforms.includes('Others')) {
-      if (!customPlatformName.trim() || !customLinkUrl.trim()) {
-        toast.error('Please specify the custom platform name and link');
+    // Validate Salary Criteria if provided
+    if (formData.salaryCriteria && formData.salaryCriteria.trim()) {
+      const salaryRegex = /^\s*\d+(?:,\d+)*(?:\.\d+)?\s*[kK]?\s*(?:-\s*\d+(?:,\d+)*(?:\.\d+)?\s*[kK]?)?\s*(?:LPA|PM|Monthly|Per Month|Per Annum|Lakhs|L)\s*$/i;
+      if (!salaryRegex.test(formData.salaryCriteria)) {
+        setFormError('Salary must be a number or range followed by a unit (e.g., "20,000 - 25,000 PM" or "8 - 12 LPA")');
+        if (formScrollRef.current) formScrollRef.current.scrollTop = 0;
         return;
+      }
+    }
+
+    // Check if selected platforms have their links filled
+    for (const platform of selectedPlatforms) {
+      if (platform === 'Others') {
+        if (!customPlatformName.trim() || !customLinkUrl.trim()) {
+          setFormError('Please specify the custom platform name and link');
+          if (formScrollRef.current) formScrollRef.current.scrollTop = 0;
+          return;
+        }
+      } else {
+        const link = formData.postingLinks?.[platform];
+        if (!link || !link.trim()) {
+          setFormError(`Please fill the link URL for the selected platform: ${platform}`);
+          if (formScrollRef.current) formScrollRef.current.scrollTop = 0;
+          return;
+        }
       }
     }
 
@@ -323,12 +418,13 @@ const VacancyPage = () => {
     setSelectedPlatforms([]);
     setIsEditing(false);
     setEditingVacancyNumber(null);
+    setFormError('');
     setShowModal(false);
   };
 
   const handleDelete = async (item) => {
-    if (item.status !== 'Closed') {
-      toast.error('You can only delete vacancies that are in a "Closed" hiring status.');
+    if (item.status !== 'Closed' && item.approvalStatus !== 'Rejected') {
+      toast.error('You can only delete vacancies that are in a "Closed" hiring status or have been rejected.');
       return;
     }
 
@@ -346,12 +442,12 @@ const VacancyPage = () => {
     }
   };
 
-  const handleCopyLink = (vacancyNumber) => {
+  const handleCopyLink = (token) => {
     const origin = window.location.origin;
-    const publicUrl = `${origin}/apply/${vacancyNumber}`;
+    const publicUrl = `${origin}/apply/${token}`;
     navigator.clipboard
       .writeText(publicUrl)
-      .then(() => toast.success(`Public application link for ${vacancyNumber} copied!`))
+      .then(() => toast.success(`Public application link copied!`))
       .catch((err) => {
         console.error('Failed to copy link:', err);
         toast.error('Failed to copy link to clipboard');
@@ -629,7 +725,7 @@ const VacancyPage = () => {
                         <div className="flex items-center justify-center space-x-2">
                           {item.approvalStatus === 'Approved' && (
                             <button
-                              onClick={() => handleCopyLink(item.vacancyNumber)}
+                              onClick={() => handleCopyLink(item.shareToken || item.vacancyNumber)}
                               className="text-gray-400 hover:text-emerald-600 p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
                               title="Copy Public Apply Link"
                             >
@@ -681,9 +777,8 @@ const VacancyPage = () => {
                 <button
                   key={i}
                   onClick={() => handlePageChange(i + 1)}
-                  className={`relative inline-flex items-center px-4 py-2 text-sm font-bold border-r border-gray-150 last:border-0 transition-colors ${
-                    pagination.page === i + 1 ? 'z-10 bg-blue-600 text-white' : 'text-gray-800 hover:bg-gray-55'
-                  }`}
+                  className={`relative inline-flex items-center px-4 py-2 text-sm font-bold border-r border-gray-150 last:border-0 transition-colors ${pagination.page === i + 1 ? 'z-10 bg-blue-600 text-white' : 'text-gray-800 hover:bg-gray-55'
+                    }`}
                 >
                   {i + 1}
                 </button>
@@ -719,7 +814,13 @@ const VacancyPage = () => {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="flex flex-col overflow-hidden">
-              <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+              <div ref={formScrollRef} className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+                {formError && (
+                  <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 text-sm font-semibold flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
+                    {formError}
+                  </div>
+                )}
 
                 {/* Section 1: General Details */}
                 <div>
@@ -737,7 +838,19 @@ const VacancyPage = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-1">Designation <span className="text-red-500">*</span></label>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-sm font-semibold text-gray-700">Designation <span className="text-red-500">*</span></label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewDesigDeptId(formData.departmentId || '');
+                            setShowAddDesig(true);
+                          }}
+                          className="text-xs text-blue-650 hover:text-blue-800 font-semibold hover:underline"
+                        >
+                          + Add New
+                        </button>
+                      </div>
                       <select
                         name="designationId"
                         value={formData.designationId}
@@ -746,15 +859,26 @@ const VacancyPage = () => {
                         required
                       >
                         <option value="">Select Designation</option>
-                        {designations.map((desig) => (
-                          <option key={desig.id} value={desig.id}>
-                            {desig.name}
-                          </option>
-                        ))}
+                        {designations
+                          .filter((desig) => !formData.departmentId || String(desig.departmentId) === String(formData.departmentId))
+                          .map((desig) => (
+                            <option key={desig.id} value={desig.id}>
+                              {desig.name}
+                            </option>
+                          ))}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-1">Department <span className="text-red-500">*</span></label>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-sm font-semibold text-gray-700">Department <span className="text-red-500">*</span></label>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddDept(true)}
+                          className="text-xs text-blue-650 hover:text-blue-800 font-semibold hover:underline"
+                        >
+                          + Add New
+                        </button>
+                      </div>
                       <select
                         name="departmentId"
                         value={formData.departmentId}
@@ -814,7 +938,7 @@ const VacancyPage = () => {
                         value={formData.salaryCriteria}
                         onChange={handleInputChange}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                        placeholder="e.g. 20,000 - 25,000 PM"
+                        placeholder="e.g. 20,000 - 25,000 PM or 8 - 12 LPA"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -911,9 +1035,8 @@ const VacancyPage = () => {
                             type="button"
                             key={platform}
                             onClick={() => handlePlatformChange(platform)}
-                            className={`flex items-center space-x-2 p-2.5 rounded-xl border text-left transition-all ${
-                              isSelected ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold' : 'bg-white border-gray-250 text-gray-650 hover:bg-gray-50'
-                            }`}
+                            className={`flex items-center space-x-2 p-2.5 rounded-xl border text-left transition-all ${isSelected ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold' : 'bg-white border-gray-250 text-gray-650 hover:bg-gray-50'
+                              }`}
                           >
                             <span className={`w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-blue-600' : 'bg-gray-300'}`} />
                             <span className="text-sm">{platform}</span>
@@ -1077,7 +1200,7 @@ const VacancyPage = () => {
 
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
                   <div className="flex items-center space-x-2 text-gray-400 mb-1">
-                    <DollarSign size={14} />
+                    <IndianRupee size={14} />
                     <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Salary Range</span>
                   </div>
                   <p className="text-sm font-semibold text-gray-800">{viewingVacancy.salaryCriteria || '—'}</p>
@@ -1229,6 +1352,111 @@ const VacancyPage = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Sub-modal: Add New Department */}
+      {showAddDept && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-gray-950/70 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-100 p-6 space-y-4 animate-in zoom-in-95 duration-250">
+            <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+              <h3 className="text-md font-bold text-gray-900 flex items-center gap-1.5">
+                <Plus size={16} className="text-blue-600" /> Add New Department
+              </h3>
+              <button onClick={() => setShowAddDept(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleAddDeptSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1.5">Department Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={newDeptName}
+                  onChange={(e) => setNewDeptName(e.target.value)}
+                  placeholder="e.g. Finance, Human Resources"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddDept(false)}
+                  className="px-4 py-2 border border-gray-200 text-gray-700 font-semibold rounded-lg text-xs hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingDept}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs transition-colors flex items-center gap-1"
+                >
+                  {submittingDept ? 'Saving...' : 'Save Department'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-modal: Add New Designation */}
+      {showAddDesig && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-gray-950/70 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-100 p-6 space-y-4 animate-in zoom-in-95 duration-250">
+            <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+              <h3 className="text-md font-bold text-gray-900 flex items-center gap-1.5">
+                <Plus size={16} className="text-blue-600" /> Add New Designation
+              </h3>
+              <button onClick={() => setShowAddDesig(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleAddDesigSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1.5">Department *</label>
+                <select
+                  required
+                  value={newDesigDeptId}
+                  onChange={(e) => setNewDesigDeptId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select Department</option>
+                  {departments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1.5">Designation Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={newDesigName}
+                  onChange={(e) => setNewDesigName(e.target.value)}
+                  placeholder="e.g. Sales Manager, Frontend Intern"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddDesig(false)}
+                  className="px-4 py-2 border border-gray-200 text-gray-700 font-semibold rounded-lg text-xs hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingDesig}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs transition-colors flex items-center gap-1"
+                >
+                  {submittingDesig ? 'Saving...' : 'Save Designation'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

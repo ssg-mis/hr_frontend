@@ -22,9 +22,9 @@ const Joining = () => {
     setTableLoading(true);
     try {
       const res = await jobApplicationApi.list({ stage: 'Verified', limit: 1000, search: searchTerm });
-      setPendingData((res.data || []).filter((a) => !a.employeeCode));
+      setPendingData(res.data || []);
 
-      const historyRes = await jobApplicationApi.list({ stage: 'Onboarded', limit: 1000, search: searchTerm });
+      const historyRes = await jobApplicationApi.list({ stage: 'Hired', limit: 1000, search: searchTerm });
       setHistoryData(historyRes.data || []);
     } catch (err) {
       toast.error(err.message || 'Failed to load joining data');
@@ -54,7 +54,7 @@ const Joining = () => {
     setSubmitting(true);
     try {
       await jobApplicationApi.updateStage(joining.applicationNumber, {
-        stage: 'Onboarded',
+        stage: 'Hired',
         joiningDate: form.joiningDate,
         joiningRemark: form.joiningRemark || null,
       });

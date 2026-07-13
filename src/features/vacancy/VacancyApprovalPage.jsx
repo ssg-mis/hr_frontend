@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Search, Check, X, Briefcase, Calendar, MapPin, DollarSign, Users, Award, Layers, Info, Link } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Search, Check, X, Briefcase, Calendar, MapPin, IndianRupee, Users, Award, Layers, Info, Link } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { vacancyApi } from './vacancy.api';
 import { departmentApi } from '../department/department.api';
@@ -14,6 +14,25 @@ const VacancyApprovalPage = () => {
 
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectionRemark, setRejectionRemark] = useState('');
+
+  const modalContentRef = useRef(null);
+  const rejectTextAreaRef = useRef(null);
+
+  useEffect(() => {
+    if (showRejectForm) {
+      setTimeout(() => {
+        if (modalContentRef.current) {
+          modalContentRef.current.scrollTo({
+            top: modalContentRef.current.scrollHeight,
+            behavior: 'smooth',
+          });
+        }
+        if (rejectTextAreaRef.current) {
+          rejectTextAreaRef.current.focus();
+        }
+      }, 100);
+    }
+  }, [showRejectForm]);
 
   const [pagination, setPagination] = useState({
     page: 1,
@@ -149,7 +168,7 @@ const VacancyApprovalPage = () => {
             </div>
 
             {/* Content (Scrollable & Read Only) */}
-            <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
+            <div ref={modalContentRef} className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
@@ -170,7 +189,7 @@ const VacancyApprovalPage = () => {
 
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                   <div className="flex items-center space-x-2 text-gray-400 mb-1">
-                    <DollarSign size={14} />
+                    <IndianRupee size={14} />
                     <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Salary Range</span>
                   </div>
                   <p className="text-sm font-semibold text-gray-800">{reviewingVacancy.salaryCriteria || '—'}</p>
@@ -288,6 +307,7 @@ const VacancyApprovalPage = () => {
                       Reason for Rejection *
                     </label>
                     <textarea
+                      ref={rejectTextAreaRef}
                       placeholder="Explain why this vacancy is rejected (e.g. Budget constraints, changes in headcounts)..."
                       value={rejectionRemark}
                       onChange={(e) => setRejectionRemark(e.target.value)}
@@ -374,9 +394,8 @@ const VacancyApprovalPage = () => {
                   setActiveTab(tab);
                   setVacancyData([]);
                 }}
-                className={`py-2.5 px-6 font-semibold text-sm border-b-2 transition-all ${
-                  isActive ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-400 hover:text-gray-700'
-                }`}
+                className={`py-2.5 px-6 font-semibold text-sm border-b-2 transition-all ${isActive ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-400 hover:text-gray-700'
+                  }`}
               >
                 {tab} Vacancies
               </button>
@@ -552,9 +571,8 @@ const VacancyApprovalPage = () => {
                         <button
                           key={pageNum}
                           onClick={() => handlePageChange(pageNum)}
-                          className={`relative inline-flex items-center px-4 py-2 text-sm font-bold border-r border-gray-100 last:border-0 transition-colors ${
-                            pagination.page === pageNum ? 'z-10 bg-indigo-600 text-white' : 'text-gray-800 hover:bg-gray-50'
-                          }`}
+                          className={`relative inline-flex items-center px-4 py-2 text-sm font-bold border-r border-gray-100 last:border-0 transition-colors ${pagination.page === pageNum ? 'z-10 bg-indigo-600 text-white' : 'text-gray-800 hover:bg-gray-50'
+                            }`}
                         >
                           {pageNum}
                         </button>

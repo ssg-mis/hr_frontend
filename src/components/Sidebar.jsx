@@ -12,7 +12,6 @@ import {
   AlarmClockCheck,
   Users,
   Calendar,
-  DollarSign,
   Clock,
   LogOut as LogOutIcon,
   X,
@@ -22,7 +21,6 @@ import {
   ChevronUp,
   NotebookPen,
   Book,
-  BadgeDollarSign,
   BookPlus,
   CreditCard,
   Settings,
@@ -31,6 +29,7 @@ import {
   ClipboardList,
   FileCheck,
   Mail,
+  IndianRupee,
 } from "lucide-react";
 import useAuthStore from "../store/authStore";
 
@@ -40,6 +39,7 @@ const Sidebar = ({ onClose }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isAttendanceOpen, setIsAttendanceOpen] = useState(false);
   const [isRecruitmentOpen, setIsRecruitmentOpen] = useState(false);
+  const [isResignationOpen, setIsResignationOpen] = useState(false);
 
   const userString = localStorage.getItem("user");
   const user = userString ? JSON.parse(userString) : null;
@@ -70,25 +70,23 @@ const Sidebar = ({ onClose }) => {
         { path: "/joining", label: "Joining" },
       ],
     },
-    { path: "/resignation-module", icon: UserX, label: "Resignation Module" },
-    { path: "/after-leaving-work", icon: ClipboardCheck, label: "After Leaving Work" },
-    { path: "/employee", icon: Users, label: "Employee" },
-    { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
-    { path: "/leave-policy", icon: BookPlus, label: "Leave Policy" },
-    { path: "/emi-management", icon: CreditCard, label: "EMI Management" },
     {
       type: "dropdown",
-      icon: Clock,
-      label: "Attendance",
-      isOpen: isAttendanceOpen,
-      toggle: () => setIsAttendanceOpen(!isAttendanceOpen),
+      icon: UserX,
+      label: "Resignation Module",
+      isOpen: isResignationOpen,
+      toggle: () => setIsResignationOpen(!isResignationOpen),
       items: [
-        { path: "/attendance", label: "Daily Attendance" },
-        { path: "/attendance-monthly", label: "Monthly Attendance" },
+        { path: "/resignation-module", label: "Resignation Requests" },
+        { path: "/after-leaving-work", label: "After Leaving Work" },
+        { path: "/leaving", label: "Exit Clearance" },
       ],
     },
-    // { path: '/report', icon: NotebookPen, label: 'Report' },
-    // { path: "/misreport", icon: AlarmClockCheck, label: "MIS Report" },
+    { path: "/employee", icon: Users, label: "Employee" },
+    { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
+    { path: "/leave-policy", icon: BookPlus, label: "Leave Record" },
+    { path: "/emi-management", icon: CreditCard, label: "EMI Management" },
+    { path: "/salary", icon: IndianRupee, label: "Salary" },
     { path: "/settings", icon: Settings, label: "Settings" },
   ];
 
@@ -209,11 +207,10 @@ const SidebarContent = ({
             <div key={item.label}>
               <button
                 onClick={item.toggle}
-                className={`flex items-center justify-between w-full py-2.5 px-4 rounded-lg transition-colors ${
-                  item.isOpen
-                    ? "bg-indigo-800 text-white"
-                    : "text-indigo-100 hover:bg-indigo-800 hover:text-white"
-                }`}
+                className={`flex items-center justify-between w-full py-2.5 px-4 rounded-lg transition-colors ${item.isOpen
+                  ? "bg-indigo-800 text-white"
+                  : "text-indigo-100 hover:bg-indigo-800 hover:text-white"
+                  }`}
               >
                 <div className="flex items-center">
                   <item.icon
@@ -237,10 +234,9 @@ const SidebarContent = ({
                       key={subItem.path}
                       to={subItem.path}
                       className={({ isActive }) =>
-                        `flex items-center py-2 px-4 rounded-lg transition-colors ${
-                          isActive
-                            ? "bg-indigo-700 text-white"
-                            : "text-indigo-100 hover:bg-indigo-800 hover:text-white"
+                        `flex items-center py-2 px-4 rounded-lg transition-colors ${isActive
+                          ? "bg-indigo-700 text-white"
+                          : "text-indigo-100 hover:bg-indigo-800 hover:text-white"
                         }`
                       }
                       onClick={onClose}
@@ -259,10 +255,9 @@ const SidebarContent = ({
             key={item.path}
             to={item.path}
             className={({ isActive }) =>
-              `flex items-center py-2.5 px-4 rounded-lg transition-colors ${
-                isActive
-                  ? "bg-indigo-800 text-white"
-                  : "text-indigo-100 hover:bg-indigo-800 hover:text-white"
+              `flex items-center py-2.5 px-4 rounded-lg transition-colors ${isActive
+                ? "bg-indigo-800 text-white"
+                : "text-indigo-100 hover:bg-indigo-800 hover:text-white"
               }`
             }
             onClick={onClose}
