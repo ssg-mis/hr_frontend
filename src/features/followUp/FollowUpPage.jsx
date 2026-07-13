@@ -281,8 +281,19 @@ const FollowUpPage = () => {
               </div>
               <button onClick={() => setScheduling(null)} className="text-gray-500 hover:text-gray-700"><X size={20} /></button>
             </div>
-            <form onSubmit={submitSchedule} className="flex flex-col">
+            <form onSubmit={submitSchedule} className="flex-col">
               <div className="p-6 space-y-4">
+                {scheduling.vacancyStatus === 'Closed' && (
+                  <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 text-sm font-semibold flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
+                      <span>Cannot Schedule Interview</span>
+                    </div>
+                    <p className="text-xs text-red-650 font-medium leading-relaxed mt-1">
+                      cant go with the applicant because the vacancy is allready filled if you want to proceed edit the vacancy or add new vacancy
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Interview Date & Time *</label>
                   <input type="datetime-local" value={interviewForm.interviewDate} onChange={(e) => setInterviewForm((f) => ({ ...f, interviewDate: e.target.value }))} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -300,7 +311,7 @@ const FollowUpPage = () => {
               </div>
               <div className="flex justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50/50">
                 <button type="button" onClick={() => setScheduling(null)} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl">{submitting ? 'Scheduling...' : 'Schedule & Move to Interview'}</button>
+                <button type="submit" disabled={submitting || scheduling.vacancyStatus === 'Closed'} className={`px-5 py-2.5 font-semibold rounded-xl text-white transition-colors ${scheduling.vacancyStatus === 'Closed' ? 'bg-gray-400 cursor-not-allowed shadow-none' : 'bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-150'}`}>{submitting ? 'Scheduling...' : 'Schedule & Move to Interview'}</button>
               </div>
             </form>
           </div>

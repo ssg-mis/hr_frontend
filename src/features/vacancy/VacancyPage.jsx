@@ -370,10 +370,13 @@ const VacancyPage = () => {
       formattedDate = new Date(item.completionDate).toISOString().split('T')[0];
     }
 
-    setFormData({
-      vacancyName: item.vacancyName || '',
-      designationId: item.designationId ? String(item.designationId) : '',
-      departmentId: item.departmentId ? String(item.departmentId) : '',
+      const desig = designations.find(d => String(d.id) === String(item.designationId));
+      const itemDeptId = desig ? String(desig.departmentId) : '';
+
+      setFormData({
+        vacancyName: item.vacancyName || '',
+        designationId: item.designationId ? String(item.designationId) : '',
+        departmentId: itemDeptId,
       salaryCriteria: item.salaryCriteria || '',
       preferredQualification: item.preferredQualification || '',
       preferredLocation: item.preferredLocation || '',
@@ -458,7 +461,12 @@ const VacancyPage = () => {
   const filteredVacancyData = vacancyData.filter((item) => {
     if (statusFilter && item.status !== statusFilter) return false;
     if (priorityFilter && item.priority !== priorityFilter) return false;
-    if (deptFilter && String(item.departmentId) !== String(deptFilter)) return false;
+    
+    if (deptFilter) {
+      const desig = designations.find((d) => String(d.id) === String(item.designationId));
+      const itemDeptId = desig ? String(desig.departmentId) : '';
+      if (itemDeptId !== String(deptFilter)) return false;
+    }
     return true;
   });
 
@@ -683,7 +691,13 @@ const VacancyPage = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-semibold text-gray-800">{item.designationName || '—'}</div>
-                        <div className="text-xs text-gray-400 font-medium">{item.departmentName || '—'}</div>
+                        <div className="text-xs text-gray-400 font-medium">
+                          {(() => {
+                            const desig = designations.find(d => String(d.id) === String(item.designationId));
+                            const dept = desig ? departments.find(d => String(d.id) === String(desig.departmentId)) : null;
+                            return dept ? dept.name : '—';
+                          })()}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="inline-flex items-center gap-1">
@@ -1195,7 +1209,13 @@ const VacancyPage = () => {
                     <Layers size={14} />
                     <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Department</span>
                   </div>
-                  <p className="text-sm font-semibold text-gray-800">{viewingVacancy.departmentName}</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {(() => {
+                      const desig = designations.find(d => String(d.id) === String(viewingVacancy.designationId));
+                      const dept = desig ? departments.find(d => String(d.id) === String(desig.departmentId)) : null;
+                      return dept ? dept.name : '—';
+                    })()}
+                  </p>
                 </div>
 
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">

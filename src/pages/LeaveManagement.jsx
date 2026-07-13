@@ -828,22 +828,14 @@ const LeaveManagement = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name *</label>
-                <select
+                <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name</label>
+                <input
+                  type="text"
                   name="hodName"
-                  value={formData.hodName}
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                >
-                  <option value="">Select HOD</option>
-                  {hods.map(hod => (
-                    <option key={hod.id} value={hod.name}>{hod.name}</option>
-                  ))}
-                  <option value="Dharam">Dharam</option>
-                  <option value="Pratap">Pratap</option>
-                  <option value="Aubhav">Aubhav</option>
-                </select>
+                  value={formData.hodName || '—'}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
+                  readOnly
+                />
               </div>
 
               <div>

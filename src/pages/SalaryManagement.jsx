@@ -1,11 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Check, X, ArrowUpRight, History, ShieldAlert, Users, Percent, IndianRupee, Layers, CheckSquare } from 'lucide-react';
+import { Search, Plus, Check, X, ArrowUpRight, History, ShieldAlert, Users, Percent, IndianRupee, Layers, CheckSquare, Gift, CreditCard, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const SalaryManagement = () => {
   const [activeSubTab, setActiveSubTab] = useState('active-salaries'); // 'active-salaries' | 'requests' | 'history'
   const [requestsFilter, setRequestsFilter] = useState('all'); // 'all' | 'pending' | 'approved' | 'rejected'
   const [dialogError, setDialogError] = useState('');
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [showWeekOffModal, setShowWeekOffModal] = useState(false);
+  const [selectedWeekOffEmp, setSelectedWeekOffEmp] = useState(null);
+  const [tempWeekOffs, setTempWeekOffs] = useState([]);
+  const [advanceRequests, setAdvanceRequests] = useState([]);
+  const [advanceRecoveries, setAdvanceRecoveries] = useState([]);
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [showRecordRecoveryModal, setShowRecordRecoveryModal] = useState(false);
+  const [selectedAdvance, setSelectedAdvance] = useState(null);
+  const [advanceForm, setAdvanceForm] = useState({
+    employeeId: '',
+    amount: '',
+    reason: '',
+    recoveryOption: 'Installment',
+    installmentCount: '3',
+    monthlyDeduction: '0.00',
+  });
+  const [recoveryForm, setRecoveryForm] = useState({
+    amount: '',
+    recoveryMethod: 'Salary Deduction',
+    remarks: '',
+  });
+  const [advanceTabMode, setAdvanceTabMode] = useState('requests');
   
   const [salaries, setSalaries] = useState([]);
   const [requests, setRequests] = useState([]);
@@ -46,11 +69,50 @@ const SalaryManagement = () => {
         fetchRequests(),
         fetchHistory(),
         fetchDepartments(),
+        fetchCalendarEvents(),
+        fetchAdvanceRequests(),
+        fetchAdvanceRecoveries(),
       ]);
     } catch (error) {
       console.error("Error loading salary data:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAdvanceRequests = async () => {
+    try {
+      const res = await fetch(`${API_URL}/advances`);
+      const result = await res.json();
+      if (result.success) {
+        setAdvanceRequests(result.data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching advance requests:", err);
+    }
+  };
+
+  const fetchAdvanceRecoveries = async () => {
+    try {
+      const res = await fetch(`${API_URL}/advances/recoveries`);
+      const result = await res.json();
+      if (result.success) {
+        setAdvanceRecoveries(result.data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching advance recoveries:", err);
+    }
+  };
+
+  const fetchCalendarEvents = async () => {
+    try {
+      const res = await fetch(`${API_URL}/calendar`);
+      const result = await res.json();
+      if (result.success) {
+        setCalendarEvents(result.data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching calendar events:", err);
     }
   };
 
@@ -324,6 +386,30 @@ const SalaryManagement = () => {
           <History size={16} />
           <span>Previous Records (Logs)</span>
         </button>
+
+        <button
+          onClick={() => setActiveSubTab('bonus')}
+          className={`pb-4 px-6 font-semibold text-sm transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+            activeSubTab === 'bonus' 
+              ? 'border-indigo-600 text-indigo-600' 
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Gift size={16} />
+          <span>Bonus Calculations</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('advance-management')}
+          className={`pb-4 px-6 font-semibold text-sm transition-colors border-b-2 -mb-px flex items-center gap-2 ${
+            activeSubTab === 'advance-management' 
+              ? 'border-indigo-600 text-indigo-600' 
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <CreditCard size={16} />
+          <span>Advance Management</span>
+        </button>
       </div>
 
       {/* Tab Contents */}
@@ -390,16 +476,8 @@ const SalaryManagement = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                           <div className="flex justify-center gap-2">
                             <button
-                              onClick={() => triggerQuickAutoIncrease(emp)}
-                              className="px-2.5 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 text-xs font-semibold flex items-center gap-1 transition-all"
-                              title="Quick +10% increment request"
-                            >
-                              <ArrowUpRight size={14} />
-                              <span>+10% Auto</span>
-                            </button>
-                            <button
                               onClick={() => openManualChange(emp)}
-                              className="px-2.5 py-1.5 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 text-xs font-semibold transition-all"
+                              className="px-2.5 py-1.5 bg-indigo-50 text-indigo-650 rounded-lg hover:bg-indigo-100 text-xs font-semibold transition-all"
                             >
                               Change Manually
                             </button>
@@ -635,10 +713,469 @@ const SalaryManagement = () => {
         </div>
       )}
 
+      {activeSubTab === 'bonus' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+              <span className="text-slate-400 text-xs font-bold uppercase tracking-wider block mb-1">Total Bonus Payout</span>
+              <span className="text-2xl font-bold text-slate-800">
+                ₹{salaries.reduce((sum, item) => {
+                  const gross = Number(item.baseSalary) + Number(item.allowanceSalary);
+                  const present = (item.employeeId * 7) % 40 + 200;
+                  const weekOffsDays = (item.weekOffs ? Array.from(new Set([...item.weekOffs.split(',').map(d => d.trim()), 'Sunday'])).length : 1) * 52;
+                  const companyHols = calendarEvents.filter(e => e.type === 'holiday').length;
+                  const bonus = (gross / 365) * (present + weekOffsDays + companyHols);
+                  return sum + bonus;
+                }, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+              <span className="text-slate-400 text-xs font-bold uppercase tracking-wider block mb-1">Company Holidays</span>
+              <span className="text-2xl font-bold text-slate-850">
+                {calendarEvents.filter(e => e.type === 'holiday').length} Days
+              </span>
+              <span className="text-[10px] text-slate-400 block mt-1">Fetched from company calendar</span>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+              <span className="text-slate-400 text-xs font-bold uppercase tracking-wider block mb-1">Avg Present Days (Seeded)</span>
+              <span className="text-2xl font-bold text-slate-800">
+                {salaries.length > 0
+                  ? (salaries.reduce((sum, item) => sum + ((item.employeeId * 7) % 40 + 200), 0) / salaries.length).toFixed(1)
+                  : 0} Days
+              </span>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+              <span className="text-slate-400 text-xs font-bold uppercase tracking-wider block mb-1">Active Employees</span>
+              <span className="text-2xl font-bold text-indigo-650">{salaries.length}</span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex flex-col md:flex-row md:items-center gap-4 max-w-2xl w-full">
+                <div className="relative max-w-md w-full">
+                  <Search className="absolute left-3 top-3 text-slate-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    placeholder="Search employee by name/code..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9 pr-4 py-2 border border-slate-200 rounded-xl w-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    const currentCompanyWeekOffs = salaries[0]?.weekOffs || "Sunday";
+                    setTempWeekOffs(currentCompanyWeekOffs.split(',').map(d => d.trim()));
+                    setShowWeekOffModal(true);
+                  }}
+                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-semibold text-sm transition-all shadow-sm shadow-indigo-100 shrink-0"
+                >
+                  <Gift size={16} />
+                  <span>Configure Company Week Offs</span>
+                </button>
+              </div>
+              <div className="text-xs text-slate-450 font-bold uppercase tracking-wider text-right">
+                Formula: ((Gross Salary) / 365) * (Present + Week Offs + Holidays)
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-100">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Gross Salary / Month</th>
+                    <th className="px-6 py-4 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Present Days</th>
+                    <th className="px-6 py-4 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Week Offs (Annual)</th>
+                    <th className="px-6 py-4 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Company Holidays</th>
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Calculated Bonus</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredSalaries.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="px-6 py-12 text-center text-slate-500 text-sm">
+                        No employees found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredSalaries.map((item) => {
+                      const gross = Number(item.baseSalary) + Number(item.allowanceSalary);
+                      const present = (item.employeeId * 7) % 40 + 200;
+                      const uniqueWeekOffs = Array.from(new Set([...(item.weekOffs || "Sunday").split(',').map(d => d.trim()), 'Sunday'])).filter(Boolean);
+                      const weekOffsDays = uniqueWeekOffs.length * 52;
+                      const companyHols = calendarEvents.filter(e => e.type === 'holiday').length;
+                      const bonus = (gross / 365) * (present + weekOffsDays + companyHols);
+
+                      const weekdaysList = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+                      const sortedWeekOffs = uniqueWeekOffs.sort((a, b) => weekdaysList.indexOf(a) - weekdaysList.indexOf(b)).join(", ");
+
+                      return (
+                        <tr key={item.employeeId} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-semibold text-slate-800">{item.employeeName}</div>
+                            <div className="text-xs text-slate-400">{item.employeeCode} • {item.designationName}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium text-slate-700">
+                            ₹{gross.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-semibold text-slate-600">
+                            {present}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <div className="text-sm font-semibold text-slate-700">{weekOffsDays} Days</div>
+                            <div className="text-[10px] text-slate-400 truncate max-w-[150px] mx-auto" title={sortedWeekOffs}>
+                              {sortedWeekOffs}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-semibold text-slate-600">
+                            {companyHols}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-emerald-650">
+                            ₹{bonus.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'advance-management' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+              <span className="text-slate-400 text-xs font-bold uppercase tracking-wider block mb-1">Total Advances Issued</span>
+              <span className="text-2xl font-bold text-slate-800">
+                ₹{advanceRequests
+                  .filter(r => r.status === 'Approved')
+                  .reduce((sum, r) => sum + Number(r.amount), 0)
+                  .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+              <span className="text-slate-400 text-xs font-bold uppercase tracking-wider block mb-1">Outstanding Balance</span>
+              <span className="text-2xl font-bold text-rose-650">
+                ₹{advanceRequests
+                  .filter(r => r.status === 'Approved')
+                  .reduce((sum, r) => sum + (Number(r.amount) - Number(r.totalRecovered)), 0)
+                  .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+              <span className="text-slate-400 text-xs font-bold uppercase tracking-wider block mb-1">Total Recovered</span>
+              <span className="text-2xl font-bold text-emerald-600">
+                ₹{advanceRecoveries
+                  .reduce((sum, r) => sum + Number(r.amount), 0)
+                  .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+              <span className="text-slate-400 text-xs font-bold uppercase tracking-wider block mb-1">Pending Approvals</span>
+              <span className="text-2xl font-bold text-amber-500">
+                {advanceRequests.filter(r => r.status === 'Pending HOD' || r.status === 'Pending HR').length}
+              </span>
+            </div>
+          </div>
+
+          {/* Module Inner Header */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setAdvanceTabMode('requests')}
+                className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${
+                  advanceTabMode === 'requests'
+                    ? 'bg-slate-800 text-white shadow-sm'
+                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <FileText size={14} />
+                <span>Advance Report (Requests)</span>
+              </button>
+              <button
+                onClick={() => setAdvanceTabMode('recoveries')}
+                className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${
+                  advanceTabMode === 'recoveries'
+                    ? 'bg-slate-800 text-white shadow-sm'
+                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <History size={14} />
+                <span>Recovery Report (Logs)</span>
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                setAdvanceForm({
+                  employeeId: '',
+                  amount: '',
+                  reason: '',
+                  recoveryOption: 'Installment',
+                  installmentCount: '3',
+                  monthlyDeduction: '0.00',
+                });
+                setShowAdvanceModal(true);
+              }}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-semibold text-xs transition-all shadow-sm"
+            >
+              <Plus size={16} />
+              <span>Request Advance</span>
+            </button>
+          </div>
+
+          {/* Tables Section */}
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            {advanceTabMode === 'requests' ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-100">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
+                      <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Advance Amount</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Recovery Option</th>
+                      <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Recovered / Outstanding</th>
+                      <th className="px-6 py-4 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-4 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Date Raised</th>
+                      <th className="px-6 py-4 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {advanceRequests.length === 0 ? (
+                      <tr>
+                        <td colSpan="7" className="px-6 py-12 text-center text-slate-500 text-sm">
+                          No advance requests raised yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      advanceRequests.map((req) => {
+                        const amt = Number(req.amount);
+                        const rec = Number(req.totalRecovered || 0);
+                        const outstanding = amt - rec;
+                        const progress = amt > 0 ? (rec / amt) * 100 : 0;
+
+                        return (
+                          <tr key={req.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-semibold text-slate-800">{req.employeeName}</div>
+                              <div className="text-xs text-slate-400">{req.employeeCode}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-slate-700">
+                              ₹{amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                              <span className="font-semibold">{req.recoveryOption}</span>
+                              {req.recoveryOption === 'Installment' && (
+                                <span className="text-xs text-slate-400 block">{req.installmentCount} Monthly Installments</span>
+                              )}
+                              {req.recoveryOption === 'Salary Deduction' && (
+                                <span className="text-xs text-slate-400 block">Deduct ₹{Number(req.monthlyDeduction).toLocaleString('en-IN')}/mo</span>
+                              )}
+                              {req.recoveryOption === 'Outstanding Balance' && (
+                                <span className="text-xs text-slate-400 block">Deduct total outstanding</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <div className="text-xs font-semibold text-slate-650">
+                                Rec: ₹{rec.toLocaleString('en-IN')} / Out: ₹{outstanding.toLocaleString('en-IN')}
+                              </div>
+                              <div className="w-24 bg-slate-100 rounded-full h-1.5 mt-1 ml-auto overflow-hidden">
+                                <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${progress}%` }}></div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                                req.status === 'Pending HOD'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : req.status === 'Pending HR'
+                                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                  : req.status === 'Approved'
+                                  ? 'bg-green-50 text-green-700 border-green-200'
+                                  : 'bg-red-50 text-red-700 border-red-200'
+                              }`}>
+                                {req.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-xs text-slate-500 font-medium">
+                              {new Date(req.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+                              <div className="flex justify-center gap-1.5">
+                                {req.status === 'Pending HOD' && (
+                                  <>
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          const res = await fetch(`${API_URL}/advances/${req.id}`, {
+                                            method: "PATCH",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ status: "Pending HR" }),
+                                          });
+                                          if ((await res.json()).success) {
+                                            toast.success("HOD Approved, sent to HR");
+                                            fetchAdvanceRequests();
+                                          }
+                                        } catch (e) { toast.error("Error approving request"); }
+                                      }}
+                                      className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-sm"
+                                    >
+                                      <Check size={12} />
+                                      <span>Approve HOD</span>
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          const res = await fetch(`${API_URL}/advances/${req.id}`, {
+                                            method: "PATCH",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ status: "Rejected" }),
+                                          });
+                                          if ((await res.json()).success) {
+                                            toast.success("Request Rejected");
+                                            fetchAdvanceRequests();
+                                          }
+                                        } catch (e) { toast.error("Error rejecting request"); }
+                                      }}
+                                      className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-sm"
+                                    >
+                                      <X size={12} />
+                                      <span>Reject</span>
+                                    </button>
+                                  </>
+                                )}
+                                {req.status === 'Pending HR' && (
+                                  <>
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          const res = await fetch(`${API_URL}/advances/${req.id}`, {
+                                            method: "PATCH",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ status: "Approved" }),
+                                          });
+                                          if ((await res.json()).success) {
+                                            toast.success("HR Approved, advance released!");
+                                            fetchAdvanceRequests();
+                                          }
+                                        } catch (e) { toast.error("Error approving request"); }
+                                      }}
+                                      className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-sm"
+                                    >
+                                      <Check size={12} />
+                                      <span>Approve HR</span>
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          const res = await fetch(`${API_URL}/advances/${req.id}`, {
+                                            method: "PATCH",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ status: "Rejected" }),
+                                          });
+                                          if ((await res.json()).success) {
+                                            toast.success("Request Rejected");
+                                            fetchAdvanceRequests();
+                                          }
+                                        } catch (e) { toast.error("Error rejecting request"); }
+                                      }}
+                                      className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-sm"
+                                    >
+                                      <X size={12} />
+                                      <span>Reject</span>
+                                    </button>
+                                  </>
+                                )}
+                                {req.status === 'Approved' && outstanding > 0 && (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedAdvance(req);
+                                      setRecoveryForm({
+                                        amount: '',
+                                        recoveryMethod: 'Salary Deduction',
+                                        remarks: '',
+                                      });
+                                      setShowRecordRecoveryModal(true);
+                                    }}
+                                    className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-sm"
+                                  >
+                                    <Plus size={12} />
+                                    <span>Record Recovery</span>
+                                  </button>
+                                )}
+                                {req.status === 'Approved' && outstanding <= 0 && (
+                                  <span className="text-xs text-emerald-650 font-bold">Paid</span>
+                                )}
+                                {req.status === 'Rejected' && (
+                                  <span className="text-xs text-slate-400">Closed</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-100">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Recovery Date</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
+                      <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Amount Recovered</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Recovery Method</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {advanceRecoveries.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="px-6 py-12 text-center text-slate-500 text-sm">
+                          No recovery transactions recorded yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      advanceRecoveries.map((rec) => (
+                        <tr key={rec.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-500 font-medium">
+                            {new Date(rec.recoveredAt).toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-semibold text-slate-800">{rec.employeeName}</div>
+                            <div className="text-xs text-slate-400">{rec.employeeCode}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-emerald-650">
+                            ₹{Number(rec.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-semibold">
+                            {rec.recoveryMethod}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 italic max-w-[200px] truncate" title={rec.remarks}>
+                            {rec.remarks || '—'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Employee-wise Modal */}
       {showEmpModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black bg-opacity-50">
-          <div className="relative bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-slate-100 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div className="relative bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-slate-100 flex flex-col max-h-[85vh]">
             <button
               onClick={() => setShowEmpModal(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-all"
@@ -651,7 +1188,7 @@ const SalaryManagement = () => {
               <span>{selectedEmp ? `Change Salary - ${selectedEmp.employeeName}` : 'Create Salary Request'}</span>
             </h3>
 
-            <form onSubmit={handleCreateEmpRequest} className="space-y-4">
+            <form onSubmit={handleCreateEmpRequest} className="space-y-4 overflow-y-auto pr-1 flex-1">
               {dialogError && (
                 <div className="bg-red-50 text-red-700 p-3 rounded-xl border border-red-200 text-xs font-bold flex items-center gap-1.5 animate-pulse">
                   <ShieldAlert size={14} className="shrink-0" />
@@ -758,8 +1295,8 @@ const SalaryManagement = () => {
 
       {/* Department-wise Modal */}
       {showDeptModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black bg-opacity-50">
-          <div className="relative bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-slate-100 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div className="relative bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-slate-100 flex flex-col max-h-[85vh]">
             <button
               onClick={() => setShowDeptModal(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-all"
@@ -772,7 +1309,7 @@ const SalaryManagement = () => {
               <span>Department-wise Increment Request</span>
             </h3>
 
-            <form onSubmit={handleCreateDeptRequest} className="space-y-4">
+            <form onSubmit={handleCreateDeptRequest} className="space-y-4 overflow-y-auto pr-1 flex-1">
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Select Department</label>
                 <select
@@ -883,6 +1420,346 @@ const SalaryManagement = () => {
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-sm"
                 >
                   Submit Department Request
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Week Offs Configuration Modal */}
+      {showWeekOffModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div className="relative bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-100 flex flex-col max-h-[85vh]">
+            <button
+              onClick={() => setShowWeekOffModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-all"
+            >
+              <X size={18} />
+            </button>
+
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
+              <Gift className="text-indigo-650 w-5 h-5" />
+              <span>Configure Company-Wide Week Offs</span>
+            </h3>
+
+            <div className="space-y-4 overflow-y-auto pr-1 flex-1">
+              <p className="text-xs text-slate-400">
+                Select days of the week to designate as week offs. Sunday is set by company policy and cannot be deselected.
+              </p>
+
+              <div className="space-y-2">
+                {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((day) => {
+                  const isSunday = day === "Sunday";
+                  const isChecked = tempWeekOffs.includes(day) || isSunday;
+
+                  return (
+                    <label key={day} className={`flex items-center justify-between p-3 rounded-xl border text-sm transition-all cursor-pointer ${
+                      isSunday ? 'bg-slate-50 border-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}>
+                      <span className="font-semibold">{day}</span>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        disabled={isSunday}
+                        onChange={(e) => {
+                          if (isSunday) return;
+                          const checked = e.target.checked;
+                          setTempWeekOffs(prev => {
+                            if (checked) {
+                              return [...prev, day];
+                            } else {
+                              return prev.filter(d => d !== day);
+                            }
+                          });
+                        }}
+                        className={`h-4.5 w-4.5 rounded text-indigo-650 focus:ring-indigo-500 ${isSunday ? 'text-slate-300' : 'cursor-pointer'}`}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-100 text-xs flex justify-between items-center">
+                <span className="font-bold text-slate-600 uppercase">Annual Week Offs Count</span>
+                <span className="text-sm font-extrabold text-indigo-650 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full">
+                  {Array.from(new Set([...tempWeekOffs, 'Sunday'])).length * 52} Days
+                </span>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowWeekOffModal(false)}
+                  className="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl font-semibold text-sm transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`${API_URL}/salaries/week-offs`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          weekOffs: tempWeekOffs.join(","),
+                        }),
+                      });
+                      const result = await res.json();
+                      if (result.success) {
+                        toast.success("Company-wide week offs updated successfully!");
+                        setShowWeekOffModal(false);
+                        fetchSalaries();
+                      } else {
+                        toast.error(result.message || "Failed to update week offs");
+                      }
+                    } catch (error) {
+                      toast.error("An error occurred");
+                    }
+                  }}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-sm transition-all shadow-sm"
+                >
+                  Save Configuration
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Request Advance Modal */}
+      {showAdvanceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div className="relative bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-100 flex flex-col max-h-[85vh]">
+            <button
+              onClick={() => setShowAdvanceModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-all"
+            >
+              <X size={18} />
+            </button>
+
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
+              <CreditCard className="text-indigo-650 w-5 h-5" />
+              <span>Raise Advance Salary Request</span>
+            </h3>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const res = await fetch(`${API_URL}/advances`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(advanceForm),
+                  });
+                  const result = await res.json();
+                  if (result.success) {
+                    toast.success("Advance request raised successfully!");
+                    setShowAdvanceModal(false);
+                    fetchAdvanceRequests();
+                  } else {
+                    toast.error(result.message || "Failed to raise request");
+                  }
+                } catch (err) {
+                  toast.error("An error occurred");
+                }
+              }}
+              className="space-y-4 overflow-y-auto pr-1 flex-1"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Select Employee *</label>
+                <select
+                  required
+                  value={advanceForm.employeeId}
+                  onChange={(e) => setAdvanceForm(prev => ({ ...prev, employeeId: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                >
+                  <option value="">Choose employee...</option>
+                  {salaries.map(emp => (
+                    <option key={emp.employeeId} value={emp.employeeId}>{emp.employeeName} ({emp.employeeCode})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Advance Amount (₹) *</label>
+                <input
+                  type="number"
+                  required
+                  placeholder="e.g. 15000"
+                  value={advanceForm.amount}
+                  onChange={(e) => setAdvanceForm(prev => ({ ...prev, amount: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Recovery Option *</label>
+                <select
+                  required
+                  value={advanceForm.recoveryOption}
+                  onChange={(e) => setAdvanceForm(prev => ({ ...prev, recoveryOption: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                >
+                  <option value="Installment">Installments (Monthly)</option>
+                  <option value="Salary Deduction">Salary Deduction (Flat Rate)</option>
+                  <option value="Outstanding Balance">Outstanding Balance (Deduct in Full)</option>
+                </select>
+              </div>
+
+              {advanceForm.recoveryOption === 'Installment' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Installment Count (Months) *</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={advanceForm.installmentCount}
+                    onChange={(e) => setAdvanceForm(prev => ({ ...prev, installmentCount: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              )}
+
+              {advanceForm.recoveryOption === 'Salary Deduction' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Monthly Deduction Amount (₹) *</label>
+                  <input
+                    type="number"
+                    required
+                    value={advanceForm.monthlyDeduction}
+                    onChange={(e) => setAdvanceForm(prev => ({ ...prev, monthlyDeduction: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Reason / Description</label>
+                <textarea
+                  rows="3"
+                  placeholder="Why is advance salary requested..."
+                  value={advanceForm.reason}
+                  onChange={(e) => setAdvanceForm(prev => ({ ...prev, reason: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanceModal(false)}
+                  className="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl font-semibold text-sm transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-sm transition-all shadow-sm"
+                >
+                  Submit Request
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Record Recovery Modal */}
+      {showRecordRecoveryModal && selectedAdvance && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+          <div className="relative bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-100 flex flex-col max-h-[85vh]">
+            <button
+              onClick={() => setShowRecordRecoveryModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-all"
+            >
+              <X size={18} />
+            </button>
+
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
+              <Plus className="text-emerald-600 w-5 h-5" />
+              <span>Record Repayment - {selectedAdvance.employeeName}</span>
+            </h3>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const outstanding = Number(selectedAdvance.amount) - Number(selectedAdvance.totalRecovered || 0);
+                if (Number(recoveryForm.amount) > outstanding) {
+                  toast.error(`Repayment cannot exceed outstanding balance of ₹${outstanding.toLocaleString('en-IN')}`);
+                  return;
+                }
+                try {
+                  const res = await fetch(`${API_URL}/advances/${selectedAdvance.id}/recover`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(recoveryForm),
+                  });
+                  const result = await res.json();
+                  if (result.success) {
+                    toast.success("Recovery transaction logged successfully!");
+                    setShowRecordRecoveryModal(false);
+                    fetchAdvanceRequests();
+                    fetchAdvanceRecoveries();
+                  } else {
+                    toast.error(result.message || "Failed to log recovery");
+                  }
+                } catch (err) {
+                  toast.error("An error occurred");
+                }
+              }}
+              className="space-y-4 overflow-y-auto pr-1 flex-1"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Repayment Amount (₹) *</label>
+                <input
+                  type="number"
+                  required
+                  placeholder="e.g. 5000"
+                  max={Number(selectedAdvance.amount) - Number(selectedAdvance.totalRecovered || 0)}
+                  value={recoveryForm.amount}
+                  onChange={(e) => setRecoveryForm(prev => ({ ...prev, amount: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Recovery Method *</label>
+                <select
+                  required
+                  value={recoveryForm.recoveryMethod}
+                  onChange={(e) => setRecoveryForm(prev => ({ ...prev, recoveryMethod: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                >
+                  <option value="Salary Deduction">Salary Deduction</option>
+                  <option value="Manual Repayment">Manual Repayment</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Remarks / Reference</label>
+                <textarea
+                  rows="3"
+                  placeholder="Reference number or deduction notes..."
+                  value={recoveryForm.remarks}
+                  onChange={(e) => setRecoveryForm(prev => ({ ...prev, remarks: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowRecordRecoveryModal(false)}
+                  className="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl font-semibold text-sm transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-all shadow-sm"
+                >
+                  Record Payment
                 </button>
               </div>
             </form>

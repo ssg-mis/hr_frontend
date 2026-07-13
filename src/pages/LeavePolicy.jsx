@@ -151,10 +151,14 @@ const LeavePolicy = () => {
 
     const handleHolidayInputChange = (e) => {
         const { name, value } = e.target;
-        setHolidayFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
+        setHolidayFormData(prev => {
+            const updated = { ...prev, [name]: value };
+            if (name === 'date' && value) {
+                const dateObj = new Date(value);
+                updated.day = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+            }
+            return updated;
+        });
     };
 
     const handleAddHoliday = async (e) => {
@@ -509,7 +513,7 @@ const LeavePolicy = () => {
             {/* Add Holiday Modal */}
             {showHolidayModal && (
                 <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh]">
                         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                             <h2 className="text-xl font-bold text-gray-800">Add New Holiday</h2>
                             <button onClick={() => setShowHolidayModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -517,7 +521,7 @@ const LeavePolicy = () => {
                             </button>
                         </div>
 
-                        <form onSubmit={handleAddHoliday} className="p-6 space-y-4">
+                        <form onSubmit={handleAddHoliday} className="p-6 space-y-4 overflow-y-auto pr-1 flex-1">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
                                 <input
@@ -531,23 +535,15 @@ const LeavePolicy = () => {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Day *</label>
-                                <select
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Day</label>
+                                <input
+                                    type="text"
                                     name="day"
                                     value={holidayFormData.day}
-                                    onChange={handleHolidayInputChange}
-                                    className="w-full border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700"
-                                    required
-                                >
-                                    <option value="">Select Day</option>
-                                    <option value="Monday">Monday</option>
-                                    <option value="Tuesday">Tuesday</option>
-                                    <option value="Wednesday">Wednesday</option>
-                                    <option value="Thursday">Thursday</option>
-                                    <option value="Friday">Friday</option>
-                                    <option value="Saturday">Saturday</option>
-                                    <option value="Sunday">Sunday</option>
-                                </select>
+                                    className="w-full border border-gray-300 rounded-md px-4 py-3 bg-gray-100 text-gray-700 focus:outline-none"
+                                    readOnly
+                                    placeholder="Calculated automatically from date"
+                                />
                             </div>
 
                             <div>
@@ -586,7 +582,7 @@ const LeavePolicy = () => {
             {/* Add Overtime Modal */}
             {showOvertimeModal && (
                 <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh]">
                         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                             <h2 className="text-xl font-bold text-gray-800">Add Overtime Hours</h2>
                             <button onClick={() => setShowOvertimeModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -594,7 +590,7 @@ const LeavePolicy = () => {
                             </button>
                         </div>
 
-                        <form onSubmit={handleAddOvertime} className="p-6 space-y-4">
+                        <form onSubmit={handleAddOvertime} className="p-6 space-y-4 overflow-y-auto pr-1 flex-1">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Employee *</label>
                                 <select

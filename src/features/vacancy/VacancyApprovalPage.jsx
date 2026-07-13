@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Search, Check, X, Briefcase, Calendar, MapPi
 import toast from 'react-hot-toast';
 import { vacancyApi } from './vacancy.api';
 import { departmentApi } from '../department/department.api';
+import { designationApi } from '../designation/designation.api';
 
 const VacancyApprovalPage = () => {
   const [activeTab, setActiveTab] = useState('Pending'); // 'Pending' | 'Approved' | 'Rejected'
@@ -42,21 +43,27 @@ const VacancyApprovalPage = () => {
   });
 
   const [departments, setDepartments] = useState([]);
+  const [designations, setDesignations] = useState([]);
   const [deptFilter, setDeptFilter] = useState('');
 
   useEffect(() => {
-    loadDepartments();
+    loadMasters();
   }, []);
 
   useEffect(() => {
     fetchVacancyData(1);
   }, [searchTerm, activeTab]);
 
-  const loadDepartments = async () => {
+  const loadMasters = async () => {
     try {
-      setDepartments((await departmentApi.list()) || []);
+      const [depts, desigs] = await Promise.all([
+        departmentApi.list(),
+        designationApi.list()
+      ]);
+      setDepartments(depts || []);
+      setDesignations(desigs || []);
     } catch (error) {
-      console.error('Error fetching departments:', error);
+      console.error('Error fetching masters:', error);
     }
   };
 
@@ -90,11 +97,16 @@ const VacancyApprovalPage = () => {
     }
   };
 
-  const handleApprove = async (vacancyNumber) => {
+  const handleApprove = async (vacancyNumber, currentStatus) => {
     try {
       setSubmitting(true);
-      await vacancyApi.setApproval(vacancyNumber, { approvalStatus: 'Approved' });
-      toast.success(`Vacancy ${vacancyNumber} has been approved successfully!`);
+      const nextStatus = currentStatus === 'Pending' ? 'Pending HR' : 'Approved';
+      await vacancyApi.setApproval(vacancyNumber, { approvalStatus: nextStatus });
+      toast.success(
+        currentStatus === 'Pending'
+          ? `Vacancy ${vacancyNumber} approved by HOD, sent to HR`
+          : `Vacancy ${vacancyNumber} approved by HR, released successfully!`
+      );
       setReviewingVacancy(null);
       fetchVacancyData(pagination.page);
     } catch (error) {
@@ -137,7 +149,11 @@ const VacancyApprovalPage = () => {
   };
 
   const filteredData = vacancyData.filter((item) => {
-    if (deptFilter && String(item.departmentId) !== String(deptFilter)) return false;
+    if (deptFilter) {
+      const desig = designations.find(d => String(d.id) === String(item.designationId));
+      const itemDeptId = desig ? String(desig.departmentId) : '';
+      if (itemDeptId !== String(deptFilter)) return false;
+    }
     return true;
   });
 
@@ -146,7 +162,7 @@ const VacancyApprovalPage = () => {
       {/* Review Details and Action Modal */}
       {reviewingVacancy && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-100 flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-300">
 
             {/* Header */}
             <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-indigo-50/20">
@@ -184,7 +200,13 @@ const VacancyApprovalPage = () => {
                     <Layers size={14} />
                     <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Department</span>
                   </div>
-                  <p className="text-sm font-semibold text-gray-800">{reviewingVacancy.departmentName}</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {(() => {
+                      const desig = designations.find(d => String(d.id) === String(reviewingVacancy.designationId));
+                      const dept = desig ? departments.find(d => String(d.id) === String(desig.departmentId)) : null;
+                      return dept ? dept.name : '—';
+                    })()}
+                  </p>
                 </div>
 
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
@@ -344,7 +366,7 @@ const VacancyApprovalPage = () => {
 
             {/* Footer buttons (Only active if Status is Pending) */}
             <div className="flex justify-end space-x-3 p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
-              {reviewingVacancy.approvalStatus === 'Pending' && !showRejectForm ? (
+              {(reviewingVacancy.approvalStatus === 'Pending' || reviewingVacancy.approvalStatus === 'Pending HR') && !showRejectForm ? (
                 <>
                   <button
                     type="button"
@@ -357,12 +379,14 @@ const VacancyApprovalPage = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleApprove(reviewingVacancy.vacancyNumber)}
+                    onClick={() => handleApprove(reviewingVacancy.vacancyNumber, reviewingVacancy.approvalStatus)}
                     className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-colors shadow-md shadow-emerald-100 flex items-center"
                     disabled={submitting}
                   >
                     <Check size={16} className="mr-2" />
-                    Approve Vacancy
+                    <span>
+                      {reviewingVacancy.approvalStatus === 'Pending' ? 'Approve HOD' : 'Approve HR'}
+                    </span>
                   </button>
                 </>
               ) : (
@@ -385,8 +409,9 @@ const VacancyApprovalPage = () => {
 
         {/* Tab Selection Navigation */}
         <div className="flex border-b border-gray-250">
-          {['Pending', 'Approved', 'Rejected'].map((tab) => {
+          {['Pending', 'Pending HR', 'Approved', 'Rejected'].map((tab) => {
             const isActive = activeTab === tab;
+            const label = tab === 'Pending' ? 'Pending HOD' : tab;
             return (
               <button
                 key={tab}
@@ -397,7 +422,7 @@ const VacancyApprovalPage = () => {
                 className={`py-2.5 px-6 font-semibold text-sm border-b-2 transition-all ${isActive ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-400 hover:text-gray-700'
                   }`}
               >
-                {tab} Vacancies
+                {label} Vacancies
               </button>
             );
           })}
@@ -486,7 +511,13 @@ const VacancyApprovalPage = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-semibold text-gray-800">{item.designationName || '—'}</div>
-                        <div className="text-xs text-gray-400 font-medium">{item.departmentName || '—'}</div>
+                        <div className="text-xs text-gray-400 font-medium">
+                          {(() => {
+                            const desig = designations.find(d => String(d.id) === String(item.designationId));
+                            const dept = desig ? departments.find(d => String(d.id) === String(desig.departmentId)) : null;
+                            return dept ? dept.name : '—';
+                          })()}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm font-bold text-gray-800 block">{item.numberOfPosts} Posts</span>
@@ -508,7 +539,7 @@ const VacancyApprovalPage = () => {
                           onClick={() => openReviewModal(item)}
                           className="inline-flex items-center justify-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition-all duration-150 shadow-sm shadow-blue-100"
                         >
-                          {activeTab === 'Pending' ? 'Review & Decision' : 'View'}
+                          {(activeTab === 'Pending' || activeTab === 'Pending HR') ? 'Review & Decision' : 'View'}
                         </button>
                       </td>
                     </tr>

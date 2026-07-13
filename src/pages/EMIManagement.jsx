@@ -172,6 +172,10 @@ const EMIManagement = () => {
 
     const handleAddEmi = async (e) => {
         e.preventDefault();
+        if (Number(newEmiFormData.emiAmount) > Number(newEmiFormData.loanAmount)) {
+            toast.error("EMI amount cannot be greater than the loan amount!");
+            return;
+        }
         try {
             const payload = {
                 employeeId: Number(newEmiFormData.employeeId),
@@ -458,14 +462,14 @@ const EMIManagement = () => {
             {/* New EMI Entry Modal */}
             {showAddModal && (
                 <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 modal-backdrop">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[85vh] animate-in fade-in zoom-in duration-200">
                         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-indigo-50/30">
                             <h2 className="text-xl font-bold text-gray-800">New EMI Entry</h2>
                             <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100">
                                 <X size={24} />
                             </button>
                         </div>
-                        <form onSubmit={handleAddEmi} className="p-6 space-y-4">
+                        <form onSubmit={handleAddEmi} className="p-6 space-y-4 overflow-y-auto pr-1 flex-1">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID *</label>
@@ -538,7 +542,7 @@ const EMIManagement = () => {
             {/* View EMI Details Modal */}
             {showViewModal && (
                 <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 modal-backdrop">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[85vh] animate-in fade-in zoom-in duration-200">
                         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-indigo-50/30">
                             <div>
                                 <h2 className="text-xl font-bold text-gray-800">EMI Details</h2>
@@ -548,7 +552,7 @@ const EMIManagement = () => {
                                 <X size={24} />
                             </button>
                         </div>
-                        <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+                        <div className="p-6 space-y-6 overflow-y-auto pr-1 flex-1">
                             {/* Loan Info Grid */}
                             <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
                                 <div>
@@ -627,7 +631,7 @@ const EMIManagement = () => {
             {/* Update EMI Modal */}
             {showUpdateModal && (
                 <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 modal-backdrop">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh] animate-in fade-in zoom-in duration-200">
                         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-indigo-50/30">
                             <div>
                                 <h2 className="text-xl font-bold text-gray-800">Update EMI</h2>
@@ -637,7 +641,7 @@ const EMIManagement = () => {
                                 <X size={24} />
                             </button>
                         </div>
-                        <form onSubmit={handleUpdateEmi} className="p-6 space-y-4">
+                        <form onSubmit={handleUpdateEmi} className="p-6 space-y-4 overflow-y-auto pr-1 flex-1">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Paid EMIs (Current: {selectedEmi?.paidEmis}/{selectedEmi?.tenure})</label>
                                 <input
