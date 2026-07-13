@@ -29,6 +29,7 @@ import {
   ClipboardList,
   FileCheck,
   Mail,
+  IndianRupee,
 } from "lucide-react";
 import useAuthStore from "../store/authStore";
 
@@ -85,19 +86,7 @@ const Sidebar = ({ onClose }) => {
     { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
     { path: "/leave-policy", icon: BookPlus, label: "Leave Record" },
     { path: "/emi-management", icon: CreditCard, label: "EMI Management" },
-    {
-      type: "dropdown",
-      icon: Clock,
-      label: "Attendance",
-      isOpen: isAttendanceOpen,
-      toggle: () => setIsAttendanceOpen(!isAttendanceOpen),
-      items: [
-        { path: "/attendance", label: "Daily Attendance" },
-        { path: "/attendance-monthly", label: "Monthly Attendance" },
-      ],
-    },
-    // { path: '/report', icon: NotebookPen, label: 'Report' },
-    // { path: "/misreport", icon: AlarmClockCheck, label: "MIS Report" },
+    { path: "/salary", icon: IndianRupee, label: "Salary" },
     { path: "/settings", icon: Settings, label: "Settings" },
   ];
 

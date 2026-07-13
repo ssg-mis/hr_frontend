@@ -33,7 +33,7 @@ const OfferManagement = () => {
   const [submitting, setSubmitting] = useState(false);
 
   const [offering, setOffering] = useState(null); // candidate row being offered/responded to
-  const [form, setForm] = useState({ offeredDesignation: '', offeredSalary: '', offeredJoiningDate: '', offerRemark: '' });
+  const [form, setForm] = useState({ offeredDesignation: '', offeredSalary: '', offeredBaseSalary: '', offeredAllowanceSalary: '', offeredJoiningDate: '', offerRemark: '' });
 
   const [offerWarning, setOfferWarning] = useState('');
   const [shouldBypassLimit, setShouldBypassLimit] = useState(false);
@@ -62,6 +62,8 @@ const OfferManagement = () => {
     setForm({
       offeredDesignation: candidate.offeredDesignation || candidate.applyingForPost || '',
       offeredSalary: candidate.offeredSalary || '',
+      offeredBaseSalary: candidate.offeredBaseSalary || '',
+      offeredAllowanceSalary: candidate.offeredAllowanceSalary || '',
       offeredJoiningDate: candidate.offeredJoiningDate ? candidate.offeredJoiningDate.slice(0, 10) : '',
       offerRemark: candidate.offerRemark || '',
     });
@@ -70,7 +72,18 @@ const OfferManagement = () => {
     setOffering(candidate);
   };
 
-  const handleChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setForm((prev) => {
+      const updated = { ...prev, [name]: value };
+      if (name === 'offeredBaseSalary' || name === 'offeredAllowanceSalary') {
+        const base = Number(updated.offeredBaseSalary || 0);
+        const allowance = Number(updated.offeredAllowanceSalary || 0);
+        updated.offeredSalary = String(base + allowance);
+      }
+      return updated;
+    });
+  };
 
   const sendOffer = async (e) => {
     e.preventDefault();
@@ -85,6 +98,8 @@ const OfferManagement = () => {
         offerStatus: 'Sent',
         offeredDesignation: form.offeredDesignation || null,
         offeredSalary: form.offeredSalary,
+        offeredBaseSalary: form.offeredBaseSalary || null,
+        offeredAllowanceSalary: form.offeredAllowanceSalary || null,
         offeredJoiningDate: form.offeredJoiningDate,
         offerRemark: form.offerRemark || null,
         bypassLimit: shouldBypassLimit,
@@ -246,16 +261,16 @@ const OfferManagement = () => {
       {/* Send Offer modal */}
       {offering && createPortal(
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 flex flex-col overflow-hidden">
-            <div className="flex justify-between items-center p-6 border-b border-gray-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 flex flex-col max-h-[90vh] overflow-hidden">
+            <div className="flex justify-between items-center p-6 border-b border-gray-200 shrink-0">
               <div>
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Mail size={18} /> Send Offer</h3>
                 <p className="text-xs text-gray-500 mt-0.5">{offering.candidateName} · {offering.applicationNumber}</p>
               </div>
               <button onClick={() => { setOffering(null); setOfferWarning(''); setShouldBypassLimit(false); }} className="text-gray-500 hover:text-gray-700"><X size={20} /></button>
             </div>
-            <form onSubmit={sendOffer} className="flex flex-col">
-              <div className="p-6 space-y-4">
+            <form onSubmit={sendOffer} className="flex-1 flex flex-col min-h-0">
+              <div className="p-6 space-y-4 overflow-y-auto flex-1">
                 {offerWarning && (
                   <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 text-sm font-semibold flex flex-col gap-1">
                     <div className="flex items-center gap-2">
@@ -273,8 +288,18 @@ const OfferManagement = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1">Offered Salary * <span className="text-xs font-normal text-gray-400">(numbers only)</span></label>
-                    <input type="number" name="offeredSalary" required min="0" step="1" value={form.offeredSalary} onChange={handleChange} placeholder="e.g. 600000" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Offered Base Salary *</label>
+                    <input type="number" name="offeredBaseSalary" required min="0" step="1" value={form.offeredBaseSalary} onChange={handleChange} placeholder="e.g. 50000" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Offered Allowance Salary *</label>
+                    <input type="number" name="offeredAllowanceSalary" required min="0" step="1" value={form.offeredAllowanceSalary} onChange={handleChange} placeholder="e.g. 10000" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Total Offered Salary (Auto)</label>
+                    <input type="number" name="offeredSalary" readOnly disabled value={form.offeredSalary} className="w-full border border-gray-255 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-550 focus:outline-none cursor-not-allowed" />
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Target Joining Date *</label>
@@ -286,7 +311,7 @@ const OfferManagement = () => {
                   <textarea name="offerRemark" rows={2} value={form.offerRemark} onChange={handleChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Notes for the candidate/record..." />
                 </div>
               </div>
-              <div className="flex justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50/50">
+              <div className="flex justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50/50 shrink-0">
                 <button type="button" onClick={() => { setOffering(null); setOfferWarning(''); setShouldBypassLimit(false); }} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
                 <button
                   type="submit"
