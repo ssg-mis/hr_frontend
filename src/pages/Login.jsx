@@ -47,12 +47,14 @@ const Login = () => {
 
       toast.success("Login successful!");
 
+      localStorage.setItem("token", json.token);
+
       const normalizedUser = {
         ...json.user,
         Admin: json.user.admin ? "Yes" : "No",
         Name: json.user.name,
         Username: json.user.username,
-        role: json.user.admin ? "admin" : "employee",
+        role: json.user.role || (json.user.admin ? "admin" : "employee"),
       };
 
       login(normalizedUser);

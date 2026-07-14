@@ -13,6 +13,8 @@ const useAuthStore = create(
         });
       },
       logout: () => {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
         set({ isAuthenticated: false, user: null });
       },
     }),

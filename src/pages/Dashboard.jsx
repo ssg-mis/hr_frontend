@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -234,6 +235,14 @@ const CustomTooltip = ({ active, payload, label }) => {
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 const Dashboard = () => {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user?.role === 'employee') {
+      navigate('/my-profile', { replace: true });
+    }
+  }, [user, navigate]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 

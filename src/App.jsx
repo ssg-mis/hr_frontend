@@ -20,6 +20,8 @@ import AfterLeavingWork from './pages/AfterLeavingWork';
 import Employee from './pages/Employee';
 import Joining from './pages/Joining';
 import MyProfile from './pages/MyProfile';
+import MyAttendance from './pages/MyAttendance';
+import MySalary from './pages/MySalary';
 import LeaveRequest from './pages/LeaveRequest';
 import CompanyCalendar from './pages/CompanyCalendar';
 import LeaveManagement from './pages/LeaveManagement';
@@ -64,6 +66,8 @@ function App() {
             <Route path="employee" element={<Employee />} />
             <Route path="joining" element={<Joining />} />
             <Route path="my-profile" element={<MyProfile />} />
+            <Route path="my-attendance" element={<MyAttendance />} />
+            <Route path="my-salary" element={<MySalary />} />
             <Route path="leave-policy" element={<LeavePolicy />} />
             <Route path="leave-request" element={<LeaveRequest />} />
             <Route path="company-calendar" element={<CompanyCalendar />} />

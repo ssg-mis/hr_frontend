@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Calendar, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { api } from '../lib/api';
 
 const MyAttendance = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -52,19 +53,11 @@ const MyAttendance = () => {
         throw new Error('User name not found. Please log in again.');
       }
 
-      const apiBase = import.meta.env.VITE_API_URL || "/api/v1";
-      
-      // Fetch both attendance and leaves in parallel
-      const [attResponse, leaveResponse] = await Promise.all([
-        fetch(`${apiBase}/attendance/personal?employee=${encodeURIComponent(userFullName)}&month=${selectedMonth + 1}&year=${selectedYear}`),
-        fetch(`${apiBase}/leaves/personal?employeeName=${encodeURIComponent(userFullName)}`)
+      // Fetch both attendance and leaves in parallel using the api client
+      const [attResult, leaveResult] = await Promise.all([
+        api.get(`/attendance/personal?employee=${encodeURIComponent(userFullName)}&month=${selectedMonth + 1}&year=${selectedYear}`),
+        api.get(`/leaves/personal?employeeName=${encodeURIComponent(userFullName)}`)
       ]);
-
-      if (!attResponse.ok) throw new Error(`Attendance API error! status: ${attResponse.status}`);
-      if (!leaveResponse.ok) throw new Error(`Leaves API error! status: ${leaveResponse.status}`);
-
-      const attResult = await attResponse.json();
-      const leaveResult = await leaveResponse.json();
 
       console.log('Backend Response - Attendance:', attResult, 'Leaves:', leaveResult);
 

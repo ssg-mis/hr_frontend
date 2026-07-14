@@ -104,8 +104,120 @@ const Sidebar = ({ onClose }) => {
     { path: "/settings", icon: Settings, label: "Settings" },
   ];
 
+  const getMenuItems = () => {
+    if (!user) return [];
+    
+    const role = user.role || "employee";
+    
+    if (role === "admin") {
+      return adminMenuItems;
+    }
+    
+    if (role === "hr") {
+      return [
+        { path: "/", icon: LayoutDashboard, label: "Dashboard" },
+        {
+          type: "dropdown",
+          icon: NotebookPen,
+          label: "Recruitment Module",
+          isOpen: isRecruitmentOpen,
+          toggle: () => setIsRecruitmentOpen(!isRecruitmentOpen),
+          items: [
+            { path: "/vacancy", label: "Vacancy" },
+            { path: "/job-application", label: "Job Application" },
+            { path: "/call-tracker", label: "Call Tracker" },
+            { path: "/interview-management", label: "Interview Management" },
+            { path: "/selection-process", label: "Selection Process" },
+            { path: "/offer-management", label: "Offer Management" },
+            { path: "/document-verification", label: "Document Verification" },
+            { path: "/joining", label: "Joining" },
+          ],
+        },
+        {
+          type: "dropdown",
+          icon: UserX,
+          label: "Resignation Module",
+          isOpen: isResignationOpen,
+          toggle: () => setIsResignationOpen(!isResignationOpen),
+          items: [
+            { path: "/resignation-module", label: "Resignation Requests" },
+          ],
+        },
+        {
+          type: "dropdown",
+          icon: Clock,
+          label: "Attendance Module",
+          isOpen: isAttendanceOpen,
+          toggle: () => setIsAttendanceOpen(!isAttendanceOpen),
+          items: [
+            { path: "/attendance-dashboard", label: "Attendance Dashboard" },
+            { path: "/shift-management", label: "Shift Management" },
+          ],
+        },
+        { path: "/employee", icon: Users, label: "Employee" },
+        { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
+        { path: "/leave-policy", icon: BookPlus, label: "Leave Record" },
+        { path: "/salary", icon: IndianRupee, label: "Salary" },
+      ];
+    }
+    
+    if (role === "hod") {
+      return [
+        { path: "/", icon: LayoutDashboard, label: "Dashboard" },
+        {
+          type: "dropdown",
+          icon: NotebookPen,
+          label: "Recruitment Module",
+          isOpen: isRecruitmentOpen,
+          toggle: () => setIsRecruitmentOpen(!isRecruitmentOpen),
+          items: [
+            { path: "/vacancy-approval", label: "Vacancy Approval" },
+          ],
+        },
+        {
+          type: "dropdown",
+          icon: UserX,
+          label: "Resignation Module",
+          isOpen: isResignationOpen,
+          toggle: () => setIsResignationOpen(!isResignationOpen),
+          items: [
+            { path: "/leaving", label: "Exit Clearance" },
+          ],
+        },
+        {
+          type: "dropdown",
+          icon: Clock,
+          label: "Attendance Module",
+          isOpen: isAttendanceOpen,
+          toggle: () => setIsAttendanceOpen(!isAttendanceOpen),
+          items: [
+            { path: "/attendance-dashboard", label: "Attendance Dashboard" },
+            { path: "/shift-management", label: "Shift Management" },
+          ],
+        },
+        { path: "/employee", icon: Users, label: "Employee Info" },
+        { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
+        { path: "/salary", icon: IndianRupee, label: "Salary" },
+      ];
+    }
+    
+    if (role === "employee") {
+      return [
+        { path: "/my-profile", icon: User, label: "My Profile" },
+        { path: "/my-attendance", icon: Clock, label: "My Attendance" },
+        { path: "/leave-request", icon: Book, label: "Request Leave" },
+        { path: "/leave-policy", icon: BookPlus, label: "Leave Record" },
+        { path: "/emi-management", icon: CreditCard, label: "My EMI" },
+        { path: "/my-salary", icon: IndianRupee, label: "My Salary" },
+        { path: "/canteen", icon: Utensils, label: "Canteen Info" },
+        { path: "/resignation-module", icon: UserMinus, label: "Resignation" },
+      ];
+    }
+    
+    return [];
+  };
 
-  const menuItems = adminMenuItems;
+  const menuItems = getMenuItems();
 
   return (
     <>
@@ -196,9 +308,9 @@ const SidebarContent = ({
         <h1 className="text-xl font-bold flex items-center gap-2 text-white">
           <Users size={24} />
           <span>HR FMS</span>
-          {user?.role === "employee" && (
-            <span className="text-xs bg-white bg-opacity-20 px-2 py-1 rounded">
-              Employee
+          {user?.role && (
+            <span className="text-xs bg-white bg-opacity-20 px-2 py-1 rounded capitalize">
+              {user.role}
             </span>
           )}
         </h1>
@@ -293,11 +405,11 @@ const SidebarContent = ({
           </div>
           {/* Show user info in mobile view regardless of collapsed state */}
           <div className={`${isCollapsed ? "hidden" : "block"} md:block`}>
-            <p className="text-sm font-medium text-white">
+            <p className="text-sm font-medium text-white truncate max-w-[120px]">
               {user?.Name || user?.Username || "Guest"}
             </p>
-            <p className="text-xs text-white">
-              {user?.Admin === "Yes" ? "Administrator" : "Employee"}
+            <p className="text-xs text-white capitalize">
+              {user?.role === "admin" ? "Administrator" : user?.role === "hr" ? "HR Specialist" : user?.role === "hod" ? "Department HOD" : "Employee"}
             </p>
           </div>
         </div>

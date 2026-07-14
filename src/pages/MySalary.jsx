@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { IndianRupee, Download, Eye, Calendar, TrendingUp } from 'lucide-react';
+import { api } from '../lib/api';
 import useAuthStore from '../store/authStore';
 import useDataStore from '../store/dataStore';
 import toast from 'react-hot-toast';
@@ -21,9 +22,25 @@ const MySalary = () => {
   });
 
   const fetchSalaryData = async () => {
-    setLoading(false);
-    setTableLoading(false);
-    setError("Salary tracking has been disabled as Google Script integration has been removed.");
+    setLoading(true);
+    setTableLoading(true);
+    setError(null);
+    try {
+      const userData = localStorage.getItem("user");
+      if (!userData) throw new Error("User details not found");
+      const currentUser = JSON.parse(userData);
+      const userFullName = currentUser.Name || currentUser.name || '';
+      if (!userFullName) throw new Error("Full name not found");
+
+      const result = await api.get(`/salaries/personal?employee=${encodeURIComponent(userFullName)}`);
+      setSalaryData(result.data || []);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Failed to load salary data");
+    } finally {
+      setLoading(false);
+      setTableLoading(false);
+    }
   };
 
   useEffect(() => {

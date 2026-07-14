@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { api } from "../lib/api";
 import {
   User,
   Mail,
@@ -32,18 +33,7 @@ const MyProfile = () => {
         throw new Error("User name is missing from localStorage");
       }
 
-      const response = await fetch(
-        `/api/v1/joining/profile?name=${encodeURIComponent(userName)}`,
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.message || "Failed to fetch profile data");
-      }
-
+      const result = await api.get(`/joining/profile?name=${encodeURIComponent(userName)}`);
       const profile = result.data;
       if (!profile) {
         throw new Error("No profile data found for current user");
@@ -79,30 +69,12 @@ const MyProfile = () => {
         throw new Error("Profile ID is missing");
       }
 
-      const response = await fetch(
-        `/api/v1/joining/profile/${profileData.id}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            mobileNo: formData.mobileNo,
-            familyMobileNo: formData.familyMobileNo,
-            email: formData.email,
-            currentAddress: formData.currentAddress,
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.message || "Failed to update profile");
-      }
+      const result = await api.patch(`/joining/profile/${profileData.id}`, {
+        mobileNo: formData.mobileNo,
+        familyMobileNo: formData.familyMobileNo,
+        email: formData.email,
+        currentAddress: formData.currentAddress,
+      });
 
       setProfileData(result.data);
       setFormData(result.data);
