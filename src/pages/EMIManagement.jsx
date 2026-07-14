@@ -18,7 +18,7 @@ const groupPaymentsByDay = (payments) => {
         groups[dateStr].installments.push(p.installmentNo);
         groups[dateStr].totalAmount += Number(p.amountPaid || 0);
     });
-    
+
     return Object.values(groups).sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
 };
 
@@ -27,7 +27,7 @@ const formatInstallments = (list) => {
     const sorted = [...list].sort((a, b) => a - b);
     let isContiguous = true;
     for (let i = 1; i < sorted.length; i++) {
-        if (sorted[i] !== sorted[i-1] + 1) {
+        if (sorted[i] !== sorted[i - 1] + 1) {
             isContiguous = false;
             break;
         }
@@ -250,31 +250,28 @@ const EMIManagement = () => {
                 <div className="flex gap-2">
                     <button
                         onClick={() => setActiveTab('activeLoans')}
-                        className={`py-2 px-4 font-semibold text-sm rounded-lg transition-all ${
-                            activeTab === 'activeLoans'
+                        className={`py-2 px-4 font-semibold text-sm rounded-lg transition-all ${activeTab === 'activeLoans'
                                 ? 'bg-indigo-50 text-indigo-700'
                                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                        }`}
+                            }`}
                     >
                         Active Loans
                     </button>
                     <button
                         onClick={() => setActiveTab('completedLoans')}
-                        className={`py-2 px-4 font-semibold text-sm rounded-lg transition-all ${
-                            activeTab === 'completedLoans'
+                        className={`py-2 px-4 font-semibold text-sm rounded-lg transition-all ${activeTab === 'completedLoans'
                                 ? 'bg-indigo-50 text-indigo-700'
                                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                        }`}
+                            }`}
                     >
                         Completed Loans
                     </button>
                     <button
                         onClick={() => setActiveTab('payments')}
-                        className={`py-2 px-4 font-semibold text-sm rounded-lg transition-all ${
-                            activeTab === 'payments'
+                        className={`py-2 px-4 font-semibold text-sm rounded-lg transition-all ${activeTab === 'payments'
                                 ? 'bg-indigo-50 text-indigo-700'
                                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                        }`}
+                            }`}
                     >
                         Payment History
                     </button>
@@ -421,7 +418,7 @@ const EMIManagement = () => {
                                         </td>
                                     </tr>
                                 ) : (
-                                    paymentsData.filter(p => 
+                                    paymentsData.filter(p =>
                                         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                         p.empId.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                         p.loanType.toLowerCase().includes(searchTerm.toLowerCase())
@@ -578,13 +575,12 @@ const EMIManagement = () => {
                                 <div>
                                     <span className="text-xs text-gray-400 font-semibold uppercase">Status</span>
                                     <p className="text-sm font-bold text-gray-800">
-                                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${
-                                            selectedEmi?.status === 'Completed' 
-                                                ? 'bg-green-100 text-green-800' 
+                                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${selectedEmi?.status === 'Completed'
+                                                ? 'bg-green-100 text-green-800'
                                                 : selectedEmi?.status === 'Paused'
-                                                ? 'bg-amber-100 text-amber-800'
-                                                : 'bg-blue-100 text-blue-800'
-                                        }`}>
+                                                    ? 'bg-amber-100 text-amber-800'
+                                                    : 'bg-blue-100 text-blue-800'
+                                            }`}>
                                             {selectedEmi?.status}
                                         </span>
                                     </p>
@@ -617,7 +613,7 @@ const EMIManagement = () => {
                                     </div>
                                 )}
                             </div>
-                            
+
                             <div className="flex pt-4">
                                 <button type="button" onClick={() => setShowViewModal(false)} className="w-full px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-medium transition-colors shadow-sm">
                                     Close Details

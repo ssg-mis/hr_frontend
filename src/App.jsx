@@ -29,6 +29,12 @@ import LeavePolicy from './pages/LeavePolicy';
 import EMIManagement from './pages/EMIManagement';
 import Settings from './pages/Settings';
 import SalaryManagement from './pages/SalaryManagement';
+import AttendanceLogs from './pages/AttendanceLogs';
+import AttendanceDashboard from './pages/AttendanceDashboard';
+import ShiftManagement from './pages/ShiftManagement';
+import CanteenDashboard from './pages/CanteenDashboard';
+import CanteenScanner from './pages/CanteenScanner';
+
 
 function App() {
   return (
@@ -38,6 +44,8 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/apply/:vacancyNumber" element={<PublicApply />} />
+          <Route path="/canteen/scan" element={<CanteenScanner />} />
+
           
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
@@ -65,6 +73,11 @@ function App() {
             <Route path="emi-management" element={<EMIManagement />} />
             <Route path="settings" element={<Settings />} />
             <Route path="salary" element={<SalaryManagement />} />
+            <Route path="attendance-logs" element={<AttendanceLogs />} />
+            <Route path="attendance-dashboard" element={<AttendanceDashboard />} />
+            <Route path="shift-management" element={<ShiftManagement />} />
+            <Route path="canteen" element={<CanteenDashboard />} />
+
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

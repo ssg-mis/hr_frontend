@@ -114,6 +114,72 @@ const DetailModal = ({ employee, onClose }) => {
               </div>
             ))}
           </div>
+
+          {/* Canteen QR Code for HR access */}
+          <div className="mt-6 pt-6 border-t border-gray-150 flex flex-col items-center">
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Employee Canteen QR Code</h4>
+            <div className="bg-white p-3 border border-gray-200 rounded-2xl shadow-sm relative group">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(employee.employeeCode)}`}
+                alt="Employee QR Code"
+                className="w-36 h-36 object-contain"
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-2 font-mono">{employee.employeeCode}</p>
+            <button
+              onClick={() => {
+                const printWindow = window.open("", "_blank");
+                if (printWindow) {
+                  printWindow.document.write(`
+                    <html>
+                      <head>
+                        <title>Canteen QR - ${employee.candidateName}</title>
+                        <style>
+                          body {
+                            font-family: sans-serif;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            justify-content: center;
+                            height: 100vh;
+                            margin: 0;
+                            text-align: center;
+                          }
+                          .card {
+                            border: 2px solid #e2e8f0;
+                            border-radius: 16px;
+                            padding: 24px;
+                            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+                          }
+                          h2 { margin: 0 0 8px 0; color: #1e293b; }
+                          p { margin: 0 0 16px 0; color: #64748b; font-size: 14px; font-weight: bold; }
+                          .code { font-family: monospace; font-size: 16px; color: #4f46e5; margin-top: 8px; }
+                        </style>
+                      </head>
+                      <body>
+                        <div class="card">
+                          <h2>${employee.candidateName}</h2>
+                          <p>${employee.applyingForPost || "Employee"}</p>
+                          <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(employee.employeeCode)}" />
+                          <div class="code">${employee.employeeCode}</div>
+                        </div>
+                        <script>
+                          window.onload = function() {
+                            window.print();
+                            setTimeout(function() { window.close(); }, 500);
+                          };
+                        </script>
+                      </body>
+                    </html>
+                  `);
+                  printWindow.document.close();
+                }
+              }}
+              className="mt-3 px-4 py-2 border border-indigo-250 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+            >
+              Print QR Badge
+            </button>
+          </div>
         </div>
 
         {/* Modal footer */}

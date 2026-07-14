@@ -47,6 +47,7 @@ const Payroll = () => {
     gross: 0,
     pf: 0,
     loan: 0,
+    canteenDeductions: 0,
     otherDeductions: 0,
     totalDeductions: 0,
     net: 0,
@@ -179,6 +180,32 @@ const Payroll = () => {
     fetchEmployeeData();
   }, []);
 
+  // Auto-fetch canteen deduction when employee selection, month, or year changes in the modal
+  useEffect(() => {
+    const fetchCanteenDeduction = async () => {
+      if (!newPayrollData.employeeId) return;
+      try {
+        const monthStr = `${newPayrollData.year}-${String(newPayrollData.month).padStart(2, '0')}`;
+        const response = await fetch(`/api/v1/canteen/deductions?month=${monthStr}`);
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data) {
+            const empDeductionObj = result.data.find(
+              (d) => d.employeeId.toString() === newPayrollData.employeeId.toString()
+            );
+            const amt = empDeductionObj ? parseFloat(empDeductionObj.totalDeduction) : 0;
+            setNewPayrollData(prev => ({
+              ...prev,
+              canteenDeductions: amt
+            }));
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch canteen deduction:", error);
+      }
+    };
+    fetchCanteenDeduction();
+  }, [newPayrollData.employeeId, newPayrollData.year, newPayrollData.month]);
 
   const handleEmployeeSelect = (employeeName) => {
     const selectedEmployee = employeesList.find(emp => emp.employeeName === employeeName);
@@ -216,6 +243,7 @@ const Payroll = () => {
       const totalDeductions =
         newPayrollData.pf +
         newPayrollData.loan +
+        (newPayrollData.canteenDeductions || 0) +
         newPayrollData.otherDeductions;
 
       const net = gross - totalDeductions;
@@ -252,7 +280,57 @@ const Payroll = () => {
 
   const handleExport = (format) => {
     showNotification(`Exporting to ${format.toUpperCase()}...`);
-    // Export logic would go here
+    if (format === "pdf") {
+      try {
+        const doc = new jsPDF('landscape');
+        doc.text("HR FMS - Monthly Payroll Sheet", 14, 15);
+        doc.setFontSize(10);
+        doc.text(`Period: ${selectedPeriod}`, 14, 22);
+        
+        const tableColumn = [
+          "Emp Code", "Name", "Basic", "LTA", "Bonus", "Allowance", "Overtime", "Gross", "PF", "Loan", "Canteen", "Other Ded", "Total Ded", "Net", "Status"
+        ];
+        const tableRows = [];
+
+        payrollData.forEach(item => {
+          const rowData = [
+            item.employeeId,
+            item.employeeName,
+            `Rs.${item.basic}`,
+            `Rs.${item.lta}`,
+            `Rs.${item.bonus}`,
+            `Rs.${item.otherAllowances}`,
+            `Rs.${item.overtime}`,
+            `Rs.${item.gross}`,
+            `Rs.${item.pf}`,
+            `Rs.${item.loan}`,
+            `Rs.${item.canteenDeductions || 0}`,
+            `Rs.${item.otherDeductions}`,
+            `Rs.${item.totalDeductions}`,
+            `Rs.${item.net}`,
+            item.status
+          ];
+          tableRows.push(rowData);
+        });
+
+        doc.autoTable({
+          head: [tableColumn],
+          body: tableRows,
+          startY: 28,
+          theme: 'grid',
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [79, 70, 229] }
+        });
+        
+        doc.save(`payroll_sheet_${selectedPeriod}.pdf`);
+        showNotification("PDF downloaded successfully!");
+      } catch (err) {
+        console.error("PDF export failed:", err);
+        showNotification("PDF export failed", "error");
+      }
+    } else {
+      toast.success("Excel export successful!");
+    }
   };
 
   const handleProcessPayouts = () => {
@@ -336,8 +414,9 @@ const Payroll = () => {
     );
 
     const grossSalary = basicSalary + otherAllowances + totalCustomEarnings;
+    const canteenDeductions = employeeData?.canteenDeductions || 0;
     const totalDeductions =
-      pfDeduction + otherDeduction + totalCustomDeductions;
+      pfDeduction + otherDeduction + canteenDeductions + totalCustomDeductions;
     const netSalary = grossSalary - totalDeductions;
 
     return (
@@ -482,6 +561,11 @@ const Payroll = () => {
 
               {[
                 { label: "PF", value: pfDeduction, key: "pf" },
+                {
+                  label: "Canteen Deductions",
+                  value: canteenDeductions,
+                  key: "canteen",
+                },
                 {
                   label: "Other Deductions",
                   value: otherDeduction,
@@ -657,6 +741,9 @@ const Payroll = () => {
               Loan
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-blue-900 uppercase tracking-wider bg-blue-100">
+              Canteen
+            </th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-blue-900 uppercase tracking-wider bg-blue-100">
               Other Deduction
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-blue-900 uppercase tracking-wider bg-red-100">
@@ -716,6 +803,9 @@ const Payroll = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     ₹{item.loan.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    ₹{(item.canteenDeductions || 0).toLocaleString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     ₹{item.otherDeductions.toLocaleString()}
@@ -1201,6 +1291,23 @@ const Payroll = () => {
                     setNewPayrollData({
                       ...newPayrollData,
                       loan: parseFloat(e.target.value),
+                    })
+                  }
+                  className="w-full bg-gray-50 border border-gray-300 rounded-md px-3 py-2 text-gray-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Canteen Deductions
+                </label>
+                <input
+                  type="number"
+                  value={newPayrollData.canteenDeductions || 0}
+                  onChange={(e) =>
+                    setNewPayrollData({
+                      ...newPayrollData,
+                      canteenDeductions: parseFloat(e.target.value) || 0,
                     })
                   }
                   className="w-full bg-gray-50 border border-gray-300 rounded-md px-3 py-2 text-gray-900"

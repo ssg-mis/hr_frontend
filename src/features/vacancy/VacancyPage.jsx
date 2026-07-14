@@ -747,16 +747,9 @@ const VacancyPage = () => {
                             </button>
                           )}
                           <button
-                            onClick={() => handleEditClick(item)}
-                            className="text-gray-400 hover:text-blue-600 p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
-                            title="Edit Vacancy"
-                          >
-                            <Edit2 size={15} />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(item)}
-                            className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
-                            title="Delete Vacancy"
+                            disabled
+                            className="text-gray-300 p-1.5 rounded-lg cursor-not-allowed opacity-50"
+                            title="Delete Vacancy (Disabled)"
                           >
                             <Trash2 size={15} />
                           </button>
@@ -1359,17 +1352,7 @@ const VacancyPage = () => {
                 >
                   Close
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewingVacancy(null);
-                    handleEditClick(viewingVacancy);
-                  }}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-md shadow-blue-100 transition-all duration-150 text-sm flex items-center"
-                >
-                  <Edit2 size={14} className="mr-2" />
-                  Edit Vacancy
-                </button>
+
               </div>
             </div>
           </div>

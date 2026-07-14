@@ -232,7 +232,13 @@ const OfferManagement = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-gray-600">{fmtDate(c.offeredJoiningDate)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       {activeTab === 'pending' ? (
-                        !c.offerStatus ? (
+                        c.hasFilledCandidate ? (
+                          <div className="text-center">
+                            <span className="inline-flex items-center px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-red-50 border border-red-200 text-red-800 cursor-not-allowed" title="No slots left for this vacancy">
+                              No slots left for this vacancy
+                            </span>
+                          </div>
+                        ) : !c.offerStatus ? (
                           <button onClick={() => openOffer(c)} className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors">
                             <Send size={13} /> Send Offer
                           </button>
@@ -271,14 +277,14 @@ const OfferManagement = () => {
             </div>
             <form onSubmit={sendOffer} className="flex-1 flex flex-col min-h-0">
               <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                {offering.vacancyStatus === 'Closed' && (
+                {(offering.vacancyStatus === 'Closed' || offering.hasFilledCandidate) && (
                   <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 text-sm font-semibold flex flex-col gap-1">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
                       <span>Cannot Send Offer</span>
                     </div>
-                    <p className="text-xs text-red-655 font-medium leading-relaxed mt-1">
-                      can not send offer edit the vacancy or create new one
+                    <p className="text-xs text-red-600 font-medium leading-relaxed mt-1">
+                      {offering.hasFilledCandidate ? "no slots left for this vacancy" : "can not send offer edit the vacancy or create new one"}
                     </p>
                   </div>
                 )}
@@ -326,16 +332,16 @@ const OfferManagement = () => {
                 <button type="button" onClick={() => { setOffering(null); setOfferWarning(''); setShouldBypassLimit(false); }} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
                 <button
                   type="submit"
-                  disabled={submitting || (offering.vacancyStatus === 'Closed')}
+                  disabled={submitting || offering.vacancyStatus === 'Closed' || offering.hasFilledCandidate}
                   className={`px-5 py-2.5 font-semibold rounded-xl text-white transition-colors ${
-                    offering.vacancyStatus === 'Closed'
+                    (offering.vacancyStatus === 'Closed' || offering.hasFilledCandidate)
                       ? 'bg-gray-400 cursor-not-allowed shadow-none'
                       : shouldBypassLimit
                       ? 'bg-red-600 hover:bg-red-700 shadow-md shadow-red-100'
                       : 'bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-100'
                   }`}
                 >
-                  {submitting ? 'Sending...' : (offering.vacancyStatus === 'Closed') ? 'Send Offer' : shouldBypassLimit ? 'Proceed & Send Anyway' : 'Send Offer'}
+                  {submitting ? 'Sending...' : (offering.vacancyStatus === 'Closed' || offering.hasFilledCandidate) ? 'Send Offer' : shouldBypassLimit ? 'Proceed & Send Anyway' : 'Send Offer'}
                 </button>
               </div>
             </form>

@@ -30,7 +30,9 @@ import {
   FileCheck,
   Mail,
   IndianRupee,
+  Utensils,
 } from "lucide-react";
+
 import useAuthStore from "../store/authStore";
 
 const Sidebar = ({ onClose }) => {
@@ -82,13 +84,26 @@ const Sidebar = ({ onClose }) => {
         { path: "/leaving", label: "Exit Clearance" },
       ],
     },
+    {
+      type: "dropdown",
+      icon: Clock,
+      label: "Attendance Module",
+      isOpen: isAttendanceOpen,
+      toggle: () => setIsAttendanceOpen(!isAttendanceOpen),
+      items: [
+        { path: "/attendance-dashboard", label: "Attendance Dashboard" },
+        { path: "/shift-management", label: "Shift Management" },
+      ],
+    },
     { path: "/employee", icon: Users, label: "Employee" },
     { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
     { path: "/leave-policy", icon: BookPlus, label: "Leave Record" },
     { path: "/emi-management", icon: CreditCard, label: "EMI Management" },
     { path: "/salary", icon: IndianRupee, label: "Salary" },
+    { path: "/canteen", icon: Utensils, label: "Canteen Management" },
     { path: "/settings", icon: Settings, label: "Settings" },
   ];
+
 
   const menuItems = adminMenuItems;
 
