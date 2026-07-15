@@ -3,9 +3,11 @@ import { Search, Plus, Calendar, Clock, Download, Trash2, Edit2, Check, X, Filte
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell } from 'recharts';
+import useAuthStore from '../store/authStore';
 
 const CanteenDashboard = () => {
-  const [activeTab, setActiveTab] = useState("analytics");
+  const { user } = useAuthStore();
+  const [activeTab, setActiveTab] = useState((user?.role === "employee" || user?.role === "canteen_manager") ? "logs" : "analytics");
   const [loading, setLoading] = useState(false);
   const [meals, setMeals] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -77,10 +79,10 @@ const CanteenDashboard = () => {
   useEffect(() => {
     if (activeTab === "logs") {
       loadLogs();
-    } else if (activeTab === "deductions" || activeTab === "analytics") {
+    } else if ((activeTab === "deductions" || activeTab === "analytics") && user?.role !== "employee" && user?.role !== "canteen_manager") {
       loadDeductions();
     }
-  }, [activeTab, selectedMonth]);
+  }, [activeTab, selectedMonth, user]);
 
   // Filter logs locally by search
   const filteredLogs = logs.filter(log => {
@@ -245,52 +247,56 @@ const CanteenDashboard = () => {
               className="pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
-          <a
-            href="/canteen/scan"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center shadow-md shadow-indigo-600/10"
-          >
-            Open Scanner Screen
-          </a>
+          {user?.role !== 'employee' && (
+            <a
+              href="/canteen/scan"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center shadow-md shadow-indigo-600/10"
+            >
+              Open Scanner Screen
+            </a>
+          )}
         </div>
       </div>
 
       {/* 2. Key Metrics Summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <Receipt size={22} />
+      {user?.role !== 'employee' && user?.role !== 'canteen_manager' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
+            <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+              <Receipt size={22} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Deductions</p>
+              <p className="text-2xl font-bold text-gray-900 mt-0.5">₹{totalDeductionsSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Month: {new Date(selectedMonth).toLocaleDateString([], { month: 'long', year: 'numeric' })}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Deductions</p>
-            <p className="text-2xl font-bold text-gray-900 mt-0.5">₹{totalDeductionsSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-            <p className="text-[11px] text-gray-400 mt-0.5">Month: {new Date(selectedMonth).toLocaleDateString([], { month: 'long', year: 'numeric' })}</p>
-          </div>
-        </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
-          <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
-            <Utensils size={22} />
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
+            <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
+              <Utensils size={22} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Meals Served</p>
+              <p className="text-2xl font-bold text-gray-900 mt-0.5">{totalMealsCount}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Across all categories</p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Meals Served</p>
-            <p className="text-2xl font-bold text-gray-900 mt-0.5">{totalMealsCount}</p>
-            <p className="text-[11px] text-gray-400 mt-0.5">Across all categories</p>
-          </div>
-        </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <Clock size={22} />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Unique Employees</p>
-            <p className="text-2xl font-bold text-gray-900 mt-0.5">{uniqueUsersCount}</p>
-            <p className="text-[11px] text-gray-400 mt-0.5">Active users this month</p>
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <Clock size={22} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Unique Employees</p>
+              <p className="text-2xl font-bold text-gray-900 mt-0.5">{uniqueUsersCount}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Active users this month</p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* 3. Navigation Tabs */}
       <div className="border-b border-gray-200 shrink-0">
@@ -300,7 +306,12 @@ const CanteenDashboard = () => {
             { id: "deductions", label: "Monthly Deductions", icon: CreditCard },
             { id: "logs", label: "Scanned Logs History", icon: Clock },
             { id: "meals", label: "Meal Rates Config", icon: Settings }
-          ].map(tab => (
+          ].filter(tab => {
+            if (user?.role === 'employee' || user?.role === 'canteen_manager') {
+              return tab.id === 'logs';
+            }
+            return true;
+          }).map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}

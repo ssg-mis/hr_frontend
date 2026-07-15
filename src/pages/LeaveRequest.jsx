@@ -3,10 +3,11 @@ import { Plus, X, Calendar, Clock, CheckCircle, AlertCircle, Filter, Search } fr
 import useAuthStore from '../store/authStore';
 import useDataStore from '../store/dataStore';
 import toast from 'react-hot-toast';
+import { api } from '../lib/api';
 
 const LeaveRequest = () => {
   const { user } = useAuthStore();
-  const employeeId = user?.employee_id || user?.id || localStorage.getItem("employeeId");
+  const employeeId = user?.employeeId || user?.employee_id || user?.id || localStorage.getItem("employeeId");
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [leavesData, setLeavesData] = useState([]);
@@ -15,12 +16,11 @@ const LeaveRequest = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState('all');
   const [employees, setEmployees] = useState([]);
-  const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
   const [hods, setHods] = useState([]);
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [formData, setFormData] = useState({
     employeeName: user?.name || user?.Name || '',
-    employeeId: user?.employee_id || user?.id || '',
+    employeeId: user?.employeeId || user?.employee_id || user?.id || '',
     department: '',
     departmentId: '',
     hodName: '',
@@ -36,8 +36,7 @@ const LeaveRequest = () => {
       const userName = user?.name || user?.Name;
       if (!userName) return;
 
-      const response = await fetch(`${API_URL}/employees/active?name=${encodeURIComponent(userName)}`);
-      const result = await response.json();
+      const result = await api.get(`/employees/active?name=${encodeURIComponent(userName)}`);
 
       if (result.success && result.data.length > 0) {
         const emp = result.data[0]; // Take the first matching employee
@@ -73,8 +72,7 @@ const LeaveRequest = () => {
   // Fetch HODs from backend
   const fetchHods = async () => {
     try {
-      const response = await fetch(`${API_URL}/leaves/hods`);
-      const result = await response.json();
+      const result = await api.get('/leaves/hods');
       if (result.success) {
         setHods(result.data);
       }
@@ -85,8 +83,7 @@ const LeaveRequest = () => {
 
   const fetchLeaveTypes = async () => {
     try {
-      const response = await fetch(`${API_URL}/leaves/policies`);
-      const result = await response.json();
+      const result = await api.get('/leaves/policies');
       if (result.success) {
         setLeaveTypes(result.data);
       }
@@ -212,8 +209,7 @@ const LeaveRequest = () => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_URL}/leaves/employee/${idToUse}`);
-      const result = await response.json();
+      const result = await api.get(`/leaves/employee/${idToUse}`);
 
       if (!result.success) {
         throw new Error(result.message || 'Failed to fetch leave data');
@@ -265,39 +261,29 @@ const LeaveRequest = () => {
 
     try {
       setSubmitting(true);
-      const response = await fetch(`${API_URL}/leaves`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeId: formData.employeeId,
-          employeeName: formData.employeeName,
-          startDate: formData.fromDate,
-          endDate: formData.toDate,
-          remark: formData.reason,
-          leaveCode: formData.leaveCode,
-          hodName: formData.hodName,
-          departmentId: formData.departmentId
-        }),
+      const result = await api.post('/leaves', {
+        employeeId: formData.employeeId,
+        employeeName: formData.employeeName,
+        startDate: formData.fromDate,
+        endDate: formData.toDate,
+        remark: formData.reason,
+        leaveCode: formData.leaveCode,
+        hodName: formData.hodName,
+        departmentId: formData.departmentId
       });
-
-      const result = await response.json();
 
       if (result.success) {
         toast.success('Leave Request submitted successfully!');
-        setFormData({
-          employeeId: employeeId,
-          employeeName: user.Name || user.name || '',
-          department: formData.department,
-          departmentId: formData.departmentId,
-          hodName: '',
+        setFormData(prev => ({
+          ...prev,
           leaveType: '',
           leaveCode: '',
           fromDate: '',
           toDate: '',
           reason: ''
-        });
+        }));
         setShowModal(false);
-        fetchLeaveData();
+        fetchLeaveData(formData.employeeId);
       } else {
         toast.error('Failed to submit: ' + (result.message || 'Unknown error'));
       }

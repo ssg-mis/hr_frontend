@@ -141,6 +141,8 @@ const Sidebar = ({ onClose }) => {
           toggle: () => setIsResignationOpen(!isResignationOpen),
           items: [
             { path: "/resignation-module", label: "Resignation Requests" },
+            { path: "/after-leaving-work", label: "After Leaving Work" },
+            { path: "/leaving", label: "Exit Clearance" },
           ],
         },
         {
@@ -157,7 +159,9 @@ const Sidebar = ({ onClose }) => {
         { path: "/employee", icon: Users, label: "Employee" },
         { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
         { path: "/leave-policy", icon: BookPlus, label: "Leave Record" },
+        { path: "/emi-management", icon: CreditCard, label: "EMI Management" },
         { path: "/salary", icon: IndianRupee, label: "Salary" },
+        { path: "/canteen", icon: Utensils, label: "Canteen Management" },
       ];
     }
     
@@ -197,6 +201,7 @@ const Sidebar = ({ onClose }) => {
         },
         { path: "/employee", icon: Users, label: "Employee Info" },
         { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
+        { path: "/emi-management", icon: CreditCard, label: "EMI Management" },
         { path: "/salary", icon: IndianRupee, label: "Salary" },
       ];
     }
@@ -211,6 +216,11 @@ const Sidebar = ({ onClose }) => {
         { path: "/my-salary", icon: IndianRupee, label: "My Salary" },
         { path: "/canteen", icon: Utensils, label: "Canteen Info" },
         { path: "/resignation-module", icon: UserMinus, label: "Resignation" },
+      ];
+    }
+    if (role === "canteen_manager") {
+      return [
+        { path: "/canteen", icon: Utensils, label: "Canteen Management" }
       ];
     }
     

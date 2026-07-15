@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Calendar, User, FileText, Info, Users, UserCheck, UserX, Clock, Plus, X, Pencil, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
+import useAuthStore from '../store/authStore';
+import { api } from '../lib/api';
 
 const LeavePolicy = () => {
+    const { user } = useAuthStore();
     const [activeTab, setActiveTab] = useState('leaves');
     const [searchTerm, setSearchTerm] = useState('');
     const [showHolidayModal, setShowHolidayModal] = useState(false);
@@ -23,20 +26,16 @@ const LeavePolicy = () => {
     const [holidayFormData, setHolidayFormData] = useState({ date: '', day: '', name: '' });
     const [overtimeFormData, setOvertimeFormData] = useState({ employeeCode: '', date: '', overtimeHours: '' });
 
-    const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
-
     const fetchData = async () => {
         setLoading(true);
         try {
             // 1. Fetch Leave Policies
-            const policyRes = await fetch(`${API_URL}/leaves/policies`);
-            const policyData = await policyRes.json();
+            const policyData = await api.get('/leaves/policies');
             const realPolicies = policyData.success ? policyData.data : [];
             setLeavePolicies(realPolicies);
 
             // 2. Fetch Holidays
-            const holidayRes = await fetch(`${API_URL}/calendar`);
-            const holidayData = await holidayRes.json();
+            const holidayData = await api.get('/calendar');
             const realHolidays = holidayData.success ? holidayData.data.filter(ev => ev.type === 'holiday') : [];
             setHolidays(realHolidays.map(h => ({
                 date: new Date(h.date).toLocaleDateString('en-GB'),
@@ -45,8 +44,7 @@ const LeavePolicy = () => {
             })));
 
             // 3. Fetch Monthly Attendance for Overtime
-            const attendanceRes = await fetch(`${API_URL}/attendance/monthly?month=${selectedMonth}&year=${selectedYear}`);
-            const attendanceData = await attendanceRes.json();
+            const attendanceData = await api.get(`/attendance/monthly?month=${selectedMonth}&year=${selectedYear}`);
             const monthlyAttendance = attendanceData.success ? attendanceData.data : [];
             setEmployeeLeaves(monthlyAttendance.map(emp => ({
                 id: emp.emp_code,
@@ -57,15 +55,13 @@ const LeavePolicy = () => {
             })));
 
             // 4. Fetch Leave Record Summary (yearly)
-            const summaryRes = await fetch(`${API_URL}/leaves/summary?year=${selectedYear}`);
-            const summaryData = await summaryRes.json();
+            const summaryData = await api.get(`/leaves/summary?year=${selectedYear}`);
             if (summaryData.success) {
                 setLeaveRecordSummary(summaryData.data);
             }
 
             // 5. Fetch Active Employees
-            const activeRes = await fetch(`${API_URL}/employees/active`);
-            const activeData = await activeRes.json();
+            const activeData = await api.get('/employees/active');
             if (activeData.success) {
                 setActiveEmployees(activeData.data);
             }
@@ -118,6 +114,7 @@ const LeavePolicy = () => {
     );
 
     const handleEditPolicy = (policy) => {
+        if (user?.role === 'employee') return;
         setEditingPolicyId(policy.id);
         setEditingBalance(String(policy.balance));
     };
@@ -128,13 +125,9 @@ const LeavePolicy = () => {
     };
 
     const handleSavePolicy = async (policyId) => {
+        if (user?.role === 'employee') return;
         try {
-            const response = await fetch(`${API_URL}/leaves/policies/${policyId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ balance: Number(editingBalance) }),
-            });
-            const result = await response.json();
+            const result = await api.patch(`/leaves/policies/${policyId}`, { balance: Number(editingBalance) });
             if (result.success) {
                 toast.success('Leave balance updated!');
                 setEditingPolicyId(null);
@@ -163,22 +156,16 @@ const LeavePolicy = () => {
 
     const handleAddHoliday = async (e) => {
         e.preventDefault();
+        if (user?.role === 'employee') return;
         try {
-            const response = await fetch(`${API_URL}/calendar`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    title: holidayFormData.name,
-                    date: holidayFormData.date,
-                    time: '',
-                    location: '',
-                    type: 'holiday',
-                    description: `Day: ${holidayFormData.day}`
-                }),
+            const result = await api.post('/calendar', {
+                title: holidayFormData.name,
+                date: holidayFormData.date,
+                time: '',
+                location: '',
+                type: 'holiday',
+                description: `Day: ${holidayFormData.day}`
             });
-            const result = await response.json();
             if (result.success) {
                 setShowHolidayModal(false);
                 setHolidayFormData({ date: '', day: '', name: '' });
@@ -203,19 +190,13 @@ const LeavePolicy = () => {
 
     const handleAddOvertime = async (e) => {
         e.preventDefault();
+        if (user?.role === 'employee') return;
         try {
-            const response = await fetch(`${API_URL}/attendance/overtime`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    employeeCode: overtimeFormData.employeeCode,
-                    date: overtimeFormData.date,
-                    overtimeHours: parseFloat(overtimeFormData.overtimeHours)
-                }),
+            const result = await api.post('/attendance/overtime', {
+                employeeCode: overtimeFormData.employeeCode,
+                date: overtimeFormData.date,
+                overtimeHours: parseFloat(overtimeFormData.overtimeHours)
             });
-            const result = await response.json();
             if (result.success) {
                 setShowOvertimeModal(false);
                 setOvertimeFormData({ employeeCode: '', date: '', overtimeHours: '' });
@@ -288,118 +269,167 @@ const LeavePolicy = () => {
         </table>
     );
 
-    const renderEmployeeLeaveDisplay = () => (
-        <div className="space-y-8">
-            <div className="flex flex-wrap lg:flex-nowrap gap-4">
-                {leaveStats.map((stat, idx) => {
-                    const Icon = stat.icon;
-                    const isEditing = editingPolicyId === stat.id;
-                    return (
-                        <div key={idx} className="flex-1 min-w-[180px] bg-white rounded-xl shadow-md border border-gray-100 p-4 flex items-center transition-all hover:shadow-lg relative group">
-                            <div className={`p-3 rounded-xl ${stat.bg} mr-4 shrink-0`}>
-                                <Icon size={22} className={stat.text} />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider truncate">{stat.type.split(' (')[0]}</p>
-                                {isEditing ? (
-                                    <div className="flex items-center gap-1 mt-1">
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            value={editingBalance}
-                                            onChange={(e) => setEditingBalance(e.target.value)}
-                                            className="w-16 text-lg font-bold text-gray-800 border border-indigo-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                                            autoFocus
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') handleSavePolicy(stat.id);
-                                                if (e.key === 'Escape') handleCancelEdit();
-                                            }}
-                                        />
-                                        <button
-                                            onClick={() => handleSavePolicy(stat.id)}
-                                            className="p-1 text-green-600 hover:bg-green-50 rounded transition-colors"
-                                            title="Save"
-                                        >
-                                            <Check size={16} />
-                                        </button>
-                                        <button
-                                            onClick={handleCancelEdit}
-                                            className="p-1 text-red-500 hover:bg-red-50 rounded transition-colors"
-                                            title="Cancel"
-                                        >
-                                            <X size={16} />
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-baseline gap-1">
-                                        <h3 className="text-xl font-bold text-gray-800">{stat.total.split(' ')[0]}</h3>
-                                        <span className="text-[10px] text-gray-400 font-medium">Days</span>
-                                    </div>
-                                )}
-                            </div>
-                            {!isEditing && (
-                                <button
-                                    onClick={() => handleEditPolicy(stat)}
-                                    className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                                    title={`Edit ${stat.type} balance`}
-                                >
-                                    <Pencil size={14} />
-                                </button>
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
-
-            <div className="space-y-4">
-                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                    <User size={20} className="text-indigo-600" />
-                    Employee Leave Record Summary
-                </h3>
-                <div className="overflow-x-auto rounded-lg border border-gray-100 shadow-sm">
-                    <table className="min-w-full divide-y divide-white">
-                        <thead className="bg-gray-100">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee Code</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Designation</th>
-                                {leavePolicies.map((policy, idx) => (
-                                    <th key={idx} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider text-center">
-                                        {policy.leaveCode || policy.leaveName}
-                                    </th>
-                                ))}
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider text-center font-bold text-indigo-600">Total Taken</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white">
-                            {filteredEmployeesSummary.length > 0 ? (
-                                filteredEmployeesSummary.map((emp, index) => (
-                                    <tr key={index} className="hover:bg-white text-sm text-gray-500">
-                                        <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-bold text-indigo-700">{emp.id}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{emp.name}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap">{emp.designation}</td>
-                                        {leavePolicies.map((policy, idx) => {
-                                            const balance = emp.leaves?.[policy.leaveCode] || { limit: policy.balance || 0, taken: 0 };
-                                            return (
-                                                <td key={idx} className="px-6 py-4 whitespace-nowrap text-center text-indigo-600 font-medium">
-                                                    {balance.limit}({balance.taken})
-                                                </td>
-                                            );
-                                        })}
-                                        <td className="px-6 py-4 whitespace-nowrap text-center font-bold text-indigo-700 bg-indigo-50/30">{emp.total}</td>
-                                    </tr>
-                                ))
-                            ) : (
+    const renderEmployeeLeaveDisplay = () => {
+        if (user?.role === 'employee') {
+            const emp = filteredEmployeesSummary[0];
+            if (!emp) {
+                return (
+                    <div className="text-center py-12 text-gray-500 font-semibold bg-white rounded-xl border border-gray-100 shadow-sm">
+                        No leave records found.
+                    </div>
+                );
+            }
+            return (
+                <div className="space-y-4 bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
+                    <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2 mb-4">
+                        <User size={20} className="text-indigo-600" />
+                        My Personal Leave Record
+                    </h3>
+                    <div className="overflow-x-auto rounded-lg border border-gray-200">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
                                 <tr>
-                                    <td colSpan={4 + leavePolicies.length} className="px-6 py-12 text-center text-gray-500">No employee leave record found.</td>
+                                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Type of Leave</th>
+                                    <th className="px-6 py-3.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Leaves</th>
+                                    <th className="px-6 py-3.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider text-red-600 font-bold">Leaves Taken</th>
+                                    <th className="px-6 py-3.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider text-green-600 font-bold">Leaves Pending</th>
                                 </tr>
-                            )}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {leavePolicies.map((policy, idx) => {
+                                    const balance = emp.leaves?.[policy.leaveCode] || { limit: policy.balance || 0, taken: 0 };
+                                    const pending = Math.max(0, balance.limit - balance.taken);
+                                    return (
+                                        <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{policy.leaveName}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-700 font-medium">{balance.limit}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center font-bold text-red-650">{balance.taken}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center font-bold text-green-650">{pending}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="space-y-8">
+                {user?.role !== 'employee' && (
+                    <div className="flex flex-wrap lg:flex-nowrap gap-4">
+                        {leaveStats.map((stat, idx) => {
+                            const Icon = stat.icon;
+                            const isEditing = editingPolicyId === stat.id;
+                            return (
+                                <div key={idx} className="flex-1 min-w-[180px] bg-white rounded-xl shadow-md border border-gray-100 p-4 flex items-center transition-all hover:shadow-lg relative group">
+                                    <div className={`p-3 rounded-xl ${stat.bg} mr-4 shrink-0`}>
+                                        <Icon size={22} className={stat.text} />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider truncate">{stat.type.split(' (')[0]}</p>
+                                        {isEditing ? (
+                                            <div className="flex items-center gap-1 mt-1">
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={editingBalance}
+                                                    onChange={(e) => setEditingBalance(e.target.value)}
+                                                    className="w-16 text-lg font-bold text-gray-800 border border-indigo-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                                                    autoFocus
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') handleSavePolicy(stat.id);
+                                                        if (e.key === 'Escape') handleCancelEdit();
+                                                    }}
+                                                />
+                                                <button
+                                                    onClick={() => handleSavePolicy(stat.id)}
+                                                    className="p-1 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                                    title="Save"
+                                                >
+                                                    <Check size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={handleCancelEdit}
+                                                    className="p-1 text-red-500 hover:bg-red-50 rounded transition-colors"
+                                                    title="Cancel"
+                                                >
+                                                    <X size={16} />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-baseline gap-1">
+                                                <h3 className="text-xl font-bold text-gray-800">{stat.total.split(' ')[0]}</h3>
+                                                <span className="text-[10px] text-gray-400 font-medium">Days</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {!isEditing && (
+                                        <button
+                                            onClick={() => handleEditPolicy(stat)}
+                                            className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                                            title={`Edit ${stat.type} balance`}
+                                        >
+                                            <Pencil size={14} />
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                <div className="space-y-4">
+                    <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <User size={20} className="text-indigo-600" />
+                        Employee Leave Record Summary
+                    </h3>
+                    <div className="overflow-x-auto rounded-lg border border-gray-100 shadow-sm">
+                        <table className="min-w-full divide-y divide-white">
+                            <thead className="bg-gray-100">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee Code</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Designation</th>
+                                    {leavePolicies.map((policy, idx) => (
+                                        <th key={idx} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider text-center">
+                                            {policy.leaveCode || policy.leaveName}
+                                        </th>
+                                    ))}
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider text-center font-bold text-indigo-600">Total Taken</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white">
+                                {filteredEmployeesSummary.length > 0 ? (
+                                    filteredEmployeesSummary.map((emp, index) => (
+                                        <tr key={index} className="hover:bg-white text-sm text-gray-500">
+                                            <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-bold text-indigo-700">{emp.id}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{emp.name}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap">{emp.designation}</td>
+                                            {leavePolicies.map((policy, idx) => {
+                                                const balance = emp.leaves?.[policy.leaveCode] || { limit: policy.balance || 0, taken: 0 };
+                                                return (
+                                                    <td key={idx} className="px-6 py-4 whitespace-nowrap text-center text-indigo-600 font-medium">
+                                                        {balance.limit}({balance.taken})
+                                                    </td>
+                                                );
+                                            })}
+                                            <td className="px-6 py-4 whitespace-nowrap text-center font-bold text-indigo-700 bg-indigo-50/30">{emp.total}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan={4 + leavePolicies.length} className="px-6 py-12 text-center text-gray-500">No employee leave record found.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     return (
         <div className="space-y-6">
@@ -442,7 +472,7 @@ const LeavePolicy = () => {
                     </div>
                 )}
 
-                {activeTab === 'holidays' && (
+                {activeTab === 'holidays' && user?.role !== 'employee' && (
                     <button
                         className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
                         onClick={() => setShowHolidayModal(true)}
@@ -452,7 +482,7 @@ const LeavePolicy = () => {
                     </button>
                 )}
 
-                {activeTab === 'overtime' && (
+                {activeTab === 'overtime' && user?.role !== 'employee' && (
                     <button
                         className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
                         onClick={() => setShowOvertimeModal(true)}
@@ -484,15 +514,17 @@ const LeavePolicy = () => {
                         >
                             Company Holiday List
                         </button>
-                        <button
-                            onClick={() => { setActiveTab('overtime'); setSearchTerm(''); }}
-                            className={`py-4 px-6 text-center border-b-2 font-medium text-sm transition-colors ${activeTab === 'overtime'
-                                ? 'border-indigo-500 text-indigo-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }`}
-                        >
-                            Overtime
-                        </button>
+                        {user?.role !== 'employee' && (
+                            <button
+                                onClick={() => { setActiveTab('overtime'); setSearchTerm(''); }}
+                                className={`py-4 px-6 text-center border-b-2 font-medium text-sm transition-colors ${activeTab === 'overtime'
+                                    ? 'border-indigo-500 text-indigo-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    }`}
+                            >
+                                Overtime
+                            </button>
+                        )}
                     </nav>
                 </div>
 

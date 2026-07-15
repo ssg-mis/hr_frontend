@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Check, Clock, Calendar, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
+import useAuthStore from '../store/authStore';
+import { api } from '../lib/api';
 
 const LeaveManagement = () => {
+  const { user } = useAuthStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [pendingLeaves, setPendingLeaves] = useState([]);
   const [approvedLeaves, setApprovedLeaves] = useState([]);
@@ -41,7 +44,6 @@ const LeaveManagement = () => {
     reason: ''
   });
 
-  const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
   const isFirstRun = useRef(true);
 
   const handleCheckboxChange = (leaveId, rowData) => {
@@ -82,8 +84,7 @@ const LeaveManagement = () => {
   // Fetch employees from backend
   const fetchEmployees = async () => {
     try {
-      const response = await fetch(`${API_URL}/employees/active?all=true`);
-      const result = await response.json();
+      const result = await api.get('/employees/active?all=true');
 
       if (result.success) {
         setEmployees(result.data.map(emp => ({
@@ -103,8 +104,7 @@ const LeaveManagement = () => {
   // Fetch HODs from backend
   const fetchHods = async () => {
     try {
-      const response = await fetch(`${API_URL}/leaves/hods`);
-      const result = await response.json();
+      const result = await api.get('/leaves/hods');
       if (result.success) {
         setHods(result.data);
       }
@@ -116,8 +116,7 @@ const LeaveManagement = () => {
   // Fetch leave types from backend
   const fetchLeaveTypes = async () => {
     try {
-      const response = await fetch(`${API_URL}/leaves/policies`);
-      const result = await response.json();
+      const result = await api.get('/leaves/policies');
       if (result.success) {
         setLeaveTypes(result.data);
       }
@@ -234,22 +233,16 @@ const LeaveManagement = () => {
 
     try {
       setSubmitting(true);
-      const response = await fetch(`${API_URL}/leaves`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeId: formData.employeeId,
-          employeeName: formData.employeeName,
-          startDate: formData.fromDate,
-          endDate: formData.toDate,
-          remark: formData.reason,
-          leaveCode: formData.leaveCode,
-          hodName: formData.hodName,
-          departmentId: formData.departmentId
-        }),
+      const result = await api.post('/leaves', {
+        employeeId: formData.employeeId,
+        employeeName: formData.employeeName,
+        startDate: formData.fromDate,
+        endDate: formData.toDate,
+        remark: formData.reason,
+        leaveCode: formData.leaveCode,
+        hodName: formData.hodName,
+        departmentId: formData.departmentId
       });
-
-      const result = await response.json();
 
       if (result.success) {
         toast.success('Leave Request submitted successfully!');
@@ -289,15 +282,10 @@ const LeaveManagement = () => {
       else if (action === 'approve_hr') status = 'Approved';
       else if (action === 'reject') status = 'Rejected';
 
-      const response = await fetch(`${API_URL}/leaves/${item.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status
-        }),
+      const result = await api.patch(`/leaves/${item.id}`, {
+        status
       });
 
-      const result = await response.json();
       if (result.success) {
         toast.success(`Leave ${status} for ${item.employeeName}`);
         fetchLeaveData(pagination.page);
@@ -321,8 +309,7 @@ const LeaveManagement = () => {
 
     try {
       const statusParam = activeTab === 'pending' ? 'Pending' : activeTab === 'approved' ? 'Approved' : 'Rejected';
-      const response = await fetch(`${API_URL}/leaves?status=${statusParam}&page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
-      const result = await response.json();
+      const result = await api.get(`/leaves?status=${statusParam}&page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
 
       if (!result.success) {
         throw new Error(result.message || 'Failed to fetch leave data');
@@ -458,37 +445,50 @@ const LeaveManagement = () => {
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 <div className="flex space-x-2">
-                  {item.status === 'Pending HOD' && (
-                    <button
-                      onClick={() => handleLeaveAction(item, 'approve_hod')}
-                      disabled={loading}
-                      className={`px-3 py-1.5 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
-                    >
-                      {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'approve_hod' ? (
-                        <span>Approving...</span>
-                      ) : 'Approve HOD'}
-                    </button>
+                  {item.status === 'Pending HOD' && (user?.role === 'hod' || user?.role === 'admin') && (
+                    <>
+                      <button
+                        onClick={() => handleLeaveAction(item, 'approve_hod')}
+                        disabled={loading}
+                        className={`px-3 py-1.5 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                      >
+                        {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'approve_hod' ? (
+                          <span>Approving...</span>
+                        ) : 'Approve HOD'}
+                      </button>
+                      <button
+                        onClick={() => handleLeaveAction(item, 'reject')}
+                        disabled={loading}
+                        className={`px-3 py-1.5 text-xs text-white bg-red-600 rounded-md hover:bg-red-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                      >
+                        {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'reject' ? (
+                          <span>Rejecting...</span>
+                        ) : 'Reject'}
+                      </button>
+                    </>
                   )}
-                  {item.status === 'Pending HR' && (
-                    <button
-                      onClick={() => handleLeaveAction(item, 'approve_hr')}
-                      disabled={loading}
-                      className={`px-3 py-1.5 text-xs text-white bg-green-600 rounded-md hover:bg-green-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
-                    >
-                      {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'approve_hr' ? (
-                        <span>Approving...</span>
-                      ) : 'Approve HR'}
-                    </button>
+                  {item.status === 'Pending HR' && (user?.role === 'hr' || user?.role === 'admin') && (
+                    <>
+                      <button
+                        onClick={() => handleLeaveAction(item, 'approve_hr')}
+                        disabled={loading}
+                        className={`px-3 py-1.5 text-xs text-white bg-green-600 rounded-md hover:bg-green-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                      >
+                        {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'approve_hr' ? (
+                          <span>Approving...</span>
+                        ) : 'Approve HR'}
+                      </button>
+                      <button
+                        onClick={() => handleLeaveAction(item, 'reject')}
+                        disabled={loading}
+                        className={`px-3 py-1.5 text-xs text-white bg-red-600 rounded-md hover:bg-red-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                      >
+                        {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'reject' ? (
+                          <span>Rejecting...</span>
+                        ) : 'Reject'}
+                      </button>
+                    </>
                   )}
-                  <button
-                    onClick={() => handleLeaveAction(item, 'reject')}
-                    disabled={loading}
-                    className={`px-3 py-1.5 text-xs text-white bg-red-600 rounded-md hover:bg-red-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
-                  >
-                    {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'reject' ? (
-                      <span>Rejecting...</span>
-                    ) : 'Reject'}
-                  </button>
                 </div>
               </td>
             </tr>

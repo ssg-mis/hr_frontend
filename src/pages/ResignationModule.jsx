@@ -4,6 +4,7 @@ import { Search, UserX, CheckCircle, X, CalendarClock, Check, Pause, ThumbsDown,
 import toast from 'react-hot-toast';
 import { resignationApi } from '../features/resignation/resignation.api';
 import { employeeApi } from '../features/employee/employee.api';
+import useAuthStore from '../store/authStore';
 
 const REASONS = [
   'Better Opportunity',
@@ -38,6 +39,7 @@ const stageBadge = (stage) => {
 };
 
 const ResignationModule = () => {
+  const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState('active');
   const [searchTerm, setSearchTerm] = useState('');
   const [rows, setRows] = useState([]);
@@ -106,6 +108,15 @@ const ResignationModule = () => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm]);
+
+  useEffect(() => {
+    if (requesting && user?.role === 'employee') {
+      setRequestForm((prev) => ({
+        ...prev,
+        jobApplicationId: String(user.employeeId || ''),
+      }));
+    }
+  }, [requesting, user]);
 
   const openRequest = () => {
     setRequestForm({ jobApplicationId: '', reason: REASONS[0], customReason: '' });
@@ -455,13 +466,13 @@ const ResignationModule = () => {
                 <th className="px-6 py-3 text-left">Phone</th>
                 <th className="px-6 py-3 text-left">Stage</th>
                 <th className="px-6 py-3 text-left">Details</th>
-                {activeTab === 'active' && <th className="px-6 py-3 text-center">Action</th>}
+                {activeTab === 'active' && user?.role !== 'employee' && <th className="px-6 py-3 text-center">Action</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={user?.role === 'employee' ? 5 : 6} className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center space-y-2">
                       <span className="w-8 h-8 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin" />
                       <span className="text-sm font-semibold">Loading...</span>
@@ -470,7 +481,7 @@ const ResignationModule = () => {
                 </tr>
               ) : visibleRows.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-16 text-center text-gray-400 text-sm">
+                  <td colSpan={user?.role === 'employee' ? 5 : 6} className="px-6 py-16 text-center text-gray-400 text-sm">
                     {activeTab === 'active' ? 'No active resignations.' : 'No resolved resignations yet.'}
                   </td>
                 </tr>
@@ -502,7 +513,7 @@ const ResignationModule = () => {
                         <p className="text-xs text-gray-500">Last working day: {fmtDate(r.lastWorkingDay)}</p>
                       )}
                     </td>
-                    {activeTab === 'active' && (
+                    {activeTab === 'active' && user?.role !== 'employee' && (
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         {r.stage === 'Requested' && (
                           <button onClick={() => openSchedule(r)} className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors">
@@ -547,18 +558,27 @@ const ResignationModule = () => {
               <div className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Employee *</label>
-                  <select
-                    required
-                    value={requestForm.jobApplicationId}
-                    onChange={(e) => setRequestForm((f) => ({ ...f, jobApplicationId: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">Select an onboarded employee</option>
-                    {eligibleEmployees.map((emp) => (
-                      <option key={emp.id} value={emp.id}>{emp.candidateName} · {emp.employeeCode}</option>
-                    ))}
-                  </select>
-                  {eligibleEmployees.length === 0 && (
+                  {user?.role === 'employee' ? (
+                    <input
+                      type="text"
+                      readOnly
+                      value={user.name}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500 outline-none cursor-not-allowed"
+                    />
+                  ) : (
+                    <select
+                      required
+                      value={requestForm.jobApplicationId}
+                      onChange={(e) => setRequestForm((f) => ({ ...f, jobApplicationId: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">Select an onboarded employee</option>
+                      {eligibleEmployees.map((emp) => (
+                        <option key={emp.id} value={emp.id}>{emp.candidateName} · {emp.employeeCode}</option>
+                      ))}
+                    </select>
+                  )}
+                  {user?.role !== 'employee' && eligibleEmployees.length === 0 && (
                     <p className="text-xs text-gray-400 mt-1">No onboarded employees available (or all already have an active resignation).</p>
                   )}
                 </div>

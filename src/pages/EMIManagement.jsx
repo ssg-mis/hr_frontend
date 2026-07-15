@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, CreditCard, IndianRupee, Calendar, Filter, Eye, Plus, X, ArrowUpRight, ArrowDownRight, Pencil } from 'lucide-react';
+import { Search, CreditCard, IndianRupee, Calendar, Filter, Eye, Plus, X, ArrowUpRight, ArrowDownRight, Pencil, Info } from 'lucide-react';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
+import useAuthStore from '../store/authStore';
 
 const groupPaymentsByDay = (payments) => {
     const groups = {};
@@ -39,6 +40,7 @@ const formatInstallments = (list) => {
 };
 
 const EMIManagement = () => {
+    const { user } = useAuthStore();
     const [employeeList, setEmployeeList] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
@@ -50,6 +52,9 @@ const EMIManagement = () => {
     const [paymentsData, setPaymentsData] = useState([]);
     const [activeTab, setActiveTab] = useState('activeLoans');
     const [loading, setLoading] = useState(false);
+
+    const loggedInEmp = employeeList.find(emp => Number(emp.employee_id) === Number(user?.employeeId));
+    const isPendingResignation = user?.role === 'employee' && loggedInEmp?.status === 'Pending';
 
     const [newEmiFormData, setNewEmiFormData] = useState({
         empId: '',
@@ -105,10 +110,39 @@ const EMIManagement = () => {
     };
 
     useEffect(() => {
-        fetchEmployees();
+        if (user?.role !== 'employee') {
+            fetchEmployees();
+            fetchPayments();
+        }
         fetchEmis();
-        fetchPayments();
-    }, []);
+    }, [user]);
+
+    useEffect(() => {
+        if (showAddModal && user?.role === 'employee') {
+            setNewEmiFormData(prev => ({
+                ...prev,
+                employeeId: user.employeeId || '',
+                empId: user.username || '',
+                name: user.name || ''
+            }));
+        }
+    }, [showAddModal, user]);
+
+    const handleApprove = async (emiId, nextStatus) => {
+        try {
+            const res = await api.patch(`/emis/${emiId}`, { status: nextStatus });
+            if (res.success) {
+                toast.success(`EMI request updated to ${nextStatus}`);
+                fetchEmis();
+                if (user?.role !== 'employee') {
+                    fetchPayments();
+                }
+            }
+        } catch (error) {
+            console.error("Failed to approve/reject EMI:", error);
+            toast.error(error.message || "Failed to update EMI status");
+        }
+    };
 
     const stats = [
         { label: 'Total active Loans', value: `₹${emiData.filter(e => e.status === 'Active').reduce((sum, e) => sum + Number(e.loanAmount || 0), 0).toLocaleString()}`, icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-100' },
@@ -184,15 +218,17 @@ const EMIManagement = () => {
                 emiAmount: Number(newEmiFormData.emiAmount),
                 interestRate: Number(newEmiFormData.interestRate || 0),
                 tenure: Number(newEmiFormData.tenure),
-                status: 'Active'
+                status: user?.role === 'employee' ? 'Pending HOD' : 'Active'
             };
             const res = await api.post('/emis', payload);
             if (res.success) {
-                toast.success("EMI Loan Entry added successfully!");
+                toast.success(user?.role === 'employee' ? "EMI request submitted for HOD approval!" : "EMI Loan Entry added successfully!");
                 setShowAddModal(false);
                 setNewEmiFormData({ empId: '', name: '', employeeId: '', loanType: '', loanAmount: '', emiAmount: '', interestRate: '0.00', tenure: '' });
                 fetchEmis();
-                fetchPayments();
+                if (user?.role !== 'employee') {
+                    fetchPayments();
+                }
             }
         } catch (error) {
             console.error("Failed to add EMI:", error);
@@ -245,6 +281,15 @@ const EMIManagement = () => {
 
     return (
         <div className="space-y-6 page-content p-6">
+            {isPendingResignation && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 text-amber-800 text-sm">
+                    <Info className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                        <span className="font-bold">EMI Request Blocked:</span> You have a resignation in progress. Employees with a pending resignation or notice period status cannot request new EMI loans.
+                    </div>
+                </div>
+            )}
+
             <div className="flex items-center justify-between border-b border-gray-100 pb-4">
                 {/* Tabs */}
                 <div className="flex gap-2">
@@ -278,11 +323,17 @@ const EMIManagement = () => {
                 </div>
 
                 <button
+                    disabled={isPendingResignation}
                     onClick={() => setShowAddModal(true)}
-                    className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md"
+                    className={`inline-flex items-center px-4 py-2 text-white rounded-lg transition-colors shadow-md ${
+                        isPendingResignation
+                            ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                            : 'bg-indigo-600 hover:bg-indigo-700'
+                    }`}
+                    title={isPendingResignation ? "You cannot request EMI while resignation is pending" : "New EMI Request"}
                 >
                     <Plus size={18} className="mr-2" />
-                    New EMI Entry
+                    {user?.role === 'employee' ? 'Request EMI' : 'New EMI Entry'}
                 </button>
             </div>
 
@@ -371,12 +422,50 @@ const EMIManagement = () => {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className="text-xs font-semibold inline-flex px-2 py-0.5 rounded bg-gray-100 text-gray-800">
+                                            <span className={`text-xs font-semibold inline-flex px-2 py-0.5 rounded ${
+                                                item.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                                                item.status === 'Pending HOD' ? 'bg-amber-100 text-amber-800' :
+                                                item.status === 'Pending HR' ? 'bg-purple-100 text-purple-800' :
+                                                item.status === 'Rejected' ? 'bg-red-100 text-red-800' :
+                                                'bg-blue-100 text-blue-800'
+                                            }`}>
                                                 {item.status}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right">
-                                            <div className="flex justify-end gap-2">
+                                            <div className="flex justify-end gap-2 items-center">
+                                                {user?.role === 'hod' && item.status === 'Pending HOD' && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleApprove(item.id, 'Pending HR')}
+                                                            className="px-2.5 py-1 text-xs font-bold bg-green-100 hover:bg-green-200 text-green-700 rounded transition-colors"
+                                                        >
+                                                            Approve
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleApprove(item.id, 'Rejected')}
+                                                            className="px-2.5 py-1 text-xs font-bold bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors"
+                                                        >
+                                                            Reject
+                                                        </button>
+                                                    </>
+                                                )}
+                                                {user?.role === 'hr' && item.status === 'Pending HR' && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleApprove(item.id, 'Active')}
+                                                            className="px-2.5 py-1 text-xs font-bold bg-green-100 hover:bg-green-200 text-green-700 rounded transition-colors"
+                                                        >
+                                                            Approve
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleApprove(item.id, 'Rejected')}
+                                                            className="px-2.5 py-1 text-xs font-bold bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors"
+                                                        >
+                                                            Reject
+                                                        </button>
+                                                    </>
+                                                )}
                                                 <button
                                                     onClick={() => handleViewClick(item)}
                                                     className="text-blue-600 hover:text-blue-800 transition-colors p-2 rounded-lg hover:bg-blue-50"
@@ -384,13 +473,15 @@ const EMIManagement = () => {
                                                 >
                                                     <Eye size={18} />
                                                 </button>
-                                                <button
-                                                    onClick={() => handleEditClick(item)}
-                                                    className="text-amber-600 hover:text-amber-800 transition-colors p-2 rounded-lg hover:bg-amber-50"
-                                                    title="Update EMI"
-                                                >
-                                                    <Pencil size={18} />
-                                                </button>
+                                                {user?.role !== 'employee' && item.status !== 'Pending HOD' && item.status !== 'Pending HR' && (
+                                                    <button
+                                                        onClick={() => handleEditClick(item)}
+                                                        className="text-amber-600 hover:text-amber-800 transition-colors p-2 rounded-lg hover:bg-amber-50"
+                                                        title="Update EMI"
+                                                    >
+                                                        <Pencil size={18} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -470,33 +561,51 @@ const EMIManagement = () => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID *</label>
-                                    <select
-                                        name="empId"
-                                        value={newEmiFormData.empId}
-                                        onChange={handleInputChange}
-                                        required
-                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    >
-                                        <option value="">Select ID</option>
-                                        {employeeList.map(emp => (
-                                            <option key={emp.employee_id} value={emp.employee_code}>{emp.employee_code}</option>
-                                        ))}
-                                    </select>
+                                    {user?.role === 'employee' ? (
+                                        <input
+                                            type="text"
+                                            value={newEmiFormData.empId}
+                                            readOnly
+                                            className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-gray-50 text-gray-500 outline-none cursor-not-allowed text-sm"
+                                        />
+                                    ) : (
+                                        <select
+                                            name="empId"
+                                            value={newEmiFormData.empId}
+                                            onChange={handleInputChange}
+                                            required
+                                            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                                        >
+                                            <option value="">Select ID</option>
+                                            {employeeList.map(emp => (
+                                                <option key={emp.employee_id} value={emp.employee_code}>{emp.employee_code}</option>
+                                            ))}
+                                        </select>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Employee Name *</label>
-                                    <select
-                                        name="name"
-                                        value={newEmiFormData.name}
-                                        onChange={handleInputChange}
-                                        required
-                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    >
-                                        <option value="">Select Name</option>
-                                        {employeeList.map(emp => (
-                                            <option key={emp.employee_id} value={emp.name_as_per_aadhar}>{emp.name_as_per_aadhar}</option>
-                                        ))}
-                                    </select>
+                                    {user?.role === 'employee' ? (
+                                        <input
+                                            type="text"
+                                            value={newEmiFormData.name}
+                                            readOnly
+                                            className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-gray-50 text-gray-500 outline-none cursor-not-allowed text-sm"
+                                        />
+                                    ) : (
+                                        <select
+                                            name="name"
+                                            value={newEmiFormData.name}
+                                            onChange={handleInputChange}
+                                            required
+                                            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                                        >
+                                            <option value="">Select Name</option>
+                                            {employeeList.map(emp => (
+                                                <option key={emp.employee_id} value={emp.name_as_per_aadhar}>{emp.name_as_per_aadhar}</option>
+                                            ))}
+                                        </select>
+                                    )}
                                 </div>
                             </div>
                             <div>
