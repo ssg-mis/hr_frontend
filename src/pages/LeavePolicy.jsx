@@ -5,7 +5,7 @@ import useAuthStore from '../store/authStore';
 import { api } from '../lib/api';
 
 const LeavePolicy = () => {
-    const { user } = useAuthStore();
+    const { user, isAdmin, isHR, isEmployeeOnly } = useAuthStore();
     const [activeTab, setActiveTab] = useState('leaves');
     const [searchTerm, setSearchTerm] = useState('');
     const [showHolidayModal, setShowHolidayModal] = useState(false);
@@ -114,7 +114,7 @@ const LeavePolicy = () => {
     );
 
     const handleEditPolicy = (policy) => {
-        if (user?.role === 'employee') return;
+        if (!isAdmin && !isHR) return;
         setEditingPolicyId(policy.id);
         setEditingBalance(String(policy.balance));
     };
@@ -125,7 +125,7 @@ const LeavePolicy = () => {
     };
 
     const handleSavePolicy = async (policyId) => {
-        if (user?.role === 'employee') return;
+        if (!isAdmin && !isHR) return;
         try {
             const result = await api.patch(`/leaves/policies/${policyId}`, { balance: Number(editingBalance) });
             if (result.success) {
@@ -156,7 +156,7 @@ const LeavePolicy = () => {
 
     const handleAddHoliday = async (e) => {
         e.preventDefault();
-        if (user?.role === 'employee') return;
+        if (!isAdmin && !isHR) return;
         try {
             const result = await api.post('/calendar', {
                 title: holidayFormData.name,
@@ -190,7 +190,7 @@ const LeavePolicy = () => {
 
     const handleAddOvertime = async (e) => {
         e.preventDefault();
-        if (user?.role === 'employee') return;
+        if (!isAdmin && !isHR) return;
         try {
             const result = await api.post('/attendance/overtime', {
                 employeeCode: overtimeFormData.employeeCode,
@@ -270,7 +270,7 @@ const LeavePolicy = () => {
     );
 
     const renderEmployeeLeaveDisplay = () => {
-        if (user?.role === 'employee') {
+        if (isEmployeeOnly) {
             const emp = filteredEmployeesSummary[0];
             if (!emp) {
                 return (
@@ -317,7 +317,7 @@ const LeavePolicy = () => {
 
         return (
             <div className="space-y-8">
-                {user?.role !== 'employee' && (
+                {(!isEmployeeOnly) && (
                     <div className="flex flex-wrap lg:flex-nowrap gap-4">
                         {leaveStats.map((stat, idx) => {
                             const Icon = stat.icon;
@@ -365,7 +365,7 @@ const LeavePolicy = () => {
                                             </div>
                                         )}
                                     </div>
-                                    {!isEditing && (
+                                    {!isEditing && (isAdmin || isHR) && (
                                         <button
                                             onClick={() => handleEditPolicy(stat)}
                                             className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
@@ -472,7 +472,7 @@ const LeavePolicy = () => {
                     </div>
                 )}
 
-                {activeTab === 'holidays' && user?.role !== 'employee' && (
+                {activeTab === 'holidays' && (isAdmin || isHR) && (
                     <button
                         className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
                         onClick={() => setShowHolidayModal(true)}
@@ -482,7 +482,7 @@ const LeavePolicy = () => {
                     </button>
                 )}
 
-                {activeTab === 'overtime' && user?.role !== 'employee' && (
+                {activeTab === 'overtime' && (isAdmin || isHR) && (
                     <button
                         className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
                         onClick={() => setShowOvertimeModal(true)}
@@ -514,7 +514,7 @@ const LeavePolicy = () => {
                         >
                             Company Holiday List
                         </button>
-                        {user?.role !== 'employee' && (
+                        {!isEmployeeOnly && (
                             <button
                                 onClick={() => { setActiveTab('overtime'); setSearchTerm(''); }}
                                 className={`py-4 px-6 text-center border-b-2 font-medium text-sm transition-colors ${activeTab === 'overtime'

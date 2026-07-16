@@ -43,12 +43,10 @@ const Sidebar = ({ onClose }) => {
   const [isRecruitmentOpen, setIsRecruitmentOpen] = useState(false);
   const [isResignationOpen, setIsResignationOpen] = useState(false);
 
-  const userString = localStorage.getItem("user");
-  const user = userString ? JSON.parse(userString) : null;
+  const user = useAuthStore(state => state.user);
 
   const handleLogout = () => {
     logout();
-    localStorage.removeItem("user");
     navigate("/login", { replace: true });
   };
 
@@ -106,125 +104,128 @@ const Sidebar = ({ onClose }) => {
 
   const getMenuItems = () => {
     if (!user) return [];
-    
-    const role = user.role || "employee";
-    
-    if (role === "admin") {
+
+    const roles = user.roles ?? (user.role ? [user.role] : []);
+
+    const hasRole = (r) => roles.some(role => role.toLowerCase() === r.toLowerCase());
+    const isAdmin = hasRole('admin');
+    const isHR = hasRole('hr');
+    const isHOD = hasRole('hod');
+    const isCanteenManager = hasRole('canteenmanager');
+    const isEmployeeOnly = !isAdmin && !isHR && !isHOD && !isCanteenManager;
+
+    if (isAdmin) {
       return adminMenuItems;
     }
-    
-    if (role === "hr") {
-      return [
-        { path: "/", icon: LayoutDashboard, label: "Dashboard" },
-        {
-          type: "dropdown",
-          icon: NotebookPen,
-          label: "Recruitment Module",
-          isOpen: isRecruitmentOpen,
-          toggle: () => setIsRecruitmentOpen(!isRecruitmentOpen),
-          items: [
-            { path: "/vacancy", label: "Vacancy" },
-            { path: "/job-application", label: "Job Application" },
-            { path: "/call-tracker", label: "Call Tracker" },
-            { path: "/interview-management", label: "Interview Management" },
-            { path: "/selection-process", label: "Selection Process" },
-            { path: "/offer-management", label: "Offer Management" },
-            { path: "/document-verification", label: "Document Verification" },
-            { path: "/joining", label: "Joining" },
-          ],
-        },
-        {
-          type: "dropdown",
-          icon: UserX,
-          label: "Resignation Module",
-          isOpen: isResignationOpen,
-          toggle: () => setIsResignationOpen(!isResignationOpen),
-          items: [
-            { path: "/resignation-module", label: "Resignation Requests" },
-            { path: "/after-leaving-work", label: "After Leaving Work" },
-            { path: "/leaving", label: "Exit Clearance" },
-          ],
-        },
-        {
-          type: "dropdown",
-          icon: Clock,
-          label: "Attendance Module",
-          isOpen: isAttendanceOpen,
-          toggle: () => setIsAttendanceOpen(!isAttendanceOpen),
-          items: [
-            { path: "/attendance-dashboard", label: "Attendance Dashboard" },
-            { path: "/shift-management", label: "Shift Management" },
-          ],
-        },
-        { path: "/employee", icon: Users, label: "Employee" },
-        { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
-        { path: "/leave-policy", icon: BookPlus, label: "Leave Record" },
-        { path: "/emi-management", icon: CreditCard, label: "EMI Management" },
-        { path: "/salary", icon: IndianRupee, label: "Salary" },
-        { path: "/canteen", icon: Utensils, label: "Canteen Management" },
-      ];
+
+    const menuItems = [];
+    const addedPaths = new Set();
+
+    const addItem = (item) => {
+      const key = item.path ?? item.label;
+      if (!addedPaths.has(key)) {
+        addedPaths.add(key);
+        menuItems.push(item);
+      }
+    };
+
+    // Dashboard — all privileged users see it
+    if (isHR || isHOD) {
+      addItem({ path: '/', icon: LayoutDashboard, label: 'Dashboard' });
     }
-    
-    if (role === "hod") {
-      return [
-        { path: "/", icon: LayoutDashboard, label: "Dashboard" },
-        {
-          type: "dropdown",
-          icon: NotebookPen,
-          label: "Recruitment Module",
-          isOpen: isRecruitmentOpen,
-          toggle: () => setIsRecruitmentOpen(!isRecruitmentOpen),
-          items: [
-            { path: "/vacancy-approval", label: "Vacancy Approval" },
-          ],
-        },
-        {
-          type: "dropdown",
-          icon: UserX,
-          label: "Resignation Module",
-          isOpen: isResignationOpen,
-          toggle: () => setIsResignationOpen(!isResignationOpen),
-          items: [
-            { path: "/leaving", label: "Exit Clearance" },
-          ],
-        },
-        {
-          type: "dropdown",
-          icon: Clock,
-          label: "Attendance Module",
-          isOpen: isAttendanceOpen,
-          toggle: () => setIsAttendanceOpen(!isAttendanceOpen),
-          items: [
-            { path: "/attendance-dashboard", label: "Attendance Dashboard" },
-            { path: "/shift-management", label: "Shift Management" },
-          ],
-        },
-        { path: "/employee", icon: Users, label: "Employee Info" },
-        { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
-        { path: "/emi-management", icon: CreditCard, label: "EMI Management" },
-        { path: "/salary", icon: IndianRupee, label: "Salary" },
-      ];
+
+    // HOD Recruitment items
+    if (isHOD && !isHR) {
+      addItem({
+        type: 'dropdown',
+        icon: NotebookPen,
+        label: 'Recruitment Module',
+        isOpen: isRecruitmentOpen,
+        toggle: () => setIsRecruitmentOpen(!isRecruitmentOpen),
+        items: [{ path: '/vacancy-approval', label: 'Vacancy Approval' }],
+      });
     }
-    
-    if (role === "employee") {
-      return [
-        { path: "/my-profile", icon: User, label: "My Profile" },
-        { path: "/my-attendance", icon: Clock, label: "My Attendance" },
-        { path: "/leave-request", icon: Book, label: "Request Leave" },
-        { path: "/leave-policy", icon: BookPlus, label: "Leave Record" },
-        { path: "/emi-management", icon: CreditCard, label: "My EMI" },
-        { path: "/my-salary", icon: IndianRupee, label: "My Salary" },
-        { path: "/canteen", icon: Utensils, label: "Canteen Info" },
-        { path: "/resignation-module", icon: UserMinus, label: "Resignation" },
-      ];
+
+    // HR Recruitment items
+    if (isHR) {
+      addItem({
+        type: 'dropdown',
+        icon: NotebookPen,
+        label: 'Recruitment Module',
+        isOpen: isRecruitmentOpen,
+        toggle: () => setIsRecruitmentOpen(!isRecruitmentOpen),
+        items: [
+          { path: '/vacancy', label: 'Vacancy' },
+          { path: '/job-application', label: 'Job Application' },
+          { path: '/call-tracker', label: 'Call Tracker' },
+          { path: '/interview-management', label: 'Interview Management' },
+          { path: '/selection-process', label: 'Selection Process' },
+          { path: '/offer-management', label: 'Offer Management' },
+          { path: '/document-verification', label: 'Document Verification' },
+          { path: '/joining', label: 'Joining' },
+        ],
+      });
     }
-    if (role === "canteen_manager") {
-      return [
-        { path: "/canteen", icon: Utensils, label: "Canteen Management" }
-      ];
+
+    // Resignation module
+    if (isHR || isHOD) {
+      const items = isHR
+        ? [
+            { path: '/resignation-module', label: 'Resignation Requests' },
+            { path: '/after-leaving-work', label: 'After Leaving Work' },
+            { path: '/leaving', label: 'Exit Clearance' },
+          ]
+        : [{ path: '/leaving', label: 'Exit Clearance' }];
+      addItem({
+        type: 'dropdown',
+        icon: UserX,
+        label: 'Resignation Module',
+        isOpen: isResignationOpen,
+        toggle: () => setIsResignationOpen(!isResignationOpen),
+        items,
+      });
     }
-    
-    return [];
+
+    // Attendance module
+    if (isHR || isHOD) {
+      addItem({
+        type: 'dropdown',
+        icon: Clock,
+        label: 'Attendance Module',
+        isOpen: isAttendanceOpen,
+        toggle: () => setIsAttendanceOpen(!isAttendanceOpen),
+        items: [
+          { path: '/attendance-dashboard', label: 'Attendance Dashboard' },
+          { path: '/shift-management', label: 'Shift Management' },
+        ],
+      });
+    }
+
+    if (isHR || isHOD) addItem({ path: '/employee', icon: Users, label: isHOD && !isHR ? 'Employee Info' : 'Employee' });
+    if (isHR || isHOD) addItem({ path: '/leave-management', icon: BookPlus, label: 'Leave Management' });
+    if (isHR) addItem({ path: '/leave-policy', icon: BookPlus, label: 'Leave Record' });
+    if (isHR || isHOD) addItem({ path: '/emi-management', icon: CreditCard, label: 'EMI Management' });
+    if (isHR || isHOD) addItem({ path: '/salary', icon: IndianRupee, label: 'Salary' });
+    if (isHR) addItem({ path: '/canteen', icon: Utensils, label: 'Canteen Management' });
+
+    if (menuItems.length > 0) return menuItems;
+
+    // Canteen manager
+    if (isCanteenManager) {
+      return [{ path: '/canteen', icon: Utensils, label: 'Canteen Management' }];
+    }
+
+    // Pure employee
+    return [
+      { path: '/my-profile', icon: User, label: 'My Profile' },
+      { path: '/my-attendance', icon: Clock, label: 'My Attendance' },
+      { path: '/leave-request', icon: Book, label: 'Request Leave' },
+      { path: '/leave-policy', icon: BookPlus, label: 'Leave Record' },
+      { path: '/emi-management', icon: CreditCard, label: 'My EMI' },
+      { path: '/my-salary', icon: IndianRupee, label: 'My Salary' },
+      { path: '/canteen', icon: Utensils, label: 'Canteen Info' },
+      { path: '/resignation-module', icon: UserMinus, label: 'Resignation' },
+    ];
   };
 
   const menuItems = getMenuItems();
@@ -419,7 +420,16 @@ const SidebarContent = ({
               {user?.Name || user?.Username || "Guest"}
             </p>
             <p className="text-xs text-white capitalize">
-              {user?.role === "admin" ? "Administrator" : user?.role === "hr" ? "HR Specialist" : user?.role === "hod" ? "Department HOD" : "Employee"}
+              {(() => {
+                const roles = user?.roles ?? (user?.role ? [user.role] : []);
+                if (roles.some(r => r.toLowerCase() === 'admin')) return 'Administrator';
+                const display = [];
+                if (roles.some(r => r.toLowerCase() === 'hod')) display.push('Department HOD');
+                if (roles.some(r => r.toLowerCase() === 'hr')) display.push('HR Specialist');
+                if (display.length > 0) return display.join(' · ');
+                if (roles.some(r => r.toLowerCase() === 'canteenmanager')) return 'Canteen Manager';
+                return 'Employee';
+              })()}
             </p>
           </div>
         </div>

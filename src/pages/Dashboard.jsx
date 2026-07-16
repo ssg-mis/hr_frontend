@@ -24,7 +24,7 @@ import {
   UserPlus,
   Clock,
   AlertTriangle,
-  Loader,
+  Loader2,
   LogOut,
   CalendarDays,
   FileText,
@@ -171,14 +171,18 @@ const eventTypeBadge = {
 
 const EventItem = ({ event }) => {
   const badge = eventTypeBadge[event.type] || eventTypeBadge.event;
+  const eventDate = event.date ? new Date(event.date) : null;
+  const isValidDate = eventDate && !isNaN(eventDate.getTime());
+  const monthLabel = isValidDate ? eventDate.toLocaleDateString('en-IN', { month: 'short' }) : '—';
+  const dayLabel = isValidDate ? eventDate.getDate() : '—';
   return (
     <div className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors group">
       <div className="w-11 h-11 rounded-xl bg-indigo-50 border border-indigo-100 flex flex-col items-center justify-center shrink-0 group-hover:bg-indigo-100 transition-colors">
         <span className="text-[10px] font-bold text-indigo-400 uppercase leading-none">
-          {new Date(event.date).toLocaleDateString('en-IN', { month: 'short' })}
+          {monthLabel}
         </span>
         <span className="text-sm font-bold text-indigo-700 leading-tight">
-          {new Date(event.date).getDate()}
+          {dayLabel}
         </span>
       </div>
       <div className="min-w-0 flex-1">
@@ -234,14 +238,15 @@ const CustomTooltip = ({ active, payload, label }) => {
    MAIN DASHBOARD
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 const Dashboard = () => {
-  const { user } = useAuthStore();
+  const user = useAuthStore((state) => state.user);
+  const isEmployeeOnly = useAuthStore((state) => state.isEmployeeOnly);
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user?.role === 'employee') {
+    if (isEmployeeOnly) {
       navigate('/my-profile', { replace: true });
     }
-  }, [user, navigate]);
+  }, [isEmployeeOnly, navigate]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -317,7 +322,7 @@ const Dashboard = () => {
     return (
       <div className="flex justify-center items-center h-[70vh]">
         <div className="text-center">
-          <Loader
+          <Loader2
             size={44}
             className="animate-spin text-indigo-500 mx-auto mb-4"
           />

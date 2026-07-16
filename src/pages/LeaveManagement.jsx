@@ -5,7 +5,7 @@ import useAuthStore from '../store/authStore';
 import { api } from '../lib/api';
 
 const LeaveManagement = () => {
-  const { user } = useAuthStore();
+  const { user, isAdmin, isHR } = useAuthStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [pendingLeaves, setPendingLeaves] = useState([]);
   const [approvedLeaves, setApprovedLeaves] = useState([]);
@@ -43,6 +43,23 @@ const LeaveManagement = () => {
     toDate: '',
     reason: ''
   });
+
+  useEffect(() => {
+    if (employees.length > 0 && user && !isAdmin && !isHR) {
+      const selfEmp = employees.find(emp => emp.id === user.employeeId);
+      if (selfEmp) {
+        setFormData(prev => ({
+          ...prev,
+          employeeName: selfEmp.name,
+          employeeId: selfEmp.id,
+          employeeCode: selfEmp.employeeCode,
+          department: selfEmp.department,
+          departmentId: selfEmp.departmentId,
+          hodName: selfEmp.hodName
+        }));
+      }
+    }
+  }, [employees, user, isAdmin, isHR, showModal]);
 
   const isFirstRun = useRef(true);
 
@@ -266,7 +283,7 @@ const LeaveManagement = () => {
       }
     } catch (error) {
       console.error('Insert error:', error);
-      toast.error('Something went wrong!');
+      toast.error(error.message || 'Something went wrong!');
     } finally {
       setSubmitting(false);
     }
@@ -445,7 +462,10 @@ const LeaveManagement = () => {
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 <div className="flex space-x-2">
-                  {item.status === 'Pending HOD' && (user?.role === 'hod' || user?.role === 'admin') && (
+                  {item.status === 'Pending HOD' && (
+                    (user?.roles?.some(r => r.toLowerCase() === 'hod') || user?.roles?.some(r => r.toLowerCase() === 'admin'))
+                    || (user?.role === 'hod' || user?.role === 'admin')
+                  ) && (
                     <>
                       <button
                         onClick={() => handleLeaveAction(item, 'approve_hod')}
@@ -467,7 +487,10 @@ const LeaveManagement = () => {
                       </button>
                     </>
                   )}
-                  {item.status === 'Pending HR' && (user?.role === 'hr' || user?.role === 'admin') && (
+                  {item.status === 'Pending HR' && (
+                    (user?.roles?.some(r => r.toLowerCase() === 'hr') || user?.roles?.some(r => r.toLowerCase() === 'admin'))
+                    || (user?.role === 'hr' || user?.role === 'admin')
+                  ) && (
                     <>
                       <button
                         onClick={() => handleLeaveAction(item, 'approve_hr')}
@@ -791,18 +814,28 @@ const LeaveManagement = () => {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Employee Name *</label>
-                <select
-                  name="employeeName"
-                  value={formData.employeeName}
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                >
-                  <option value="">Select Employee</option>
-                  {employees.map(employee => (
-                    <option key={employee.id} value={employee.name}>{employee.name}</option>
-                  ))}
-                </select>
+                {!isHR && !isAdmin ? (
+                  <input
+                    type="text"
+                    name="employeeName"
+                    value={formData.employeeName}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
+                    readOnly
+                  />
+                ) : (
+                  <select
+                    name="employeeName"
+                    value={formData.employeeName}
+                    onChange={handleInputChange}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  >
+                    <option value="">Select Employee</option>
+                    {employees.map(employee => (
+                      <option key={employee.id} value={employee.name}>{employee.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>

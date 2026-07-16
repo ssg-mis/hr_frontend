@@ -289,7 +289,7 @@ const LeaveRequest = () => {
       }
     } catch (error) {
       console.error('Insert error:', error);
-      toast.error('Something went wrong!');
+      toast.error(error.message || 'Something went wrong!');
     } finally {
       setSubmitting(false);
     }

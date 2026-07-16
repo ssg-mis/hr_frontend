@@ -40,8 +40,20 @@ const formatInstallments = (list) => {
 };
 
 const EMIManagement = () => {
-    const { user } = useAuthStore();
+    const user = useAuthStore((state) => state.user);
+    const isEmployeeOnly = useAuthStore((state) => state.isEmployeeOnly);
+    const isHOD = useAuthStore((state) => state.isHOD);
+    const isHR = useAuthStore((state) => state.isHR);
+    const isAdmin = useAuthStore((state) => state.isAdmin);
+
+    const hasHODRole = isHOD || user?.roles?.some(r => r.toLowerCase() === 'hod');
+    const hasHRRole = isHR || user?.roles?.some(r => r.toLowerCase() === 'hr');
+    const hasAdminRole = isAdmin || user?.roles?.some(r => r.toLowerCase() === 'admin');
+
+    const canManage = hasHRRole || hasAdminRole || hasHODRole;
+    const isSelfRequest = isEmployeeOnly || hasHODRole;
     const [employeeList, setEmployeeList] = useState([]);
+    const [loggedInEmpData, setLoggedInEmpData] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
     const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -54,7 +66,7 @@ const EMIManagement = () => {
     const [loading, setLoading] = useState(false);
 
     const loggedInEmp = employeeList.find(emp => Number(emp.employee_id) === Number(user?.employeeId));
-    const isPendingResignation = user?.role === 'employee' && loggedInEmp?.status === 'Pending';
+    const isPendingResignation = isEmployeeOnly && loggedInEmp?.status === 'Pending';
 
     const [newEmiFormData, setNewEmiFormData] = useState({
         empId: '',
@@ -83,11 +95,26 @@ const EMIManagement = () => {
         }
     };
 
+    const fetchLoggedInEmployee = async () => {
+        try {
+            const userName = user?.name || user?.Name;
+            if (!userName) return;
+            const res = await api.get(`/employees/active?name=${encodeURIComponent(userName)}`);
+            if (res.success && res.data.length > 0) {
+                setLoggedInEmpData(res.data[0]);
+            }
+        } catch (error) {
+            console.error("Failed to fetch logged in employee details:", error);
+        }
+    };
+
     const fetchEmis = async () => {
         setLoading(true);
         try {
             const res = await api.get('/emis');
             if (res.success) {
+                console.log("fetchEmis data:", res.data);
+                console.log("isHOD:", isHOD, "isAdmin:", isAdmin, "user roles:", user?.roles);
                 setEmiData(res.data || []);
             }
         } catch (error) {
@@ -110,23 +137,26 @@ const EMIManagement = () => {
     };
 
     useEffect(() => {
-        if (user?.role !== 'employee') {
-            fetchEmployees();
+        fetchEmployees();
+        fetchLoggedInEmployee();
+        if (canManage) {
             fetchPayments();
         }
         fetchEmis();
-    }, [user]);
+    }, [user, canManage]);
 
     useEffect(() => {
-        if (showAddModal && user?.role === 'employee') {
+        if (showAddModal && isSelfRequest) {
+            const empCode = loggedInEmpData?.employee_code || loggedInEmp?.employee_code || '';
+            const empName = loggedInEmpData?.name_as_per_aadhar || loggedInEmp?.name_as_per_aadhar || user?.name || '';
             setNewEmiFormData(prev => ({
                 ...prev,
-                employeeId: user.employeeId || '',
-                empId: user.username || '',
-                name: user.name || ''
+                employeeId: user?.employeeId || '',
+                empId: empCode,
+                name: empName
             }));
         }
-    }, [showAddModal, user]);
+    }, [showAddModal, user, isSelfRequest, loggedInEmp, loggedInEmpData]);
 
     const handleApprove = async (emiId, nextStatus) => {
         try {
@@ -134,7 +164,7 @@ const EMIManagement = () => {
             if (res.success) {
                 toast.success(`EMI request updated to ${nextStatus}`);
                 fetchEmis();
-                if (user?.role !== 'employee') {
+                if (canManage) {
                     fetchPayments();
                 }
             }
@@ -218,15 +248,15 @@ const EMIManagement = () => {
                 emiAmount: Number(newEmiFormData.emiAmount),
                 interestRate: Number(newEmiFormData.interestRate || 0),
                 tenure: Number(newEmiFormData.tenure),
-                status: user?.role === 'employee' ? 'Pending HOD' : 'Active'
+                status: isSelfRequest ? (hasHODRole ? 'Pending HR' : 'Pending HOD') : 'Active'
             };
             const res = await api.post('/emis', payload);
             if (res.success) {
-                toast.success(user?.role === 'employee' ? "EMI request submitted for HOD approval!" : "EMI Loan Entry added successfully!");
+                toast.success(isSelfRequest ? "EMI request submitted for approval!" : "EMI Loan Entry added successfully!");
                 setShowAddModal(false);
                 setNewEmiFormData({ empId: '', name: '', employeeId: '', loanType: '', loanAmount: '', emiAmount: '', interestRate: '0.00', tenure: '' });
                 fetchEmis();
-                if (user?.role !== 'employee') {
+                if (canManage) {
                     fetchPayments();
                 }
             }
@@ -333,7 +363,7 @@ const EMIManagement = () => {
                     title={isPendingResignation ? "You cannot request EMI while resignation is pending" : "New EMI Request"}
                 >
                     <Plus size={18} className="mr-2" />
-                    {user?.role === 'employee' ? 'Request EMI' : 'New EMI Entry'}
+                    {isSelfRequest ? 'Request EMI' : 'New EMI Entry'}
                 </button>
             </div>
 
@@ -434,7 +464,7 @@ const EMIManagement = () => {
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right">
                                             <div className="flex justify-end gap-2 items-center">
-                                                {user?.role === 'hod' && item.status === 'Pending HOD' && (
+                                                {(hasHODRole || hasAdminRole) && item.status === 'Pending HOD' && (
                                                     <>
                                                         <button
                                                             onClick={() => handleApprove(item.id, 'Pending HR')}
@@ -450,7 +480,7 @@ const EMIManagement = () => {
                                                         </button>
                                                     </>
                                                 )}
-                                                {user?.role === 'hr' && item.status === 'Pending HR' && (
+                                                {(hasHRRole || hasAdminRole) && item.status === 'Pending HR' && (
                                                     <>
                                                         <button
                                                             onClick={() => handleApprove(item.id, 'Active')}
@@ -473,7 +503,7 @@ const EMIManagement = () => {
                                                 >
                                                     <Eye size={18} />
                                                 </button>
-                                                {user?.role !== 'employee' && item.status !== 'Pending HOD' && item.status !== 'Pending HR' && (
+                                                {(hasHRRole || hasAdminRole) && item.status !== 'Pending HOD' && item.status !== 'Pending HR' && (
                                                     <button
                                                         onClick={() => handleEditClick(item)}
                                                         className="text-amber-600 hover:text-amber-800 transition-colors p-2 rounded-lg hover:bg-amber-50"
@@ -561,7 +591,7 @@ const EMIManagement = () => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID *</label>
-                                    {user?.role === 'employee' ? (
+                                    {isSelfRequest ? (
                                         <input
                                             type="text"
                                             value={newEmiFormData.empId}
@@ -585,7 +615,7 @@ const EMIManagement = () => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Employee Name *</label>
-                                    {user?.role === 'employee' ? (
+                                    {isSelfRequest ? (
                                         <input
                                             type="text"
                                             value={newEmiFormData.name}

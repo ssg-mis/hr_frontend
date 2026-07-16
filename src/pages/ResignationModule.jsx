@@ -39,7 +39,7 @@ const stageBadge = (stage) => {
 };
 
 const ResignationModule = () => {
-  const { user } = useAuthStore();
+  const { user, isAdmin, isHR } = useAuthStore();
   const [activeTab, setActiveTab] = useState('active');
   const [searchTerm, setSearchTerm] = useState('');
   const [rows, setRows] = useState([]);
@@ -110,13 +110,13 @@ const ResignationModule = () => {
   }, [searchTerm]);
 
   useEffect(() => {
-    if (requesting && user?.role === 'employee') {
+    if (requesting && !isAdmin && !isHR) {
       setRequestForm((prev) => ({
         ...prev,
-        jobApplicationId: String(user.employeeId || ''),
+        jobApplicationId: String(user?.employeeId || ''),
       }));
     }
-  }, [requesting, user]);
+  }, [requesting, user, isAdmin, isHR]);
 
   const openRequest = () => {
     setRequestForm({ jobApplicationId: '', reason: REASONS[0], customReason: '' });
@@ -513,7 +513,7 @@ const ResignationModule = () => {
                         <p className="text-xs text-gray-500">Last working day: {fmtDate(r.lastWorkingDay)}</p>
                       )}
                     </td>
-                    {activeTab === 'active' && user?.role !== 'employee' && (
+                    {activeTab === 'active' && (isAdmin || isHR) && (
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         {r.stage === 'Requested' && (
                           <button onClick={() => openSchedule(r)} className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors">
@@ -558,11 +558,11 @@ const ResignationModule = () => {
               <div className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Employee *</label>
-                  {user?.role === 'employee' ? (
+                  {!isAdmin && !isHR ? (
                     <input
                       type="text"
                       readOnly
-                      value={user.name}
+                      value={user?.name || ''}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500 outline-none cursor-not-allowed"
                     />
                   ) : (
@@ -578,7 +578,7 @@ const ResignationModule = () => {
                       ))}
                     </select>
                   )}
-                  {user?.role !== 'employee' && eligibleEmployees.length === 0 && (
+                  {(isAdmin || isHR) && eligibleEmployees.length === 0 && (
                     <p className="text-xs text-gray-400 mt-1">No onboarded employees available (or all already have an active resignation).</p>
                   )}
                 </div>

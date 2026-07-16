@@ -6,8 +6,15 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import useAuthStore from '../store/authStore';
 
 const CanteenDashboard = () => {
-  const { user } = useAuthStore();
-  const [activeTab, setActiveTab] = useState((user?.role === "employee" || user?.role === "canteen_manager") ? "logs" : "analytics");
+  const user = useAuthStore((state) => state.user);
+  const isEmployeeOnly = useAuthStore((state) => state.isEmployeeOnly);
+  const isHOD = useAuthStore((state) => state.isHOD);
+  const isHR = useAuthStore((state) => state.isHR);
+  const isAdmin = useAuthStore((state) => state.isAdmin);
+  const isCanteenManager = useAuthStore((state) => state.isCanteenManager);
+  const isEmployeeOrManager = isEmployeeOnly || isCanteenManager;
+
+  const [activeTab, setActiveTab] = useState(isEmployeeOrManager ? "logs" : "analytics");
   const [loading, setLoading] = useState(false);
   const [meals, setMeals] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -77,12 +84,19 @@ const CanteenDashboard = () => {
   }, []);
 
   useEffect(() => {
+    if (user) {
+      setActiveTab(isEmployeeOrManager ? "logs" : "analytics");
+    }
+  }, [user, isEmployeeOrManager]);
+
+  useEffect(() => {
+    if (!user) return;
     if (activeTab === "logs") {
       loadLogs();
-    } else if ((activeTab === "deductions" || activeTab === "analytics") && user?.role !== "employee" && user?.role !== "canteen_manager") {
+    } else if ((activeTab === "deductions" || activeTab === "analytics") && (isAdmin || isHR)) {
       loadDeductions();
     }
-  }, [activeTab, selectedMonth, user]);
+  }, [activeTab, selectedMonth, user, isEmployeeOrManager, isAdmin, isHR]);
 
   // Filter logs locally by search
   const filteredLogs = logs.filter(log => {
@@ -247,7 +261,7 @@ const CanteenDashboard = () => {
               className="pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
-          {user?.role !== 'employee' && (
+          {(isAdmin || isHR || isCanteenManager) && (
             <a
               href="/canteen/scan"
               target="_blank"
@@ -261,7 +275,7 @@ const CanteenDashboard = () => {
       </div>
 
       {/* 2. Key Metrics Summary cards */}
-      {user?.role !== 'employee' && user?.role !== 'canteen_manager' && (
+      {!isEmployeeOrManager && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
             <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
@@ -307,7 +321,7 @@ const CanteenDashboard = () => {
             { id: "logs", label: "Scanned Logs History", icon: Clock },
             { id: "meals", label: "Meal Rates Config", icon: Settings }
           ].filter(tab => {
-            if (user?.role === 'employee' || user?.role === 'canteen_manager') {
+            if (isEmployeeOrManager) {
               return tab.id === 'logs';
             }
             return true;
