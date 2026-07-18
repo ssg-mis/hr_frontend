@@ -29,10 +29,10 @@ const MySalary = () => {
       const userData = localStorage.getItem("user");
       if (!userData) throw new Error("User details not found");
       const currentUser = JSON.parse(userData);
-      const userFullName = currentUser.Name || currentUser.name || '';
-      if (!userFullName) throw new Error("Full name not found");
+      const userEmpCode = currentUser.employeeCode || currentUser.username || '';
+      if (!userEmpCode) throw new Error("Employee code not found");
 
-      const result = await api.get(`/salaries/personal?employee=${encodeURIComponent(userFullName)}`);
+      const result = await api.get(`/salaries/personal?employeeCode=${encodeURIComponent(userEmpCode)}`);
       setSalaryData(result.data || []);
     } catch (err) {
       console.error(err);

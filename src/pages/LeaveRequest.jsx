@@ -33,10 +33,10 @@ const LeaveRequest = () => {
 
   const fetchEmployeeData = async () => {
     try {
-      const userName = user?.name || user?.Name;
-      if (!userName) return;
+      const userEmpCode = user?.employeeCode || user?.username;
+      if (!userEmpCode) return;
 
-      const result = await api.get(`/employees/active?name=${encodeURIComponent(userName)}`);
+      const result = await api.get(`/employees/active?employeeCode=${encodeURIComponent(userEmpCode)}`);
 
       if (result.success && result.data.length > 0) {
         const emp = result.data[0]; // Take the first matching employee

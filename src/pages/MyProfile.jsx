@@ -27,13 +27,13 @@ const MyProfile = () => {
       }
 
       const currentUser = JSON.parse(userData);
-      const userName =
-        currentUser.Name || currentUser.Username || currentUser.username;
-      if (!userName) {
-        throw new Error("User name is missing from localStorage");
+      const userEmpCode =
+        currentUser.employeeCode || currentUser.username || '';
+      if (!userEmpCode) {
+        throw new Error("Employee code is missing from localStorage");
       }
 
-      const result = await api.get(`/joining/profile?name=${encodeURIComponent(userName)}`);
+      const result = await api.get(`/joining/profile?employeeCode=${encodeURIComponent(userEmpCode)}`);
       const profile = result.data;
       if (!profile) {
         throw new Error("No profile data found for current user");

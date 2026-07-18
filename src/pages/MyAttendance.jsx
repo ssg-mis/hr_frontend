@@ -11,14 +11,13 @@ const MyAttendance = () => {
   const [attendanceData, setAttendanceData] = useState([]);
   const [userAttendanceData, setUserAttendanceData] = useState([]);
 
-  // Get full name from localStorage (corresponds to 'name' column in users table)
-  const getUserFullName = () => {
+  // Get employee code from localStorage
+  const getUserEmployeeCode = () => {
     try {
       const userData = localStorage.getItem('user');
       if (userData) {
         const parsedUser = JSON.parse(userData);
-        // Prioritize 'Name' as it maps to the database 'name' column
-        return parsedUser.Name || parsedUser.name || '';
+        return parsedUser.employeeCode || parsedUser.username || '';
       }
       return '';
     } catch (error) {
@@ -48,15 +47,15 @@ const MyAttendance = () => {
     setError(null);
 
     try {
-      const userFullName = getUserFullName();
-      if (!userFullName) {
-        throw new Error('User name not found. Please log in again.');
+      const userEmpCode = getUserEmployeeCode();
+      if (!userEmpCode) {
+        throw new Error('Employee code not found. Please log in again.');
       }
 
       // Fetch both attendance and leaves in parallel using the api client
       const [attResult, leaveResult] = await Promise.all([
-        api.get(`/attendance/personal?employee=${encodeURIComponent(userFullName)}&month=${selectedMonth + 1}&year=${selectedYear}`),
-        api.get(`/leaves/personal?employeeName=${encodeURIComponent(userFullName)}`)
+        api.get(`/attendance/personal?employeeCode=${encodeURIComponent(userEmpCode)}&month=${selectedMonth + 1}&year=${selectedYear}`),
+        api.get(`/leaves/personal?employeeCode=${encodeURIComponent(userEmpCode)}`)
       ]);
 
       console.log('Backend Response - Attendance:', attResult, 'Leaves:', leaveResult);
