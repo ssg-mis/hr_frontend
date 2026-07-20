@@ -37,6 +37,7 @@ import AttendanceDashboard from './pages/AttendanceDashboard';
 import ShiftManagement from './pages/ShiftManagement';
 import CanteenDashboard from './pages/CanteenDashboard';
 import CanteenScanner from './pages/CanteenScanner';
+import PFManagement from './pages/PFManagement';
 
 
 function App() {
@@ -73,11 +74,12 @@ function App() {
             <Route path="leave-request" element={<LeaveRequest />} />
             <Route path="company-calendar" element={<CompanyCalendar />} />
             <Route path="leave-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><LeaveManagement /></ProtectedRoute>} />
-            <Route path="report" element={<Report />} />
+            <Route path="report" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Report /></ProtectedRoute>} />
             {/* <Route path="misreport" element={<MisReport />} /> */}
             <Route path="emi-management" element={<EMIManagement />} />
             <Route path="settings" element={<ProtectedRoute allowedRoles={['Admin']}><Settings /></ProtectedRoute>} />
             <Route path="salary" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><SalaryManagement /></ProtectedRoute>} />
+            <Route path="pf-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><PFManagement /></ProtectedRoute>} />
             <Route path="attendance-logs" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceLogs /></ProtectedRoute>} />
             <Route path="attendance-dashboard" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceDashboard /></ProtectedRoute>} />
             <Route path="shift-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><ShiftManagement /></ProtectedRoute>} />

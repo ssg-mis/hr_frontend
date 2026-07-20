@@ -10,6 +10,9 @@ import {
   Edit3,
   Save,
   X,
+  ShieldCheck,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -17,7 +20,39 @@ const MyProfile = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({});
   const [profileData, setProfileData] = useState(null);
+  const [pfData, setPfData] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const fetchPfData = async () => {
+    try {
+      const res = await api.get("/pf/my-pf");
+      const data = res?.data || res;
+      if (data?.employeeId || data?.pfId || res?.success) {
+        setPfData(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch PF details:", err);
+    }
+  };
+
+  const handleToggleOptIn = async (newVal) => {
+    if (!pfData) return;
+    try {
+      const res = await api.put(`/pf/${pfData.employeeId}`, {
+        isOptedIn: newVal,
+      });
+      if (res?.success || res?.data) {
+        toast.success(newVal ? "Enrolled in Provident Fund (PF)" : "Opted out of Provident Fund (PF)");
+        setPfData((prev) => (prev ? { ...prev, isOptedIn: newVal, calculatedDeduction: newVal ? 1800 : 0 } : prev));
+        fetchPfData();
+      } else {
+        toast.error(res?.message || "Failed to update PF preference");
+      }
+    } catch (err) {
+      console.error("PF toggle error:", err);
+      toast.error(err.message || "Failed to update PF preference");
+    }
+  };
 
   const fetchJoiningData = async () => {
     try {
@@ -51,6 +86,7 @@ const MyProfile = () => {
 
   useEffect(() => {
     fetchJoiningData();
+    fetchPfData();
   }, []);
 
   const handleInputChange = (e) => {
@@ -286,6 +322,82 @@ const MyProfile = () => {
           </div>
         </div>
       </div>
+
+      {/* Provident Fund (PF) Information & Opt-In Acceptance Section */}
+      {pfData && (
+        <div className="bg-white rounded-xl shadow-lg border p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-4 gap-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <ShieldCheck size={20} className="text-indigo-600" />
+                <span>Provident Fund (PF) Statutory Details</span>
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Base Salary: <strong>₹{pfData.baseSalary?.toLocaleString()}</strong> • Monthly PF Deduction:{" "}
+                <strong className="text-indigo-600">₹{pfData.calculatedDeduction?.toLocaleString()}</strong>
+              </p>
+            </div>
+
+            {pfData.isMandatory ? (
+              <span className="inline-flex items-center px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 self-start sm:self-auto">
+                Mandatory Statutory PF (12% of Base)
+              </span>
+            ) : pfData.isOptedIn === true ? (
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 self-start sm:self-auto">
+                <CheckCircle size={14} />
+                <span>Opted In (₹1,800/mo)</span>
+              </span>
+            ) : pfData.isOptedIn === false ? (
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 self-start sm:self-auto">
+                <XCircle size={14} />
+                <span>Opted Out (₹0/mo)</span>
+              </span>
+            ) : (
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 bg-amber-50/80 border border-amber-200 p-3 rounded-2xl self-start sm:self-auto">
+                <div>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 uppercase tracking-wider">
+                    Pending Selection
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleOptIn(true)}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <CheckCircle size={14} />
+                    <span>Yes (Opt In)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleOptIn(false)}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-rose-600 text-white hover:bg-rose-700 transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <XCircle size={14} />
+                    <span>No (Opt Out)</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-150">
+              <span className="text-gray-400 font-semibold uppercase">UAN Number</span>
+              <p className="font-mono text-sm font-bold text-gray-800 mt-0.5">
+                {pfData.uanNumber ? pfData.uanNumber : <span className="text-gray-400 italic">Not set by HR</span>}
+              </p>
+            </div>
+
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-150">
+              <span className="text-gray-400 font-semibold uppercase">PF Member Number</span>
+              <p className="font-mono text-sm font-bold text-gray-800 mt-0.5">
+                {pfData.pfNumber ? pfData.pfNumber : <span className="text-gray-400 italic">Not set by HR</span>}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

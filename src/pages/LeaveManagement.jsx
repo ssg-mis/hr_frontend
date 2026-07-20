@@ -5,7 +5,9 @@ import useAuthStore from '../store/authStore';
 import { api } from '../lib/api';
 
 const LeaveManagement = () => {
-  const { user, isAdmin, isHR } = useAuthStore();
+  const { user, isAdmin, isHR, isHOD } = useAuthStore();
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const userIsHOD = isHOD || userRoles.some(r => r.toLowerCase() === 'hod');
   const [searchTerm, setSearchTerm] = useState('');
   const [pendingLeaves, setPendingLeaves] = useState([]);
   const [approvedLeaves, setApprovedLeaves] = useState([]);
@@ -243,7 +245,7 @@ const LeaveManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason || !formData.hodName) {
+    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason || (!userIsHOD && !formData.hodName)) {
       toast.error('Please fill all required fields');
       return;
     }
@@ -257,7 +259,7 @@ const LeaveManagement = () => {
         endDate: formData.toDate,
         remark: formData.reason,
         leaveCode: formData.leaveCode,
-        hodName: formData.hodName,
+        hodName: userIsHOD ? 'N/A' : (formData.hodName || 'N/A'),
         departmentId: formData.departmentId
       });
 
@@ -860,16 +862,18 @@ const LeaveManagement = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name</label>
-                <input
-                  type="text"
-                  name="hodName"
-                  value={formData.hodName || '—'}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
-                  readOnly
-                />
-              </div>
+              {!userIsHOD && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name</label>
+                  <input
+                    type="text"
+                    name="hodName"
+                    value={formData.hodName || '—'}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
+                    readOnly
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Leave Type *</label>

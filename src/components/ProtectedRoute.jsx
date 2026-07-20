@@ -11,6 +11,9 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const user = useAuthStore((state) => state.user);
 
+  const isEmployeeOnly = useAuthStore((state) => state.isEmployeeOnly);
+  const isCanteenManager = useAuthStore((state) => state.isCanteenManager);
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
@@ -21,6 +24,12 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
       userRoles.some((ur) => ur.toLowerCase() === r.toLowerCase())
     );
     if (!hasAccess) {
+      if (isEmployeeOnly) {
+        return <Navigate to="/my-profile" replace />;
+      }
+      if (isCanteenManager) {
+        return <Navigate to="/canteen" replace />;
+      }
       return <Navigate to="/" replace />;
     }
   }

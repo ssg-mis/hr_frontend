@@ -242,12 +242,6 @@ const Dashboard = () => {
   const isEmployeeOnly = useAuthStore((state) => state.isEmployeeOnly);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (isEmployeeOnly) {
-      navigate('/my-profile', { replace: true });
-    }
-  }, [isEmployeeOnly, navigate]);
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -260,6 +254,11 @@ const Dashboard = () => {
   const [upcomingEvents, setUpcomingEvents] = useState([]);
 
   useEffect(() => {
+    if (isEmployeeOnly) {
+      navigate('/my-profile', { replace: true });
+      return;
+    }
+
     const load = async () => {
       setLoading(true);
       setError(null);
@@ -289,6 +288,10 @@ const Dashboard = () => {
         setRecentActivity(activityRes.data || []);
         setUpcomingEvents(eventsRes.data || []);
       } catch (err) {
+        if (err?.status === 403 || err?.status === 401) {
+          navigate('/my-profile', { replace: true });
+          return;
+        }
         console.error('Dashboard fetch error:', err);
         setError(err.message || 'Failed to load dashboard data');
       } finally {
@@ -296,7 +299,11 @@ const Dashboard = () => {
       }
     };
     load();
-  }, []);
+  }, [isEmployeeOnly, navigate]);
+
+  if (isEmployeeOnly) {
+    return null;
+  }
 
   /* greeting */
   const greeting = useMemo(() => {

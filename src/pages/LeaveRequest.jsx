@@ -6,7 +6,9 @@ import toast from 'react-hot-toast';
 import { api } from '../lib/api';
 
 const LeaveRequest = () => {
-  const { user } = useAuthStore();
+  const { user, isHOD } = useAuthStore();
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const userIsHOD = isHOD || userRoles.some(r => r.toLowerCase() === 'hod');
   const employeeId = user?.employeeId || user?.employee_id || user?.id || localStorage.getItem("employeeId");
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
@@ -33,33 +35,35 @@ const LeaveRequest = () => {
 
   const fetchEmployeeData = async () => {
     try {
-      const userEmpCode = user?.employeeCode || user?.username;
-      if (!userEmpCode) return;
+      const result = await api.get('/employees/active');
 
-      const result = await api.get(`/employees/active?employeeCode=${encodeURIComponent(userEmpCode)}`);
+      if (result.success && result.data && result.data.length > 0) {
+        const currentEmpId = user?.employeeId || user?.employee_id || user?.id;
+        const currentEmpCode = user?.employeeCode;
 
-      if (result.success && result.data.length > 0) {
-        const emp = result.data[0]; // Take the first matching employee
+        const emp = result.data.find(e =>
+          (currentEmpId && Number(e.employee_id) === Number(currentEmpId)) ||
+          (currentEmpCode && e.employee_code === currentEmpCode)
+        ) || result.data[0];
+
         if (emp) {
           setFormData(prev => ({
             ...prev,
-            employeeId: emp.employee_id,
-            department: emp.department?.department_name || '',
-            departmentId: emp.department_id || '',
-            hodName: emp.department?.hod_name || ''
+            employeeName: emp.name_as_per_aadhar || user?.name || user?.Name || prev.employeeName,
+            employeeId: emp.employee_id || prev.employeeId,
+            department: emp.department?.department_name || prev.department,
+            departmentId: emp.department_id || prev.departmentId,
+            hodName: emp.department?.hod_name || prev.hodName || (hods.length > 0 ? hods[0].name : '')
           }));
-          // Fetch leave data using the resolved employee_id
           fetchLeaveData(emp.employee_id);
-        } else {
-          // If no employee found, still try to fetch with what we have
-          fetchLeaveData(employeeId);
+          return;
         }
-      } else {
-        // If API fails, try with existing ID
-        fetchLeaveData(employeeId);
       }
+      fetchLeaveData(employeeId);
     } catch (error) {
-      console.error('Error fetching employee data:', error);
+      if (error?.status !== 403 && error?.status !== 401) {
+        console.error('Error fetching employee data:', error);
+      }
       fetchLeaveData(employeeId);
     }
   };
@@ -254,7 +258,7 @@ const LeaveRequest = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason || !formData.hodName) {
+    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason || (!userIsHOD && !formData.hodName)) {
       toast.error('Please fill all required fields');
       return;
     }
@@ -268,7 +272,7 @@ const LeaveRequest = () => {
         endDate: formData.toDate,
         remark: formData.reason,
         leaveCode: formData.leaveCode,
-        hodName: formData.hodName,
+        hodName: userIsHOD ? 'N/A' : (formData.hodName || 'N/A'),
         departmentId: formData.departmentId
       });
 
@@ -537,16 +541,18 @@ const LeaveRequest = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name</label>
-                <input
-                  type="text"
-                  name="hodName"
-                  value={formData.hodName || '—'}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
-                  readOnly
-                />
-              </div>
+              {!userIsHOD && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name</label>
+                  <input
+                    type="text"
+                    name="hodName"
+                    value={formData.hodName || '—'}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
+                    readOnly
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Leave Type *</label>

@@ -31,6 +31,7 @@ import {
   Mail,
   IndianRupee,
   Utensils,
+  ShieldCheck,
 } from "lucide-react";
 
 import useAuthStore from "../store/authStore";
@@ -98,6 +99,7 @@ const Sidebar = ({ onClose }) => {
     { path: "/leave-policy", icon: BookPlus, label: "Leave Record" },
     { path: "/emi-management", icon: CreditCard, label: "EMI Management" },
     { path: "/salary", icon: IndianRupee, label: "Salary" },
+    { path: "/pf-management", icon: ShieldCheck, label: "PF Management" },
     { path: "/canteen", icon: Utensils, label: "Canteen Management" },
     { path: "/settings", icon: Settings, label: "Settings" },
   ];
@@ -206,6 +208,7 @@ const Sidebar = ({ onClose }) => {
     if (isHR) addItem({ path: '/leave-policy', icon: BookPlus, label: 'Leave Record' });
     if (isHR || isHOD) addItem({ path: '/emi-management', icon: CreditCard, label: 'EMI Management' });
     if (isHR || isHOD) addItem({ path: '/salary', icon: IndianRupee, label: 'Salary' });
+    if (isHR || isHOD) addItem({ path: '/pf-management', icon: ShieldCheck, label: 'PF Management' });
     if (isHR) addItem({ path: '/canteen', icon: Utensils, label: 'Canteen Management' });
 
     if (menuItems.length > 0) return menuItems;
@@ -223,6 +226,7 @@ const Sidebar = ({ onClose }) => {
       { path: '/leave-policy', icon: BookPlus, label: 'Leave Record' },
       { path: '/emi-management', icon: CreditCard, label: 'My EMI' },
       { path: '/my-salary', icon: IndianRupee, label: 'My Salary' },
+      { path: '/pf-management', icon: ShieldCheck, label: 'PF Management' },
       { path: '/canteen', icon: Utensils, label: 'Canteen Info' },
       { path: '/resignation-module', icon: UserMinus, label: 'Resignation' },
     ];
