@@ -1,12 +1,19 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Search, Check, X, Briefcase, Calendar, MapPin, IndianRupee, Users, Award, Layers, Info, Link } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Check, X, Briefcase, Calendar, MapPin, IndianRupee, Users, Award, Layers, Info, Link, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { vacancyApi } from './vacancy.api';
 import { departmentApi } from '../department/department.api';
 import { designationApi } from '../designation/designation.api';
+import useAuthStore from '../../store/authStore';
 
 const VacancyApprovalPage = () => {
-  const [activeTab, setActiveTab] = useState('Pending'); // 'Pending' | 'Approved' | 'Rejected'
+  const user = useAuthStore((state) => state.user);
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const isAdmin = userRoles.some((r) => r.toLowerCase() === 'admin');
+  const isHR = userRoles.some((r) => r.toLowerCase() === 'hr');
+  const isHOD = userRoles.some((r) => r.toLowerCase() === 'hod');
+
+  const [activeTab, setActiveTab] = useState('Pending'); // 'Pending' (HOD) | 'Pending HR' | 'Approved' | 'Rejected'
   const [vacancyData, setVacancyData] = useState([]);
   const [tableLoading, setTableLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -253,8 +260,8 @@ const VacancyApprovalPage = () => {
                 </div>
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 block mb-1">Approval Stage</span>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white text-gray-700 border border-gray-200">
-                    {reviewingVacancy.approvalStatus}
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${reviewingVacancy.approvalStatus === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' : reviewingVacancy.approvalStatus === 'Rejected' ? 'bg-red-50 text-red-700 border-red-200' : reviewingVacancy.approvalStatus === 'Pending HR' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                    {reviewingVacancy.approvalStatus === 'Pending' ? 'HOD Pending' : reviewingVacancy.approvalStatus}
                   </span>
                 </div>
               </div>
@@ -364,41 +371,82 @@ const VacancyApprovalPage = () => {
 
             </div>
 
-            {/* Footer buttons (Only active if Status is Pending) */}
+            {/* Footer buttons */}
             <div className="flex justify-end space-x-3 p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
-              {(reviewingVacancy.approvalStatus === 'Pending' || reviewingVacancy.approvalStatus === 'Pending HR') && !showRejectForm ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setShowRejectForm(true)}
-                    className="px-5 py-2.5 border border-red-200 text-red-600 bg-white rounded-xl font-semibold hover:bg-red-50 transition-colors flex items-center"
-                    disabled={submitting}
-                  >
-                    <X size={16} className="mr-2" />
-                    Reject Request
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApprove(reviewingVacancy.vacancyNumber, reviewingVacancy.approvalStatus)}
-                    className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-colors shadow-md shadow-emerald-100 flex items-center"
-                    disabled={submitting}
-                  >
-                    <Check size={16} className="mr-2" />
-                    <span>
-                      {reviewingVacancy.approvalStatus === 'Pending' ? 'Approve HOD' : 'Approve HR'}
-                    </span>
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setReviewingVacancy(null)}
-                  className="px-5 py-2.5 border border-gray-250 rounded-xl text-gray-700 font-semibold hover:bg-gray-100 transition-colors"
-                  disabled={submitting}
-                >
-                  Close
-                </button>
-              )}
+              {(() => {
+                const isPendingHOD = reviewingVacancy.approvalStatus === 'Pending';
+                const isPendingHR = reviewingVacancy.approvalStatus === 'Pending HR';
+
+                const canActHOD = isPendingHOD && (isAdmin || (isHOD && String(user?.departmentId) === String(reviewingVacancy.departmentId)));
+                const canActHR = isPendingHR && (isAdmin || isHR);
+
+                const canTakeAction = (canActHOD || canActHR) && !showRejectForm;
+
+                if (canTakeAction) {
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setShowRejectForm(true)}
+                        className="px-5 py-2.5 border border-red-200 text-red-600 bg-white rounded-xl font-semibold hover:bg-red-50 transition-colors flex items-center"
+                        disabled={submitting}
+                      >
+                        <X size={16} className="mr-2" />
+                        Reject Request
+                      </button>
+
+                      {isPendingHOD ? (
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(reviewingVacancy.vacancyNumber, reviewingVacancy.approvalStatus)}
+                          className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-colors shadow-md shadow-emerald-100 flex items-center"
+                          disabled={submitting}
+                        >
+                          <Check size={16} className="mr-2" />
+                          <span>Approve HOD</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(reviewingVacancy.vacancyNumber, reviewingVacancy.approvalStatus)}
+                          className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-colors shadow-md shadow-emerald-100 flex items-center"
+                          disabled={submitting}
+                        >
+                          <Check size={16} className="mr-2" />
+                          <span>Approve HR</span>
+                        </button>
+                      )}
+                    </>
+                  );
+                }
+
+                if (!showRejectForm) {
+                  return (
+                    <div className="flex items-center space-x-3">
+                      {isPendingHOD && (
+                        <span className="px-4 py-2.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl font-semibold text-xs flex items-center">
+                          <Clock size={14} className="mr-1.5" /> Awaiting HOD Approval
+                        </span>
+                      )}
+                      {isPendingHR && (
+                        <span className="px-4 py-2.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-xl font-semibold text-xs flex items-center">
+                          <Clock size={14} className="mr-1.5" /> Awaiting HR Approval
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setReviewingVacancy(null)}
+                        className="px-5 py-2.5 border border-gray-250 rounded-xl text-gray-700 font-semibold hover:bg-gray-100 transition-colors"
+                        disabled={submitting}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  );
+                }
+
+                return null;
+              })()}
             </div>
           </div>
         </div>
@@ -473,6 +521,7 @@ const VacancyApprovalPage = () => {
                   <th className="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Openings</th>
                   <th className="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Target Closing</th>
                   <th className="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Priority</th>
+                  <th className="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Approval Status</th>
                   {activeTab === 'Rejected' && (
                     <th className="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Rejection Reason</th>
                   )}
@@ -482,7 +531,7 @@ const VacancyApprovalPage = () => {
               <tbody className="divide-y divide-gray-100 bg-white">
                 {tableLoading ? (
                   <tr>
-                    <td colSpan={activeTab === 'Rejected' ? '8' : '7'} className="px-6 py-16 text-center text-gray-400">
+                    <td colSpan={activeTab === 'Rejected' ? '9' : '8'} className="px-6 py-16 text-center text-gray-400">
                       <div className="flex flex-col items-center justify-center space-y-2">
                         <span className="w-8 h-8 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin" />
                         <span className="text-sm font-semibold">Loading data...</span>
@@ -491,7 +540,7 @@ const VacancyApprovalPage = () => {
                   </tr>
                 ) : filteredData.length === 0 ? (
                   <tr>
-                    <td colSpan={activeTab === 'Rejected' ? '8' : '7'} className="px-6 py-16 text-center text-gray-400 text-sm">
+                    <td colSpan={activeTab === 'Rejected' ? '9' : '8'} className="px-6 py-16 text-center text-gray-400 text-sm">
                       No {activeTab.toLowerCase()} vacancies found.
                     </td>
                   </tr>
@@ -529,18 +578,32 @@ const VacancyApprovalPage = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium">
                         {item.priority}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${item.approvalStatus === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' : item.approvalStatus === 'Rejected' ? 'bg-red-50 text-red-700 border-red-200' : item.approvalStatus === 'Pending HR' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}
+                        >
+                          {item.approvalStatus === 'Pending' ? 'HOD Pending' : item.approvalStatus}
+                        </span>
+                      </td>
                       {activeTab === 'Rejected' && (
                         <td className="px-6 py-4 text-sm text-red-600 font-medium max-w-[200px] truncate" title={item.rejectionRemark}>
                           {item.rejectionRemark || '—'}
                         </td>
                       )}
                       <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium sticky right-0 bg-white border-l border-gray-200">
-                        <button
-                          onClick={() => openReviewModal(item)}
-                          className="inline-flex items-center justify-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition-all duration-150 shadow-sm shadow-blue-100"
-                        >
-                          {(activeTab === 'Pending' || activeTab === 'Pending HR') ? 'Review & Decision' : 'View'}
-                        </button>
+                        {(() => {
+                          const canActHOD = item.approvalStatus === 'Pending' && (isAdmin || (isHOD && String(user?.departmentId) === String(item.departmentId)));
+                          const canActHR = item.approvalStatus === 'Pending HR' && (isAdmin || isHR);
+                          const canAct = canActHOD || canActHR;
+                          return (
+                            <button
+                              onClick={() => openReviewModal(item)}
+                              className="inline-flex items-center justify-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition-all duration-150 shadow-sm shadow-blue-100"
+                            >
+                              {canAct ? 'Review & Decision' : 'View'}
+                            </button>
+                          );
+                        })()}
                       </td>
                     </tr>
                   ))

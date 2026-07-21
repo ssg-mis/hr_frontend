@@ -165,6 +165,7 @@ const Sidebar = ({ onClose }) => {
         toggle: () => setIsRecruitmentOpen(!isRecruitmentOpen),
         items: [
           { path: '/vacancy', label: 'Vacancy' },
+          { path: '/vacancy-approval', label: 'Vacancy Approval' },
           { path: '/job-application', label: 'Job Application' },
           { path: '/call-tracker', label: 'Call Tracker' },
           { path: '/interview-management', label: 'Interview Management' },

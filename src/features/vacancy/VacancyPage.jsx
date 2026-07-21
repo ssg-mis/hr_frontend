@@ -725,9 +725,9 @@ const VacancyPage = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         <span
                           title={item.approvalStatus === 'Rejected' ? `Rejection Reason: ${item.rejectionRemark}` : ''}
-                          className={`px-2 py-0.5 rounded-full text-xs font-semibold ${item.approvalStatus === 'Approved' ? 'bg-green-50 text-green-700 border border-green-155' : item.approvalStatus === 'Rejected' ? 'bg-red-50 text-red-700 border border-red-155' : 'bg-gray-100 text-gray-600 border border-gray-200'}`}
+                          className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${item.approvalStatus === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' : item.approvalStatus === 'Rejected' ? 'bg-red-50 text-red-700 border-red-200' : item.approvalStatus === 'Pending HR' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}
                         >
-                          {item.approvalStatus}
+                          {item.approvalStatus === 'Pending' ? 'HOD Pending' : item.approvalStatus}
                         </span>
                         {item.approvalStatus === 'Rejected' && item.rejectionRemark && (
                           <p className="text-[10px] text-red-500 font-medium mt-0.5 max-w-[120px] truncate" title={item.rejectionRemark}>
@@ -1261,8 +1261,8 @@ const VacancyPage = () => {
                 </div>
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
                   <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 block mb-1">Approval</span>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${viewingVacancy.approvalStatus === 'Approved' ? 'bg-green-50 text-green-700 border-green-155' : viewingVacancy.approvalStatus === 'Rejected' ? 'bg-red-50 text-red-700 border-red-155' : 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
-                    {viewingVacancy.approvalStatus}
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${viewingVacancy.approvalStatus === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' : viewingVacancy.approvalStatus === 'Rejected' ? 'bg-red-50 text-red-700 border-red-200' : viewingVacancy.approvalStatus === 'Pending HR' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                    {viewingVacancy.approvalStatus === 'Pending' ? 'HOD Pending' : viewingVacancy.approvalStatus}
                   </span>
                 </div>
               </div>
