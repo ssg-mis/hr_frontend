@@ -41,8 +41,16 @@ const AttendanceDashboard = () => {
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
   };
 
+  const getEndOfMonth = () => {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(lastDay)}`;
+  };
+
   const [startDate, setStartDate] = useState(getStartOfMonth());
-  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0]);
+  const [endDate, setEndDate] = useState(getEndOfMonth());
+
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -95,11 +103,20 @@ const AttendanceDashboard = () => {
     }
   };
 
+  const safeJson = async (res) => {
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { success: false, message: `Server error (${res.status})` };
+    }
+  };
+
   const fetchAttendanceData = async (start, end) => {
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/attendance/sessions?startDate=${start}&endDate=${end}`);
-      const result = await res.json();
+      const result = await safeJson(res);
       if (result.success) {
         setAttendanceRecords(result.data || []);
       } else {
@@ -125,7 +142,7 @@ const AttendanceDashboard = () => {
       setLoading(true);
       try {
         const res = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
-        const result = await res.json();
+        const result = await safeJson(res);
         if (isCurrent && result.success) {
           setAttendanceRecords(result.data || []);
         }
@@ -147,14 +164,14 @@ const AttendanceDashboard = () => {
           },
           body: JSON.stringify({ startDate, endDate }),
         });
-        const result = await res.json();
+        const result = await safeJson(res);
         if (isCurrent) {
           if (result.success) {
             toast.success(`Biometric sync complete! Processed ${result.data?.totalProcessed || 0} punches.`);
             
             // Refetch updated data from DB
             const refetchRes = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
-            const refetchResult = await refetchRes.json();
+            const refetchResult = await safeJson(refetchRes);
             if (isCurrent && refetchResult.success) {
               setAttendanceRecords(refetchResult.data || []);
             }
@@ -180,19 +197,22 @@ const AttendanceDashboard = () => {
 
   // Fetch timeline logs for a specific employee session
   const handleOpenTimeline = async (record) => {
-    if (!record.sessionId) {
-      toast.error("No active check-in session for this employee today");
-      return;
-    }
+    const dateStr = record.workDate ? new Date(record.workDate).toISOString().split('T')[0] : '';
     setTimelineLoading(true);
     try {
-      const res = await fetch(`${API_URL}/attendance/sessions/today?employeeId=${record.employeeId}`);
+      const res = await fetch(`${API_URL}/attendance/sessions/today?employeeId=${record.employeeId}&date=${dateStr}`);
       const result = await res.json();
       if (result.success && result.data) {
         setSelectedSessionTimeline({
           employeeName: record.employeeName,
           employeeCode: record.employeeCode,
           workDate: record.workDate,
+          shiftName: result.data.shiftName || record.shiftName,
+          startTime: result.data.startTime || record.startTime,
+          endTime: result.data.endTime || record.endTime,
+          firstCheckIn: result.data.firstCheckIn || record.punchIn,
+          lastCheckOut: result.data.lastCheckOut || record.punchOut,
+          workingMinutes: result.data.workingMinutes || record.workMinutes,
           events: result.data.events || [],
         });
       } else {
@@ -286,8 +306,18 @@ const AttendanceDashboard = () => {
   };
 
   const formatTime = (dateStr) => {
-    return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (!dateStr) return "—";
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "—";
+    let hours = d.getUTCHours();
+    const minutes = String(d.getUTCMinutes()).padStart(2, "0");
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const hrsStr = String(hours).padStart(2, "0");
+    return `${hrsStr}:${minutes} ${ampm.toLowerCase()}`;
   };
+
 
   // Group daily logs by employee for range summaries
   const employeesSummaryMap = {};
@@ -312,26 +342,52 @@ const AttendanceDashboard = () => {
     const emp = employeesSummaryMap[empId];
     emp.days.push(record);
 
-    if (record.status === "Present") {
-      if (record.workMinutes >= 480) {
-        emp.presentDays++;
-        emp.payableDays += 1.0;
-      } else {
+    let calcMinutes = record.workMinutes || 0;
+    if (!calcMinutes && record.punchIn && record.punchOut) {
+      const inTime = new Date(record.punchIn).getTime();
+      const outTime = new Date(record.punchOut).getTime();
+      if (!isNaN(inTime) && !isNaN(outTime) && outTime > inTime) {
+        let diff = (outTime - inTime) / (1000 * 60);
+        if (diff < 0) diff += 24 * 60;
+        calcMinutes = Math.round(diff);
+      }
+    }
+
+    const sStart = record.startTime || "08:45";
+    const sEnd = record.endTime || "17:35";
+    const [sH = 8, sM = 45] = sStart.split(":").map(Number);
+    const [eH = 17, eM = 35] = sEnd.split(":").map(Number);
+    const shiftStartMins = sH * 60 + sM;
+    const shiftEndMins = eH * 60 + eM;
+    const isNightShift = shiftEndMins < shiftStartMins;
+    const expShiftMins = isNightShift ? (1440 - shiftStartMins) + shiftEndMins : shiftEndMins - shiftStartMins;
+    const halfShiftThreshold = Math.floor(expShiftMins / 2);
+
+    const statusLower = (record.status || "").toLowerCase();
+    const isPresent = statusLower === "present" || Boolean(record.punchIn);
+    const isLeave = statusLower === "leave";
+    const isWeekoff = statusLower === "weekoff";
+    const isUpcoming = statusLower === "upcoming";
+
+    if (isPresent) {
+      emp.presentDays++;
+      emp.workingMinutes += calcMinutes;
+      emp.overtimeMinutes += Math.max(0, calcMinutes - expShiftMins);
+      if (calcMinutes > 0 && calcMinutes < halfShiftThreshold) {
         emp.halfDays++;
         emp.payableDays += 0.5;
+      } else {
+        emp.payableDays += 1.0;
       }
-      emp.workingMinutes += record.workMinutes;
-      emp.overtimeMinutes += Math.max(0, record.workMinutes - 480);
-    } else if (record.status === "leave") {
+    } else if (isLeave) {
       emp.leaveDays++;
+      emp.payableDays += 1.0;
+    } else if (isUpcoming) {
+      // Future date - do not count as absent or present
+    } else if (isWeekoff) {
       emp.payableDays += 1.0;
     } else {
       emp.absentDays++;
-      const d = new Date(record.workDate);
-      const isWeekoff = (d.getDay() === 0 || d.getDay() === 6);
-      if (isWeekoff) {
-        emp.payableDays += 1.0;
-      }
     }
   });
 
@@ -343,9 +399,16 @@ const AttendanceDashboard = () => {
   );
 
   const totalEmployees = employeesSummaryList.length;
-  const presentCount = attendanceRecords.filter((r) => r.status === "Present").length;
-  const absentCount = attendanceRecords.filter((r) => r.status === "Absent").length;
-  const leaveCount = attendanceRecords.filter((r) => r.status === "leave").length;
+  const presentCount = attendanceRecords.filter(
+    (r) => (r.status || "").toLowerCase() === "present" || Boolean(r.punchIn)
+  ).length;
+  const leaveCount = attendanceRecords.filter(
+    (r) => (r.status || "").toLowerCase() === "leave" && !r.punchIn
+  ).length;
+  const absentCount = attendanceRecords.filter(
+    (r) => (r.status || "").toLowerCase() === "absent" && !r.punchIn
+  ).length;
+
 
   return (
     <div className="space-y-6">
@@ -487,6 +550,7 @@ const AttendanceDashboard = () => {
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Emp Code</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Name</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Shift</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center">Present</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center">Half Day</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center">Absent</th>
@@ -497,27 +561,39 @@ const AttendanceDashboard = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-150">
-                {filteredSummaryList.map((emp) => (
-                  <tr key={emp.employeeId} className="hover:bg-gray-50/50 transition duration-150">
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">{emp.employeeCode}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700 font-medium">{emp.employeeName}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">{emp.presentDays}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">{emp.halfDays}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold text-red-600">{emp.absentDays}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold text-blue-600">{emp.leaveDays}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">{(emp.overtimeMinutes / 60).toFixed(1)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700 text-center font-bold text-indigo-600 bg-indigo-50/30">{emp.payableDays.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => setSelectedEmployeeLogs(emp)}
-                        className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-900 font-semibold cursor-pointer border border-indigo-200 rounded-lg px-3 py-1.5 bg-indigo-50/50 hover:bg-indigo-50"
-                      >
-                        <Clock size={14} />
-                        <span>Logs</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {filteredSummaryList.map((emp) => {
+                  const firstDay = emp.days[0];
+                  const sName = firstDay?.shiftName || 'general';
+                  const sStart = firstDay?.startTime || '08:45';
+                  const sEnd = firstDay?.endTime || '17:35';
+
+                  return (
+                    <tr key={emp.employeeId} className="hover:bg-gray-50/50 transition duration-150">
+                      <td className="px-6 py-4 text-sm font-semibold text-gray-900">{emp.employeeCode}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 font-medium">{emp.employeeName}</td>
+                      <td className="px-6 py-4 text-xs font-medium">
+                        <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold capitalize bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          {sName === 'general' ? 'General' : `Shift ${sName.toUpperCase()}`} ({sStart}-{sEnd})
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">{emp.presentDays}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">{emp.halfDays}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold text-red-600">{emp.absentDays}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold text-blue-600">{emp.leaveDays}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">{(emp.overtimeMinutes / 60).toFixed(1)}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 text-center font-bold text-indigo-600 bg-indigo-50/30">{emp.payableDays.toFixed(1)}</td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          onClick={() => setSelectedEmployeeLogs(emp)}
+                          className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-900 font-semibold cursor-pointer border border-indigo-200 rounded-lg px-3 py-1.5 bg-indigo-50/50 hover:bg-indigo-50"
+                        >
+                          <Clock size={14} />
+                          <span>Logs</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -550,6 +626,7 @@ const AttendanceDashboard = () => {
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500">Date</th>
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500">Shift</th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500">Status</th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500">Check In</th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500">Check Out</th>
@@ -558,45 +635,77 @@ const AttendanceDashboard = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-150">
-                  {selectedEmployeeLogs.days.map((day) => (
-                    <tr key={day.workDate} className="hover:bg-gray-50/50 transition duration-150">
-                      <td className="px-4 py-3 text-sm font-semibold text-gray-900">{fmtDate(day.workDate)}</td>
-                      <td className="px-4 py-3">
-                        {day.status === "Present" && (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            Present
-                          </span>
-                        )}
-                        {day.status === "Absent" && (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                            Absent
-                          </span>
-                        )}
-                        {day.status === "leave" && (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            On Leave
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 font-medium">{formatPunchTime(day.punchIn)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600 font-medium">{formatPunchTime(day.punchOut)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600 font-semibold">{day.status === "Present" ? formatMinutes(day.workMinutes) : "—"}</td>
-                      <td className="px-4 py-3 text-right">
-                        {day.isRecorded ? (
-                          <button
-                            onClick={() => handleOpenTimeline(day)}
-                            className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-900 font-semibold cursor-pointer border border-indigo-100 rounded bg-indigo-50/50 px-2 py-1"
-                          >
-                            <Clock size={12} />
-                            <span>Timeline</span>
-                          </button>
-                        ) : (
-                          <span className="text-xs text-gray-400 italic">No Punches</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {[...selectedEmployeeLogs.days]
+                    .sort((a, b) => new Date(a.workDate) - new Date(b.workDate))
+                    .map((day) => {
+                      let mins = day.workMinutes || 0;
+                      if (!mins && day.punchIn && day.punchOut) {
+                        const inTime = new Date(day.punchIn).getTime();
+                        const outTime = new Date(day.punchOut).getTime();
+                        if (!isNaN(inTime) && !isNaN(outTime) && outTime > inTime) {
+                          let diff = (outTime - inTime) / (1000 * 60);
+                          if (diff < 0) diff += 24 * 60;
+                          mins = Math.round(diff);
+                        }
+                      }
+                      const isPresent = (day.status || "").toLowerCase() === "present" || Boolean(day.punchIn);
+                      const isLeave = (day.status || "").toLowerCase() === "leave" && !day.punchIn;
+                      const isWeekoff = (day.status || "").toLowerCase() === "weekoff";
+                      const isUpcoming = (day.status || "").toLowerCase() === "upcoming";
+
+                      return (
+                        <tr key={day.workDate} className="hover:bg-gray-50/50 transition duration-150">
+                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">{fmtDate(day.workDate)}</td>
+                          <td className="px-4 py-3 text-xs font-medium">
+                            <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold capitalize bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              {day.shiftName === 'general' ? 'General' : `Shift ${day.shiftName?.toUpperCase()}`} ({day.startTime}-{day.endTime})
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {isPresent ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                Present
+                              </span>
+                            ) : isLeave ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                On Leave
+                              </span>
+                            ) : isWeekoff ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                Weekoff
+                              </span>
+                            ) : isUpcoming ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                                Upcoming
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                Absent
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3 text-sm text-gray-600 font-medium">{formatPunchTime(day.punchIn)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 font-medium">{formatPunchTime(day.punchOut)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 font-semibold">{isPresent ? formatMinutes(mins) : "—"}</td>
+                          <td className="px-4 py-3 text-right">
+                            {day.isRecorded ? (
+                              <button
+                                onClick={() => handleOpenTimeline(day)}
+                                className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-900 font-semibold cursor-pointer border border-indigo-100 rounded bg-indigo-50/50 px-2 py-1"
+                              >
+                                <Clock size={12} />
+                                <span>Timeline</span>
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-400 italic">No Punches</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
+
               </table>
             </div>
 
@@ -616,12 +725,12 @@ const AttendanceDashboard = () => {
       {/* Session Timeline Detail Modal */}
       {selectedSessionTimeline && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-2xl max-w-md w-full mx-4 shadow-xl border border-gray-200 overflow-hidden transform transition-all duration-300">
+          <div className="bg-white rounded-2xl max-w-lg w-full mx-4 shadow-xl border border-gray-200 overflow-hidden transform transition-all duration-300">
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
               <div>
-                <h3 className="font-bold text-gray-950">{selectedSessionTimeline.employeeName}</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Code: {selectedSessionTimeline.employeeCode}</p>
+                <h3 className="font-bold text-gray-950 text-base">{selectedSessionTimeline.employeeName}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Code: {selectedSessionTimeline.employeeCode} • Date: {fmtDate(selectedSessionTimeline.workDate)}</p>
               </div>
               <button
                 onClick={() => setSelectedSessionTimeline(null)}
@@ -632,40 +741,68 @@ const AttendanceDashboard = () => {
             </div>
 
             {/* Modal Content */}
-            <div className="p-6">
-              <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Timeline Events</h4>
-              
-              {selectedSessionTimeline.events.length === 0 ? (
-                <p className="text-sm text-gray-400 italic text-center">No logs found.</p>
-              ) : (
-                <div className="relative pl-6 border-l border-gray-200 space-y-6">
-                  {selectedSessionTimeline.events.map((ev, index) => (
-                    <div key={ev.id} className="relative">
-                      {/* Timeline dot */}
-                      <span className={`absolute -left-[31px] top-1 h-4 w-4 rounded-full border-2 border-white flex items-center justify-center shadow-sm
-                        ${ev.eventType === "CHECK_IN" ? "bg-green-500" : ""}
-                        ${ev.eventType === "CHECK_OUT" ? "bg-red-500" : ""}
-                        ${ev.eventType === "BREAK_START" ? "bg-yellow-500" : ""}
-                        ${ev.eventType === "BREAK_END" ? "bg-indigo-500" : ""}
-                      `}></span>
-                      
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="font-semibold text-gray-900 text-sm">
-                            {ev.eventType === "CHECK_IN" && "Checked In"}
-                            {ev.eventType === "CHECK_OUT" && "Checked Out"}
-                            {ev.eventType === "BREAK_START" && "Started Break"}
-                            {ev.eventType === "BREAK_END" && "Resumed Work"}
-                          </h4>
-                        </div>
-                        <span className="text-xs font-semibold text-gray-500">
-                          {formatTime(ev.createdAt)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+            <div className="p-6 space-y-5">
+              {/* Shift & Daily Table Punches Summary Banner */}
+              <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 rounded-xl p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-3 border-b border-indigo-100 pb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">Assigned Shift</span>
+                  <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold capitalize bg-indigo-600 text-white shadow-sm">
+                    {selectedSessionTimeline.shiftName === 'general' ? 'General Shift' : `Shift ${selectedSessionTimeline.shiftName?.toUpperCase()}`} ({selectedSessionTimeline.startTime} - {selectedSessionTimeline.endTime})
+                  </span>
                 </div>
-              )}
+
+                <div className="grid grid-cols-3 gap-2 text-center pt-1">
+                  <div className="bg-white rounded-lg p-2 border border-indigo-100 shadow-2xs">
+                    <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Official Check-In</span>
+                    <span className="text-xs font-bold text-gray-800 mt-0.5 block">
+                      {formatPunchTime(selectedSessionTimeline.firstCheckIn)}
+                    </span>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 border border-indigo-100 shadow-2xs">
+                    <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">Official Check-Out</span>
+                    <span className="text-xs font-bold text-gray-800 mt-0.5 block">
+                      {formatPunchTime(selectedSessionTimeline.lastCheckOut)}
+                    </span>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 border border-indigo-100 shadow-2xs">
+                    <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Duration</span>
+                    <span className="text-xs font-bold text-gray-800 mt-0.5 block">
+                      {selectedSessionTimeline.firstCheckIn ? formatMinutes(selectedSessionTimeline.workingMinutes) : "—"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Timeline Events Section */}
+              <div>
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Raw Biometric Punches Timeline</h4>
+                
+                {selectedSessionTimeline.events.length === 0 ? (
+                  <p className="text-sm text-gray-400 italic text-center py-4 bg-gray-50 rounded-xl border border-dashed border-gray-200">No raw punches recorded for this shift window.</p>
+                ) : (
+                  <div className="relative pl-6 border-l-2 border-indigo-150 space-y-4 pt-1">
+                    {selectedSessionTimeline.events.map((ev) => (
+                      <div key={ev.id} className="relative group">
+                        {/* Timeline dot */}
+                        <span className={`absolute -left-[31px] top-1 h-3.5 w-3.5 rounded-full border-2 border-white flex items-center justify-center shadow-sm
+                          ${ev.eventType === "CHECK_IN" ? "bg-emerald-500 ring-4 ring-emerald-50" : "bg-rose-500 ring-4 ring-rose-50"}
+                        `}></span>
+                        
+                        <div className="flex justify-between items-center bg-gray-50 hover:bg-indigo-50/50 p-2.5 rounded-xl border border-gray-150 transition duration-150">
+                          <div>
+                            <h5 className="font-bold text-gray-900 text-xs">
+                              {ev.eventType === "CHECK_IN" ? "Checked In (Punch)" : "Checked Out (Punch)"}
+                            </h5>
+                          </div>
+                          <span className="text-xs font-semibold text-gray-600 bg-white px-2 py-0.5 rounded-md border border-gray-200 shadow-2xs">
+                            {formatTime(ev.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Modal Footer */}

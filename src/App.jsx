@@ -38,7 +38,9 @@ import ShiftManagement from './pages/ShiftManagement';
 import CanteenDashboard from './pages/CanteenDashboard';
 import CanteenScanner from './pages/CanteenScanner';
 import PFManagement from './pages/PFManagement';
-
+import ESICManagement from './pages/ESICManagement';
+import GatePassManagement from './pages/GatePassManagement';
+import CompensationManagement from './pages/CompensationManagement';
 
 function App() {
   return (
@@ -80,6 +82,15 @@ function App() {
             <Route path="settings" element={<ProtectedRoute allowedRoles={['Admin']}><Settings /></ProtectedRoute>} />
             <Route path="salary" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><SalaryManagement /></ProtectedRoute>} />
             <Route path="pf-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><PFManagement /></ProtectedRoute>} />
+            <Route path="esic-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><ESICManagement /></ProtectedRoute>} />
+            <Route path="gate-pass" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><GatePassManagement /></ProtectedRoute>} />
+            <Route path="compensation" element={<CompensationManagement />} />
+            <Route path="attendance-logs" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceLogs /></ProtectedRoute>} />
+            <Route path="attendance-dashboard" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceDashboard /></ProtectedRoute>} />
+            <Route path="shift-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><ShiftManagement /></ProtectedRoute>} />
+            <Route path="canteen" element={<CanteenDashboard />} />
+
+
             <Route path="attendance-logs" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceLogs /></ProtectedRoute>} />
             <Route path="attendance-dashboard" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceDashboard /></ProtectedRoute>} />
             <Route path="shift-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><ShiftManagement /></ProtectedRoute>} />

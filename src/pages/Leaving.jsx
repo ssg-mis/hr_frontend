@@ -19,7 +19,9 @@ const stageBadge = (stage) => {
 };
 
 const Leaving = () => {
-  const { user } = useAuthStore();
+  const { user, isHOD, isHR, isAdmin } = useAuthStore();
+  const isPureHOD = isHOD && !isHR && !isAdmin;
+
   const [activeTab, setActiveTab] = useState('pending');
   const [searchTerm, setSearchTerm] = useState('');
   const [rows, setRows] = useState([]);
@@ -89,17 +91,38 @@ const Leaving = () => {
     }));
   };
 
-  const promptHOD = () => {
+  const promptHOD = async () => {
     if (!checklist.handoverEmployeeId) {
       toast.error('Please select an employee first');
       return;
     }
-    setChecklist((prev) => ({
-      ...prev,
-      handoverStatus: 'Pending HOD',
-      handover: false,
-    }));
-    toast.success('HOD handover status set to Pending HOD. Click Save Draft to submit.');
+    if (!selectedRow) return;
+
+    setSubmitting(true);
+    try {
+      const handoverEmp = allEmployees.find(emp => String(emp.id) === String(checklist.handoverEmployeeId));
+      const updatedChecklist = {
+        ...checklist,
+        handoverStatus: 'Pending HOD',
+        handover: false,
+        handoverEmployeeName: handoverEmp ? handoverEmp.candidateName : (checklist.handoverEmployeeId === 'none' ? 'No task handover needed' : ''),
+        handoverEmployeeCode: handoverEmp ? handoverEmp.employeeCode : '',
+      };
+
+      await resignationApi.update(selectedRow.id, {
+        stage: 'Clearance',
+        clearanceChecklist: updatedChecklist,
+        clearanceRemark: clearanceRemark || null,
+      });
+
+      setChecklist(updatedChecklist);
+      toast.success('Task handover request sent to HOD!');
+      loadData();
+    } catch (err) {
+      toast.error(err.message || 'Failed to request HOD confirmation');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleConfirmHandover = async (row, isDone) => {
@@ -123,8 +146,8 @@ const Leaving = () => {
   };
 
   const saveClearance = async (isComplete = false) => {
-    if (checklist.handoverEmployeeId && checklist.handoverEmployeeId !== 'none' && checklist.handoverStatus === 'Not Prompted') {
-      toast.error('Please prompt HOD for task handover approval');
+    if (isComplete && checklist.handoverStatus !== 'Approved') {
+      toast.error('Cannot complete clearance until Task Handover is approved by HOD');
       return;
     }
 
@@ -156,14 +179,23 @@ const Leaving = () => {
     }
   };
 
-  // Filter rows based on tab
-  // Pending Clearance: Left, Clearance
-  // Cleared History: Settlement, Relieved
-  const visibleRows = rows.filter((r) =>
-    activeTab === 'pending'
-      ? ['Left', 'Clearance'].includes(r.stage)
-      : ['Settlement', 'Relieved'].includes(r.stage)
-  );
+  // Filter rows:
+  // Pending Clearance: Left, Clearance or handoverStatus !== 'Approved'
+  // Cleared History: Settlement, Relieved AND handoverStatus === 'Approved'
+  const visibleRows = rows.filter((r) => {
+    const cl = r.clearanceChecklist || {};
+    const isHandoverApproved = cl.handoverStatus === 'Approved' || cl.handover === true;
+
+    if (isPureHOD || user?.role === 'hod') {
+      return ['Left', 'Clearance'].includes(r.stage) || !isHandoverApproved;
+    }
+
+    if (activeTab === 'pending') {
+      return ['Left', 'Clearance'].includes(r.stage) || !isHandoverApproved;
+    } else {
+      return ['Settlement', 'Relieved'].includes(r.stage) && isHandoverApproved;
+    }
+  });
 
   const leftEmployeeIds = new Set(
     rows
@@ -193,8 +225,14 @@ const Leaving = () => {
               <ClipboardCheck className="h-6 w-6" />
             </div>
             <div>
-              <h2 className="text-lg font-bold tracking-tight text-gray-900">Exit Clearance</h2>
-              <p className="mt-0.5 text-sm text-gray-500">Asset clearance, Department Clearance and Task Handover management</p>
+              <h2 className="text-lg font-bold tracking-tight text-gray-900">
+                {isPureHOD || user?.role === 'hod' ? 'Task Handover Approvals' : 'Exit Clearance'}
+              </h2>
+              <p className="mt-0.5 text-sm text-gray-500">
+                {isPureHOD || user?.role === 'hod'
+                  ? 'Confirm task handover completion for department employees'
+                  : 'Asset clearance, Department Clearance and Task Handover management'}
+              </p>
             </div>
           </div>
         </div>
@@ -229,19 +267,31 @@ const Leaving = () => {
               onClick={() => setActiveTab('pending')}
             >
               <UserX size={16} className="inline mr-2" />
-              Pending Clearance ({rows.filter((r) => ['Left', 'Clearance'].includes(r.stage)).length})
+              {isPureHOD || user?.role === 'hod' ? 'Task Handover Approvals' : 'Pending Clearance'} ({
+                rows.filter((r) => {
+                  const cl = r.clearanceChecklist || {};
+                  return ['Left', 'Clearance'].includes(r.stage) || (cl.handoverStatus !== 'Approved' && !cl.handover);
+                }).length
+              })
             </button>
-            <button
-              className={`py-4 px-6 font-medium text-sm border-b-2 transition-colors ${
-                activeTab === 'cleared'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-              onClick={() => setActiveTab('cleared')}
-            >
-              <CheckCircle size={16} className="inline mr-2" />
-              Cleared ({rows.filter((r) => ['Settlement', 'Relieved'].includes(r.stage)).length})
-            </button>
+            {!isPureHOD && user?.role !== 'hod' && (
+              <button
+                className={`py-4 px-6 font-medium text-sm border-b-2 transition-colors ${
+                  activeTab === 'cleared'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+                onClick={() => setActiveTab('cleared')}
+              >
+                <CheckCircle size={16} className="inline mr-2" />
+                Cleared ({
+                  rows.filter((r) => {
+                    const cl = r.clearanceChecklist || {};
+                    return ['Settlement', 'Relieved'].includes(r.stage) && (cl.handoverStatus === 'Approved' || cl.handover);
+                  }).length
+                })
+              </button>
+            )}
           </nav>
         </div>
 
@@ -252,7 +302,7 @@ const Leaving = () => {
                 <th className="px-6 py-3 text-left">Employee</th>
                 <th className="px-6 py-3 text-left">Designation</th>
                 <th className="px-6 py-3 text-left">Last Working Day</th>
-                {user?.role === 'hod' ? (
+                {isPureHOD || user?.role === 'hod' ? (
                   <>
                     <th className="px-6 py-3 text-left">Handover Assigned To</th>
                     <th className="px-6 py-3 text-left">Handover Status</th>
@@ -298,7 +348,7 @@ const Leaving = () => {
                         {user?.role !== 'hod' && <div className="text-xs text-gray-400">{row.vacancyNumber}</div>}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-gray-600">{fmtDate(row.lastWorkingDay)}</td>
-                      {user?.role === 'hod' ? (
+                      {isPureHOD || user?.role === 'hod' ? (
                         <>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                             {checklist.handoverEmployeeName || '—'}

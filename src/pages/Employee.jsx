@@ -57,6 +57,7 @@ const DetailModal = ({ employee, onClose }) => {
   const fields = [
     { label: 'Employee Code', value: employee.employeeCode, icon: Hash },
     { label: 'Full Name', value: employee.candidateName, icon: Users },
+
     { label: 'Department', value: employee.departmentName, icon: Building2 },
     { label: 'Designation', value: employee.applyingForPost, icon: Briefcase },
     { label: 'Phone', value: employee.candidatePhone, icon: Phone },

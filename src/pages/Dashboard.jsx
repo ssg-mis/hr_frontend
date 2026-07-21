@@ -429,6 +429,13 @@ const Dashboard = () => {
           bgColor="bg-amber-50"
         />
         <StatCard
+          icon={CalendarDays}
+          label="On Leave Today"
+          value={stats.onLeaveToday ?? 0}
+          color="text-rose-600"
+          bgColor="bg-rose-50"
+        />
+        <StatCard
           icon={CreditCard}
           label="Active EMIs"
           value={stats.activeEMIs}

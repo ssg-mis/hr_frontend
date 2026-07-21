@@ -1,9 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { Clock, Plus, Search, Calendar, User, X } from "lucide-react";
+import { Clock, Plus, Search, Calendar, User, X, CheckCircle2 } from "lucide-react";
 import toast from "react-hot-toast";
+
+const MASTER_SHIFTS = [
+  { id: "a", name: "a", startTime: "05:45", endTime: "14:15", label: "Shift A", timing: "5:45 AM - 2:15 PM", color: "bg-purple-100 text-purple-800 border-purple-200" },
+  { id: "general", name: "general", startTime: "08:45", endTime: "17:35", label: "General", timing: "8:45 AM - 5:35 PM", color: "bg-blue-100 text-blue-800 border-blue-200" },
+  { id: "b", name: "b", startTime: "13:45", endTime: "22:15", label: "Shift B", timing: "1:45 PM - 10:15 PM", color: "bg-teal-100 text-teal-800 border-teal-200" },
+  { id: "c", name: "c", startTime: "21:45", endTime: "06:15", label: "Shift C", timing: "9:45 PM - 6:15 AM", color: "bg-amber-100 text-amber-800 border-amber-200" },
+];
 
 const ShiftManagement = () => {
   const [shifts, setShifts] = useState([]);
+  const [masterShifts, setMasterShifts] = useState(MASTER_SHIFTS);
   const [employeesList, setEmployeesList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -13,12 +21,34 @@ const ShiftManagement = () => {
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     employeeId: "",
-    shiftId: "A",
+    shiftId: "general",
     effectiveFrom: new Date().toISOString().split("T")[0],
     effectiveTo: "",
   });
 
   const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
+
+  const fetchMasterShifts = async () => {
+    try {
+      const res = await fetch(`${API_URL}/attendance/shifts/master`);
+      const result = await res.json();
+      if (result.success && result.data && result.data.length > 0) {
+        // Merge timings info
+        const updated = result.data.map(ms => {
+          const matched = MASTER_SHIFTS.find(m => m.name.toLowerCase() === ms.name.toLowerCase());
+          return {
+            ...ms,
+            label: matched?.label || `Shift ${ms.name.toUpperCase()}`,
+            timing: matched?.timing || `${ms.startTime} - ${ms.endTime}`,
+            color: matched?.color || "bg-indigo-100 text-indigo-800 border-indigo-200",
+          };
+        });
+        setMasterShifts(updated);
+      }
+    } catch (err) {
+      console.error("Error fetching master shifts:", err);
+    }
+  };
 
   const fetchShifts = async () => {
     try {
@@ -47,7 +77,7 @@ const ShiftManagement = () => {
 
   const loadAll = async () => {
     setLoading(true);
-    await Promise.all([fetchShifts(), fetchEmployees()]);
+    await Promise.all([fetchMasterShifts(), fetchShifts(), fetchEmployees()]);
     setLoading(false);
   };
 
@@ -88,10 +118,9 @@ const ShiftManagement = () => {
       if (result.success) {
         toast.success(result.message || "Shift assigned successfully");
         setShowModal(false);
-        // Reset form
         setForm({
           employeeId: "",
-          shiftId: "A",
+          shiftId: "general",
           effectiveFrom: new Date().toISOString().split("T")[0],
           effectiveTo: "",
         });
@@ -113,9 +142,45 @@ const ShiftManagement = () => {
   };
 
   const filteredShifts = shifts.filter((s) =>
-    s.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.employeeCode.toLowerCase().includes(searchTerm.toLowerCase())
+    (s.employeeName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (s.employeeCode || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (s.shiftName || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const getShiftBadge = (shiftName, startTime, endTime) => {
+    const sName = (shiftName || "").toLowerCase();
+    let badgeStyle = "bg-gray-100 text-gray-800 border-gray-200";
+    let label = `Shift ${shiftName}`;
+    let time = startTime && endTime ? `${startTime} - ${endTime}` : "";
+
+    if (sName === "a") {
+      badgeStyle = "bg-purple-100 text-purple-800 border-purple-200";
+      label = "Shift A";
+      time = time || "05:45 - 14:15";
+    } else if (sName === "general") {
+      badgeStyle = "bg-blue-100 text-blue-800 border-blue-200";
+      label = "General";
+      time = time || "08:45 - 17:35";
+    } else if (sName === "b") {
+      badgeStyle = "bg-teal-100 text-teal-800 border-teal-200";
+      label = "Shift B";
+      time = time || "13:45 - 22:15";
+    } else if (sName === "c") {
+      badgeStyle = "bg-amber-100 text-amber-800 border-amber-200";
+      label = "Shift C";
+      time = time || "21:45 - 06:15";
+    }
+
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${badgeStyle}`}>
+          <Clock size={12} />
+          {label}
+        </span>
+        {time && <span className="text-[11px] text-gray-500 font-medium pl-1">{time}</span>}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -123,7 +188,7 @@ const ShiftManagement = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-gray-200 pb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Shift Management</h1>
-          <p className="text-sm text-gray-500">View and assign work shifts (A, B, C, D) to employees</p>
+          <p className="text-sm text-gray-500">Configure shifts (a, general, b, c) and assign work schedules to employees</p>
         </div>
         <div className="mt-4 md:mt-0">
           <button
@@ -136,6 +201,37 @@ const ShiftManagement = () => {
         </div>
       </div>
 
+      {/* Master Shifts Overview Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {masterShifts.map((mShift) => (
+          <div
+            key={mShift.name}
+            className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md transition duration-200"
+          >
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${mShift.color || "bg-indigo-50 text-indigo-700 border-indigo-200"}`}>
+                  Shift {mShift.name.toUpperCase()}
+                </span>
+                <Clock size={16} className="text-gray-400" />
+              </div>
+              <h3 className="font-bold text-gray-900 capitalize text-base">
+                {mShift.name === "general" ? "General Shift" : `Shift ${mShift.name.toUpperCase()}`}
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                {mShift.startTime} to {mShift.endTime}
+              </p>
+            </div>
+            <div className="mt-4 pt-3 border-t border-gray-100 flex justify-between items-center">
+              <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Timing</span>
+              <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
+                {mShift.timing || `${mShift.startTime} - ${mShift.endTime}`}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Main Panel */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
         {/* Search */}
@@ -145,7 +241,7 @@ const ShiftManagement = () => {
               <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
               <input
                 type="text"
-                placeholder="Search by Employee Code or Name..."
+                placeholder="Search by Employee Code, Name, or Shift..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none"
@@ -181,15 +277,7 @@ const ShiftManagement = () => {
                     <td className="px-6 py-4 text-sm font-semibold text-gray-900">{shift.employeeCode}</td>
                     <td className="px-6 py-4 text-sm text-gray-700 font-medium">{shift.employeeName}</td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold
-                        ${shift.shiftId === "A" ? "bg-purple-100 text-purple-800" : ""}
-                        ${shift.shiftId === "B" ? "bg-teal-100 text-teal-800" : ""}
-                        ${shift.shiftId === "C" ? "bg-amber-100 text-amber-800" : ""}
-                        ${shift.shiftId === "D" ? "bg-rose-100 text-rose-800" : ""}
-                      `}>
-                        <Clock size={12} />
-                        Shift {shift.shiftId}
-                      </span>
+                      {getShiftBadge(shift.shiftName || shift.shiftId, shift.startTime, shift.endTime)}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600 font-medium">
                       {formatDate(shift.effectiveFrom)}
@@ -240,8 +328,8 @@ const ShiftManagement = () => {
                     >
                       <option value="">Select Employee</option>
                       {employeesList.map((emp) => (
-                        <option key={emp.employee_id} value={emp.employee_id}>
-                          {emp.name_as_per_aadhar} ({emp.employee_code})
+                        <option key={emp.employee_id || emp.id} value={emp.employee_id || emp.id}>
+                          {emp.candidateName || emp.name_as_per_aadhar || emp.name} ({emp.employeeCode || emp.employee_code})
                         </option>
                       ))}
                     </select>
@@ -258,10 +346,11 @@ const ShiftManagement = () => {
                     required
                     className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none bg-white"
                   >
-                    <option value="A">Shift A</option>
-                    <option value="B">Shift B</option>
-                    <option value="C">Shift C</option>
-                    <option value="D">Shift D</option>
+                    {masterShifts.map((m) => (
+                      <option key={m.id} value={m.name}>
+                        {m.name === "general" ? "General Shift (08:45 - 17:35)" : `Shift ${m.name.toUpperCase()} (${m.startTime} - ${m.endTime})`}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

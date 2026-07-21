@@ -130,7 +130,7 @@ const PFManagement = () => {
 
   // Filtering
   const filteredRecords = records.filter((r) => {
-    if (!r) return false;
+    if (!r || r.status === "Relieved") return false;
     const nameStr = (r.name || "").toLowerCase();
     const codeStr = (r.employeeCode || "").toLowerCase();
     const uanStr = String(r.uanNumber || "");
@@ -149,7 +149,9 @@ const PFManagement = () => {
   const mandatoryCount = records.filter((r) => r.isMandatory).length;
   const optedInVoluntaryCount = records.filter((r) => !r.isMandatory && r.isOptedIn === true).length;
   const pendingCount = records.filter((r) => !r.isMandatory && (r.isOptedIn === null || r.isOptedIn === undefined)).length;
-  const totalMonthlyPfDeduction = records.reduce((acc, r) => acc + (r.calculatedDeduction || 0), 0);
+  const totalEmployeePfDeduction = records.reduce((acc, r) => acc + (r.employeeDeduction || r.calculatedDeduction || 0), 0);
+  const totalCompanyPfContribution = records.reduce((acc, r) => acc + (r.companyContribution || r.calculatedDeduction || 0), 0);
+  const totalCombinedPf = totalEmployeePfDeduction + totalCompanyPfContribution;
 
   if (isEmployeeOnly) {
     return (
@@ -293,22 +295,10 @@ const PFManagement = () => {
         <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Mandatory PF ($\le$ ₹15k)</p>
-              <h3 className="text-2xl font-extrabold text-emerald-600 mt-1">{mandatoryCount}</h3>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Employee PF Total (12%)</p>
+              <h3 className="text-2xl font-extrabold text-indigo-600 mt-1">{fmtINR(totalEmployeePfDeduction)}</h3>
             </div>
-            <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600">
-              <CheckCircle size={20} />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Voluntary Opted-In (&gt; ₹15k)</p>
-              <h3 className="text-2xl font-extrabold text-blue-600 mt-1">{optedInVoluntaryCount}</h3>
-            </div>
-            <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600">
+            <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600">
               <ShieldCheck size={20} />
             </div>
           </div>
@@ -317,8 +307,20 @@ const PFManagement = () => {
         <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Monthly PF Total</p>
-              <h3 className="text-2xl font-extrabold text-purple-600 mt-1">{fmtINR(totalMonthlyPfDeduction)}</h3>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Company PF Total (12%)</p>
+              <h3 className="text-2xl font-extrabold text-teal-600 mt-1">{fmtINR(totalCompanyPfContribution)}</h3>
+            </div>
+            <div className="p-2.5 rounded-xl bg-teal-50 text-teal-600">
+              <Building size={20} />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Total Monthly PF (24%)</p>
+              <h3 className="text-2xl font-extrabold text-purple-600 mt-1">{fmtINR(totalCombinedPf)}</h3>
             </div>
             <div className="p-2.5 rounded-xl bg-purple-50 text-purple-600">
               <DollarSign size={20} />
@@ -385,27 +387,31 @@ const PFManagement = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                  <th className="px-6 py-4">Emp Code</th>
-                  <th className="px-6 py-4">Name</th>
-                  <th className="px-6 py-4">Department</th>
-                  <th className="px-6 py-4 text-right">Base Salary</th>
-                  <th className="px-6 py-4 text-center">PF Status</th>
-                  <th className="px-6 py-4">UAN Number</th>
-                  <th className="px-6 py-4">PF Number</th>
-                  <th className="px-6 py-4 text-right">Monthly PF</th>
-                  {canEdit && <th className="px-6 py-4 text-right">Actions</th>}
+                  <th className="px-5 py-4">Emp Code</th>
+                  <th className="px-5 py-4">Name</th>
+                  <th className="px-5 py-4">Department</th>
+                  <th className="px-5 py-4 text-right">Base Salary</th>
+                  <th className="px-5 py-4 text-center">PF Status</th>
+                  <th className="px-5 py-4">UAN Number</th>
+                  <th className="px-5 py-4 text-right">Employee PF (12%)</th>
+                  <th className="px-5 py-4 text-right">Company PF (12%)</th>
+                  <th className="px-5 py-4 text-right">Total PF (24%)</th>
+                  {canEdit && <th className="px-5 py-4 text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-150 text-sm">
                 {filteredRecords.map((rec) => {
-                  const isOptedOut = !rec.isMandatory && !rec.isOptedIn;
+                  const empDeduction = rec.employeeDeduction ?? rec.calculatedDeduction ?? 0;
+                  const compContribution = rec.companyContribution ?? empDeduction;
+                  const totalPfVal = rec.totalPf ?? (empDeduction + compContribution);
+
                   return (
                     <tr key={rec.employeeId} className="hover:bg-gray-50/50 transition">
-                      <td className="px-6 py-4 font-semibold text-gray-900">{rec.employeeCode}</td>
-                      <td className="px-6 py-4 font-medium text-gray-800">{rec.name}</td>
-                      <td className="px-6 py-4 text-gray-600">{rec.department}</td>
-                      <td className="px-6 py-4 text-right font-medium text-gray-900">{fmtINR(rec.baseSalary)}</td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-5 py-4 font-semibold text-gray-900">{rec.employeeCode}</td>
+                      <td className="px-5 py-4 font-medium text-gray-800">{rec.name}</td>
+                      <td className="px-5 py-4 text-gray-600">{rec.department}</td>
+                      <td className="px-5 py-4 text-right font-medium text-gray-900">{fmtINR(rec.baseSalary)}</td>
+                      <td className="px-5 py-4 text-center">
                         {rec.isMandatory ? (
                           <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                             Mandatory (12%)
@@ -424,17 +430,20 @@ const PFManagement = () => {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 font-mono text-xs text-gray-700">
+                      <td className="px-5 py-4 font-mono text-xs text-gray-700">
                         {rec.uanNumber ? rec.uanNumber : <span className="text-gray-300 italic">Not set</span>}
                       </td>
-                      <td className="px-6 py-4 font-mono text-xs text-gray-700">
-                        {rec.pfNumber ? rec.pfNumber : <span className="text-gray-300 italic">Not set</span>}
+                      <td className="px-5 py-4 text-right font-medium text-indigo-600">
+                        {fmtINR(empDeduction)}
                       </td>
-                      <td className="px-6 py-4 text-right font-bold text-indigo-600">
-                        {fmtINR(rec.calculatedDeduction)}
+                      <td className="px-5 py-4 text-right font-medium text-teal-600">
+                        {fmtINR(compContribution)}
+                      </td>
+                      <td className="px-5 py-4 text-right font-bold text-purple-700 bg-purple-50/30">
+                        {fmtINR(totalPfVal)}
                       </td>
                       {canEdit && (
-                        <td className="px-6 py-4 text-right">
+                        <td className="px-5 py-4 text-right">
                           <button
                             onClick={() => handleOpenEditModal(rec)}
                             className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-900 font-semibold border border-indigo-200 rounded-lg px-3 py-1.5 bg-indigo-50/50 hover:bg-indigo-50 transition cursor-pointer"
