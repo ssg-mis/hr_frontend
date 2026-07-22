@@ -24,11 +24,25 @@ const statusBadge = (status) => {
   );
 };
 
-const Avatar = ({ name, size = 'md' }) => {
+const Avatar = ({ name, src, size = 'md' }) => {
   const initials = (name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
   const colors = ['bg-violet-500', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-cyan-500', 'bg-indigo-500'];
   const color = colors[(name || '').charCodeAt(0) % colors.length];
   const sz = size === 'lg' ? 'w-14 h-14 text-lg' : 'w-9 h-9 text-sm';
+  
+  const [imgErr, setImgErr] = useState(false);
+
+  if (src && !imgErr) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        onError={() => setImgErr(true)}
+        className={`${sz} rounded-full object-cover border border-white/20 shrink-0`}
+      />
+    );
+  }
+
   return (
     <div className={`${sz} rounded-full ${color} flex items-center justify-center text-white font-bold shrink-0`}>
       {initials}
@@ -83,7 +97,7 @@ const DetailModal = ({ employee, onClose }) => {
         {/* Modal header */}
         <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Avatar name={employee.candidateName} size="lg" />
+            <Avatar name={employee.candidateName} src={employee.candidatePhoto} size="lg" />
             <div>
               <h3 className="text-white font-bold text-base leading-tight">{employee.candidateName}</h3>
               <p className="text-indigo-200 text-xs mt-0.5">{employee.employeeCode}</p>
@@ -114,6 +128,36 @@ const DetailModal = ({ employee, onClose }) => {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Uploaded Documents */}
+          <div className="mt-6 pt-6 border-t border-gray-150">
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Employee Documents</h4>
+            <div className="grid grid-cols-1 gap-2">
+              {[
+                { label: 'Passport Photo', value: employee.candidatePhoto },
+                { label: 'Resume', value: employee.candidateResume },
+                { label: 'Experience Letter', value: employee.experienceLetter },
+                { label: 'Salary Slip', value: employee.salarySlip },
+                { label: 'Relieving Letter', value: employee.relievingLetter },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 bg-gray-50 text-xs">
+                  <span className="font-semibold text-gray-600">{label}</span>
+                  {value ? (
+                    <a
+                      href={value}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-indigo-600 hover:text-indigo-855 font-bold hover:underline"
+                    >
+                      View Document
+                    </a>
+                  ) : (
+                    <span className="text-gray-400">Not provided</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Canteen QR Code for HR access */}
@@ -407,7 +451,7 @@ const Employee = () => {
                   <tr key={emp.id} className="hover:bg-indigo-50/30 transition-colors group">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
-                        <Avatar name={emp.candidateName} />
+                        <Avatar name={emp.candidateName} src={emp.candidatePhoto} />
                         <span className="font-semibold text-gray-900">{emp.candidateName}</span>
                       </div>
                     </td>

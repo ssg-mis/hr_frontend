@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, FileCheck, CheckCircle, X, Send, ThumbsUp, ThumbsDown, Mail } from 'lucide-react';
+import { Search, FileCheck, CheckCircle, X, Send, ThumbsUp, ThumbsDown, Mail, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { jobApplicationApi } from '../features/jobApplication/jobApplication.api';
+import { encodeAppNumber } from '../lib/token';
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
 
@@ -34,6 +35,13 @@ const OfferManagement = () => {
 
   const [offering, setOffering] = useState(null); // candidate row being offered/responded to
   const [form, setForm] = useState({ offeredDesignation: '', offeredSalary: '', offeredBaseSalary: '', offeredAllowanceSalary: '', offeredJoiningDate: '', offerRemark: '' });
+
+  const copyUploadLink = (appNum) => {
+    const tkn = encodeAppNumber(appNum);
+    const link = `${window.location.origin}/upload-documents/${tkn}`;
+    navigator.clipboard.writeText(link);
+    toast.success('Upload link copied to clipboard!');
+  };
 
   const [offerWarning, setOfferWarning] = useState('');
   const [shouldBypassLimit, setShouldBypassLimit] = useState(false);
@@ -243,12 +251,17 @@ const OfferManagement = () => {
                             <Send size={13} /> Send Offer
                           </button>
                         ) : (
-                          <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => recordResponse(c, true)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-green-200 text-green-700 hover:bg-green-50 rounded-lg text-xs font-semibold transition-colors">
-                              <ThumbsUp size={13} /> Accepted
-                            </button>
-                            <button onClick={() => recordResponse(c, false)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 rounded-lg text-xs font-semibold transition-colors">
-                              <ThumbsDown size={13} /> Declined
+                          <div className="flex flex-col items-center gap-1.5 justify-center">
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => recordResponse(c, true)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-green-200 text-green-700 hover:bg-green-50 rounded-lg text-xs font-semibold transition-colors">
+                                <ThumbsUp size={13} /> Accepted
+                              </button>
+                              <button onClick={() => recordResponse(c, false)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-red-200 text-red-650 hover:bg-red-50 rounded-lg text-xs font-semibold transition-colors">
+                                <ThumbsDown size={13} /> Declined
+                              </button>
+                            </div>
+                            <button onClick={() => copyUploadLink(c.applicationNumber)} className="inline-flex items-center gap-1 px-2.5 py-1 border border-gray-300 bg-white hover:bg-gray-55 text-gray-650 rounded-lg text-[10px] font-semibold transition-colors">
+                              <ExternalLink size={10} /> Copy Upload Link
                             </button>
                           </div>
                         )

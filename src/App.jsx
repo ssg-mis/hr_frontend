@@ -14,6 +14,7 @@ import CallTracker from './features/followUp/FollowUpPage';
 import InterviewManagement from './pages/InterviewManagement';
 import SelectionProcess from './pages/SelectionProcess';
 import DocumentVerification from './pages/DocumentVerification';
+import PublicDocumentUpload from './pages/PublicDocumentUpload';
 import OfferManagement from './pages/OfferManagement';
 import ResignationModule from './pages/ResignationModule';
 import Leaving from './pages/Leaving';
@@ -50,6 +51,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/apply/:vacancyNumber" element={<PublicApply />} />
+          <Route path="/upload-documents/:token" element={<PublicDocumentUpload />} />
           <Route path="/canteen/scan" element={<ProtectedRoute allowedRoles={['CanteenManager', 'Admin', 'HR']}><CanteenScanner /></ProtectedRoute>} />
 
           
