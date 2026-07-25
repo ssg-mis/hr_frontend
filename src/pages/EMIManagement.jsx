@@ -72,7 +72,7 @@ const EMIManagement = () => {
         empId: '',
         name: '',
         employeeId: '',
-        loanType: '',
+        loanType: 'Personal Loan',
         loanAmount: '',
         emiAmount: '',
         interestRate: '0.00',
@@ -254,7 +254,7 @@ const EMIManagement = () => {
             if (res.success) {
                 toast.success(isSelfRequest ? "EMI request submitted for approval!" : "EMI Loan Entry added successfully!");
                 setShowAddModal(false);
-                setNewEmiFormData({ empId: '', name: '', employeeId: '', loanType: '', loanAmount: '', emiAmount: '', interestRate: '0.00', tenure: '' });
+                setNewEmiFormData({ empId: '', name: '', employeeId: '', loanType: 'Personal Loan', loanAmount: '', emiAmount: '', interestRate: '0.00', tenure: '' });
                 fetchEmis();
                 if (canManage) {
                     fetchPayments();
@@ -637,16 +637,6 @@ const EMIManagement = () => {
                                         </select>
                                     )}
                                 </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Loan Type *</label>
-                                <select name="loanType" value={newEmiFormData.loanType} onChange={handleInputChange} required className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none">
-                                    <option value="">Select Type</option>
-                                    <option value="Personal Loan">Personal Loan</option>
-                                    <option value="Home Loan">Home Loan</option>
-                                    <option value="Car Loan">Car Loan</option>
-                                    <option value="Advanced Salary">Advanced Salary</option>
-                                </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>

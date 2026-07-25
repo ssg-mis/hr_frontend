@@ -251,17 +251,12 @@ const OfferManagement = () => {
                             <Send size={13} /> Send Offer
                           </button>
                         ) : (
-                          <div className="flex flex-col items-center gap-1.5 justify-center">
-                            <div className="flex items-center gap-2">
-                              <button onClick={() => recordResponse(c, true)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-green-200 text-green-700 hover:bg-green-50 rounded-lg text-xs font-semibold transition-colors">
-                                <ThumbsUp size={13} /> Accepted
-                              </button>
-                              <button onClick={() => recordResponse(c, false)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-red-200 text-red-650 hover:bg-red-50 rounded-lg text-xs font-semibold transition-colors">
-                                <ThumbsDown size={13} /> Declined
-                              </button>
-                            </div>
-                            <button onClick={() => copyUploadLink(c.applicationNumber)} className="inline-flex items-center gap-1 px-2.5 py-1 border border-gray-300 bg-white hover:bg-gray-55 text-gray-650 rounded-lg text-[10px] font-semibold transition-colors">
-                              <ExternalLink size={10} /> Copy Upload Link
+                          <div className="flex items-center gap-2 justify-center">
+                            <button onClick={() => recordResponse(c, true)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-green-200 text-green-700 hover:bg-green-50 rounded-lg text-xs font-semibold transition-colors">
+                              <ThumbsUp size={13} /> Accepted
+                            </button>
+                            <button onClick={() => recordResponse(c, false)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-red-200 text-red-650 hover:bg-red-50 rounded-lg text-xs font-semibold transition-colors">
+                              <ThumbsDown size={13} /> Declined
                             </button>
                           </div>
                         )

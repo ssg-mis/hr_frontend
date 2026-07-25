@@ -70,6 +70,14 @@ const VacancyPage = () => {
   const standardPlatforms = ['LinkedIn', 'Naukri', 'Indeed', 'Facebook'];
   const platforms = ['LinkedIn', 'Naukri', 'Indeed', 'Facebook', 'Others'];
 
+  const PREFERRED_LOCATIONS = [
+    "SHRI SHYAM WAREHOUSING AND POWER PVT. LTD.\nVillage - BANARI",
+    "SHRI SHYAM OIL EXTRACTIONS PVT. LTD.\nVillage - BANARI",
+    "SHRI SHYAM ETHANOL AND SPIRITS PVT. LTD.\nVillage - BANARI",
+    "SHRI SHYAM GLOBAL PVT. LTD.\nVillage - BANARI",
+    "SHRI SHYAM WAREHOUSING AND POWER PVT. LTD. ( COLD STORAGE DIVISON)\nADDRESS- INDUSTRIAL AREA CHAMPA"
+  ];
+
   const handlePlatformChange = (platform) => {
     setSelectedPlatforms((prev) => {
       const isSelected = prev.includes(platform);
@@ -296,10 +304,10 @@ const VacancyPage = () => {
         preferredQualification: formData.preferredQualification || null,
         preferredLocation: formData.preferredLocation || null,
         experienceRequired: formData.experienceRequired,
-        socialPlatforms: hasSocialPlatforms ? finalPlatforms.join(', ') : null,
-        postingLinks: Object.keys(cleanedLinks).length > 0 ? cleanedLinks : null,
+        socialPlatforms: isEditing && hasSocialPlatforms ? finalPlatforms.join(', ') : null,
+        postingLinks: isEditing && Object.keys(cleanedLinks).length > 0 ? cleanedLinks : null,
         priority: formData.priority || 'Medium',
-        status: formData.status || 'NeedMore',
+        status: isEditing ? (formData.status || 'NeedMore') : 'NeedMore',
         remarks: formData.remarks || null,
       };
 
@@ -901,7 +909,7 @@ const VacancyPage = () => {
                         ))}
                       </select>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className={isEditing ? "grid grid-cols-2 gap-3" : ""}>
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-1">Priority</label>
                         <select
@@ -915,20 +923,22 @@ const VacancyPage = () => {
                           <option value="High">High</option>
                         </select>
                       </div>
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-1">Status</label>
-                        <select
-                          name="status"
-                          value={formData.status}
-                          onChange={handleInputChange}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                        >
-                          <option value="NeedMore">Open</option>
-                          <option value="Interviewing">Interviewing</option>
-                          <option value="OnHold">On Hold</option>
-                          <option value="Closed">Closed</option>
-                        </select>
-                      </div>
+                      {isEditing && (
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Status</label>
+                          <select
+                            name="status"
+                            value={formData.status}
+                            onChange={handleInputChange}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+                          >
+                            <option value="NeedMore">Open</option>
+                            <option value="Interviewing">Interviewing</option>
+                            <option value="OnHold">On Hold</option>
+                            <option value="Closed">Closed</option>
+                          </select>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -991,14 +1001,24 @@ const VacancyPage = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-1">Preferred Location</label>
-                      <input
-                        type="text"
+                      <select
                         name="preferredLocation"
                         value={formData.preferredLocation}
                         onChange={handleInputChange}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                        placeholder="e.g. Noida / Gurugram"
-                      />
+                      >
+                        <option value="">Select Location</option>
+                        {PREFERRED_LOCATIONS.map((loc) => (
+                          <option key={loc} value={loc}>
+                            {loc}
+                          </option>
+                        ))}
+                        {formData.preferredLocation && !PREFERRED_LOCATIONS.includes(formData.preferredLocation) && (
+                          <option value={formData.preferredLocation}>
+                            {formData.preferredLocation}
+                          </option>
+                        )}
+                      </select>
                     </div>
                     <div className="md:col-span-2">
                       <label className="block text-sm font-semibold text-gray-700 mb-1">Preferred Qualification</label>
@@ -1028,89 +1048,91 @@ const VacancyPage = () => {
                 </div>
 
                 {/* Section 3: Job Distribution Channels */}
-                <div className="border-t border-gray-150 pt-6">
-                  <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3">Publish & Job Board Integration</h4>
-                  <div className="space-y-4">
-                    <p className="text-xs text-gray-500">
-                      Select which platforms you are publishing on. Checking a platform will enable a job post link input.
-                    </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {platforms.map((platform) => {
-                        const isSelected = selectedPlatforms.includes(platform);
-                        return (
-                          <button
-                            type="button"
-                            key={platform}
-                            onClick={() => handlePlatformChange(platform)}
-                            className={`flex items-center space-x-2 p-2.5 rounded-xl border text-left transition-all ${isSelected ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold' : 'bg-white border-gray-250 text-gray-650 hover:bg-gray-50'
-                              }`}
-                          >
-                            <span className={`w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-blue-600' : 'bg-gray-300'}`} />
-                            <span className="text-sm">{platform}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {selectedPlatforms.length > 0 && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-gray-50 p-4 rounded-xl border border-gray-200 animate-in fade-in duration-300">
-                        {selectedPlatforms.map((platform) => {
-                          if (platform === 'Others') {
-                            return (
-                              <div key="Others" className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3 bg-white rounded-lg border border-dashed border-gray-300 animate-in slide-in-from-top-2 duration-200">
-                                <div>
-                                  <label className="block text-xs font-semibold text-gray-700 mb-1">Platform Name <span className="text-red-500">*</span></label>
-                                  <input
-                                    type="text"
-                                    placeholder="e.g. ZipRecruiter, Glassdoor"
-                                    value={customPlatformName}
-                                    onChange={(e) => setCustomPlatformName(e.target.value)}
-                                    className="w-full border border-gray-350 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                                    required={selectedPlatforms.includes('Others')}
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-semibold text-gray-700 mb-1">Link URL <span className="text-red-500">*</span></label>
-                                  <div className="relative">
-                                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
-                                      <Link size={14} />
-                                    </span>
-                                    <input
-                                      type="url"
-                                      placeholder="https://example.com/jobs/view/..."
-                                      value={customLinkUrl}
-                                      onChange={(e) => setCustomLinkUrl(e.target.value)}
-                                      className="w-full border border-gray-350 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                                      required={selectedPlatforms.includes('Others')}
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          }
-
+                {isEditing && (
+                  <div className="border-t border-gray-150 pt-6">
+                    <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3">Publish & Job Board Integration</h4>
+                    <div className="space-y-4">
+                      <p className="text-xs text-gray-500">
+                        Select which platforms you are publishing on. Checking a platform will enable a job post link input.
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {platforms.map((platform) => {
+                          const isSelected = selectedPlatforms.includes(platform);
                           return (
-                            <div key={platform} className="animate-in slide-in-from-top-2 duration-200">
-                              <label className="block text-xs font-semibold text-gray-700 mb-1">{platform} Link URL</label>
-                              <div className="relative">
-                                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
-                                  <Link size={14} />
-                                </span>
-                                <input
-                                  type="url"
-                                  placeholder={`https://${platform.toLowerCase()}.com/jobs/view/...`}
-                                  value={formData.postingLinks[platform] || ''}
-                                  onChange={(e) => handleLinkChange(platform, e.target.value)}
-                                  className="w-full border border-gray-350 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                                />
-                              </div>
-                            </div>
+                            <button
+                              type="button"
+                              key={platform}
+                              onClick={() => handlePlatformChange(platform)}
+                              className={`flex items-center space-x-2 p-2.5 rounded-xl border text-left transition-all ${isSelected ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold' : 'bg-white border-gray-250 text-gray-650 hover:bg-gray-50'
+                                }`}
+                            >
+                              <span className={`w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-blue-600' : 'bg-gray-300'}`} />
+                              <span className="text-sm">{platform}</span>
+                            </button>
                           );
                         })}
                       </div>
-                    )}
+
+                      {selectedPlatforms.length > 0 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-gray-50 p-4 rounded-xl border border-gray-200 animate-in fade-in duration-300">
+                          {selectedPlatforms.map((platform) => {
+                            if (platform === 'Others') {
+                              return (
+                                <div key="Others" className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3 bg-white rounded-lg border border-dashed border-gray-300 animate-in slide-in-from-top-2 duration-200">
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Platform Name <span className="text-red-500">*</span></label>
+                                    <input
+                                      type="text"
+                                      placeholder="e.g. ZipRecruiter, Glassdoor"
+                                      value={customPlatformName}
+                                      onChange={(e) => setCustomPlatformName(e.target.value)}
+                                      className="w-full border border-gray-350 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+                                      required={selectedPlatforms.includes('Others')}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Link URL <span className="text-red-500">*</span></label>
+                                    <div className="relative">
+                                      <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+                                        <Link size={14} />
+                                      </span>
+                                      <input
+                                        type="url"
+                                        placeholder="https://example.com/jobs/view/..."
+                                        value={customLinkUrl}
+                                        onChange={(e) => setCustomLinkUrl(e.target.value)}
+                                        className="w-full border border-gray-350 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+                                        required={selectedPlatforms.includes('Others')}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div key={platform} className="animate-in slide-in-from-top-2 duration-200">
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">{platform} Link URL</label>
+                                <div className="relative">
+                                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+                                    <Link size={14} />
+                                  </span>
+                                  <input
+                                    type="url"
+                                    placeholder={`https://${platform.toLowerCase()}.com/jobs/view/...`}
+                                    value={formData.postingLinks[platform] || ''}
+                                    onChange={(e) => handleLinkChange(platform, e.target.value)}
+                                    className="w-full border border-gray-350 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Section 4: Extra Details */}
                 <div className="border-t border-gray-150 pt-6">
@@ -1242,7 +1264,7 @@ const VacancyPage = () => {
                     <MapPin size={14} />
                     <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Location</span>
                   </div>
-                  <p className="text-sm font-semibold text-gray-800">{viewingVacancy.preferredLocation || '—'}</p>
+                  <p className="text-sm font-semibold text-gray-800 whitespace-pre-line">{viewingVacancy.preferredLocation || '—'}</p>
                 </div>
               </div>
 

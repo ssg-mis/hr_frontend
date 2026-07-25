@@ -4,7 +4,7 @@ import { Search, X, Phone, CalendarClock, CalendarCheck, Ban, Users } from 'luci
 import toast from 'react-hot-toast';
 import { jobApplicationApi } from '../jobApplication/jobApplication.api';
 
-const OUTCOMES = ['Interested', 'Not Interested', 'No Response', 'Call Later'];
+const OUTCOMES = ['Interested', 'Not Interested'];
 const INTERVIEW_MODES = ['In-Person', 'Phone', 'Video'];
 
 const FollowUpPage = () => {

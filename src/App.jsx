@@ -42,6 +42,7 @@ import PFManagement from './pages/PFManagement';
 import ESICManagement from './pages/ESICManagement';
 import GatePassManagement from './pages/GatePassManagement';
 import CompensationManagement from './pages/CompensationManagement';
+import Payroll from './pages/Payroll';
 
 function App() {
   return (
@@ -83,6 +84,7 @@ function App() {
             <Route path="emi-management" element={<EMIManagement />} />
             <Route path="settings" element={<ProtectedRoute allowedRoles={['Admin']}><Settings /></ProtectedRoute>} />
             <Route path="salary" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><SalaryManagement /></ProtectedRoute>} />
+            <Route path="payroll" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Payroll /></ProtectedRoute>} />
             <Route path="pf-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><PFManagement /></ProtectedRoute>} />
             <Route path="esic-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><ESICManagement /></ProtectedRoute>} />
             <Route path="gate-pass" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><GatePassManagement /></ProtectedRoute>} />

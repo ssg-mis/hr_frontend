@@ -46,6 +46,8 @@ const Sidebar = ({ onClose }) => {
   const [isAttendanceOpen, setIsAttendanceOpen] = useState(false);
   const [isRecruitmentOpen, setIsRecruitmentOpen] = useState(false);
   const [isResignationOpen, setIsResignationOpen] = useState(false);
+  const [isSalaryOpen, setIsSalaryOpen] = useState(false);
+  const [isLeaveOpen, setIsLeaveOpen] = useState(false);
 
   const user = useAuthStore(state => state.user);
 
@@ -98,13 +100,32 @@ const Sidebar = ({ onClose }) => {
       ],
     },
     { path: "/employee", icon: Users, label: "Employee" },
-    { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
-    { path: "/leave-policy", icon: BookPlus, label: "Leave Record" },
-    { path: "/compensation", icon: Award, label: "Compensation" },
-    { path: "/emi-management", icon: CreditCard, label: "EMI Management" },
-    { path: "/salary", icon: IndianRupee, label: "Salary" },
-    { path: "/pf-management", icon: ShieldCheck, label: "PF Management" },
-    { path: "/esic-management", icon: ShieldCheck, label: "ESIC Management" },
+    {
+      type: "dropdown",
+      icon: CalendarClock,
+      label: "Leave Module",
+      isOpen: isLeaveOpen,
+      toggle: () => setIsLeaveOpen(!isLeaveOpen),
+      items: [
+        { path: "/leave-policy", label: "Leave Record" },
+        { path: "/leave-management", label: "Leave Management" },
+      ],
+    },
+    {
+      type: "dropdown",
+      icon: IndianRupee,
+      label: "Salary Module",
+      isOpen: isSalaryOpen,
+      toggle: () => setIsSalaryOpen(!isSalaryOpen),
+      items: [
+        { path: "/salary", label: "Salary" },
+        { path: "/payroll", label: "Payroll Creation" },
+        { path: "/emi-management", label: "EMI Management" },
+        { path: "/compensation", label: "Compensation" },
+        { path: "/pf-management", label: "PF Management" },
+        { path: "/esic-management", label: "ESIC Management" },
+      ],
+    },
     { path: "/gate-pass", icon: Ticket, label: "Gate Pass Management" },
     { path: "/canteen", icon: Utensils, label: "Canteen Management" },
     { path: "/settings", icon: Settings, label: "Settings" },
@@ -212,14 +233,39 @@ const Sidebar = ({ onClose }) => {
     }
 
     if (isHR || isHOD) addItem({ path: '/employee', icon: Users, label: isHOD && !isHR ? 'Employee Info' : 'Employee' });
-    if (isHR || isHOD) addItem({ path: '/leave-management', icon: BookPlus, label: 'Leave Management' });
-    if (isHR) addItem({ path: '/leave-policy', icon: BookPlus, label: 'Leave Record' });
-    if (isHR || isHOD) addItem({ path: '/compensation', icon: Award, label: 'Compensation' });
-    if (isHR || isHOD) addItem({ path: '/emi-management', icon: CreditCard, label: 'EMI Management' });
+    
+    if (isHR || isHOD) {
+      addItem({
+        type: 'dropdown',
+        icon: CalendarClock,
+        label: 'Leave Module',
+        isOpen: isLeaveOpen,
+        toggle: () => setIsLeaveOpen(!isLeaveOpen),
+        items: [
+          { path: '/leave-policy', label: 'Leave Record' },
+          { path: '/leave-management', label: 'Leave Management' },
+        ],
+      });
+    }
 
-    if (isHR || isHOD) addItem({ path: '/salary', icon: IndianRupee, label: 'Salary' });
-    if (isHR || isHOD) addItem({ path: '/pf-management', icon: ShieldCheck, label: 'PF Management' });
-    if (isHR || isHOD) addItem({ path: '/esic-management', icon: ShieldCheck, label: 'ESIC Management' });
+    if (isHR || isHOD) {
+      addItem({
+        type: 'dropdown',
+        icon: IndianRupee,
+        label: 'Salary Module',
+        isOpen: isSalaryOpen,
+        toggle: () => setIsSalaryOpen(!isSalaryOpen),
+        items: [
+          { path: "/salary", label: "Salary" },
+          { path: "/payroll", label: "Payroll Creation" },
+          { path: "/emi-management", label: "EMI Management" },
+          { path: "/compensation", label: "Compensation" },
+          { path: "/pf-management", label: "PF Management" },
+          { path: "/esic-management", label: "ESIC Management" },
+        ],
+      });
+    }
+
     if (isHR) addItem({ path: '/gate-pass', icon: Ticket, label: 'Gate Pass Management' });
     if (isHR) addItem({ path: '/canteen', icon: Utensils, label: 'Canteen Management' });
 
@@ -235,13 +281,31 @@ const Sidebar = ({ onClose }) => {
     return [
       { path: '/my-profile', icon: User, label: 'My Profile' },
       { path: '/my-attendance', icon: Clock, label: 'My Attendance' },
-      { path: '/leave-request', icon: Book, label: 'Request Leave' },
-      { path: '/compensation', icon: Award, label: 'Compensation' },
-      { path: '/leave-policy', icon: BookPlus, label: 'Leave Record' },
-      { path: '/emi-management', icon: CreditCard, label: 'My EMI' },
-      { path: '/my-salary', icon: IndianRupee, label: 'My Salary' },
-      { path: '/pf-management', icon: ShieldCheck, label: 'PF Management' },
-      { path: '/esic-management', icon: ShieldCheck, label: 'ESIC Management' },
+      {
+        type: 'dropdown',
+        icon: CalendarClock,
+        label: 'Leave Module',
+        isOpen: isLeaveOpen,
+        toggle: () => setIsLeaveOpen(!isLeaveOpen),
+        items: [
+          { path: '/leave-policy', label: 'Leave Record' },
+          { path: '/leave-request', label: 'Request Leave' },
+        ],
+      },
+      {
+        type: 'dropdown',
+        icon: IndianRupee,
+        label: 'Salary Module',
+        isOpen: isSalaryOpen,
+        toggle: () => setIsSalaryOpen(!isSalaryOpen),
+        items: [
+          { path: '/my-salary', label: 'My Salary' },
+          { path: '/emi-management', label: 'My EMI' },
+          { path: '/compensation', label: 'Compensation' },
+          { path: '/pf-management', label: 'PF Management' },
+          { path: '/esic-management', label: 'ESIC Management' },
+        ],
+      },
       { path: '/canteen', icon: Utensils, label: 'Canteen Info' },
       { path: '/resignation-module', icon: UserMinus, label: 'Resignation' },
     ];

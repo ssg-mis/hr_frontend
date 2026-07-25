@@ -29,16 +29,16 @@ const MyAttendance = () => {
 
   const formatDOB = (dateString) => {
     if (!dateString) return '';
-    
+
     const date = new Date(dateString);
     if (isNaN(date.getTime())) {
       return dateString;
     }
-    
+
     const day = date.getDate();
     const month = date.getMonth();
     const year = date.getFullYear();
-    
+
     return `${day}/${month + 1}/${year}`;
   };
 
@@ -78,7 +78,7 @@ const MyAttendance = () => {
         };
 
         const recordDateStr = formatDate(record.Date);
-        
+
         // Check if this date falls within any approved leave range
         const isOnLeave = approvedLeaves.some(leave => {
           const start = formatDate(leave.startDate);
@@ -112,7 +112,7 @@ const MyAttendance = () => {
             calcWorkingHours = hours;
           }
         }
-        
+
         return {
           ...record,
           Date: formatDate(record.Date),
@@ -142,7 +142,7 @@ const MyAttendance = () => {
 
   const filteredAttendance = attendanceData.filter(record => {
     if (!record.Date) return false;
-    
+
     try {
       const recordDate = new Date(record.Date);
       return recordDate.getMonth() === selectedMonth && recordDate.getFullYear() === selectedYear;
@@ -152,10 +152,10 @@ const MyAttendance = () => {
   });
 
   const totalDays = filteredAttendance.length;
-  const presentDays = filteredAttendance.filter(record => 
+  const presentDays = filteredAttendance.filter(record =>
     record.status === 'Present' || (record.In && record.In !== '' && record.In !== '-')
   ).length;
-  const leaveDays = filteredAttendance.filter(record => 
+  const leaveDays = filteredAttendance.filter(record =>
     record.status === 'Leave' || record.status === 'leave'
   ).length;
   const absentDays = filteredAttendance.filter(record =>
@@ -352,14 +352,13 @@ const MyAttendance = () => {
                           {record.Out || record.outTime || '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                            status === 'Present' ? 'bg-green-100 text-green-800' :
-                            status === 'Leave' || status === 'leave' ? 'bg-blue-100 text-blue-800' :
-                            status === 'Weekoff' ? 'bg-purple-100 text-purple-800' :
-                            status === 'Holiday' ? 'bg-amber-100 text-amber-800' :
-                            status === 'Upcoming' ? 'bg-gray-100 text-gray-500' :
-                            'bg-red-100 text-red-800'
-                          }`}>
+                          <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold ${status === 'Present' ? 'bg-green-100 text-green-800' :
+                              status === 'Leave' || status === 'leave' ? 'bg-blue-100 text-blue-800' :
+                                status === 'Weekoff' ? 'bg-purple-100 text-purple-800' :
+                                  status === 'Holiday' ? 'bg-amber-100 text-amber-800' :
+                                    status === 'Upcoming' ? 'bg-gray-100 text-gray-500' :
+                                      'bg-red-100 text-red-800'
+                            }`}>
                             {status}
                           </span>
                         </td>

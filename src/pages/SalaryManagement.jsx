@@ -46,6 +46,8 @@ const SalaryManagement = () => {
   // Forms state
   const [empForm, setEmpForm] = useState({
     employeeId: '',
+    incrementType: 'flat', // 'flat' | 'percent'
+    percent: '10',
     proposedBaseSalary: '',
     proposedAllowanceSalary: '',
   });
@@ -120,6 +122,21 @@ const SalaryManagement = () => {
     loadData();
   }, []);
 
+  useEffect(() => {
+    const activeEmpId = empForm.employeeId || (selectedEmp ? selectedEmp.employeeId : null);
+    if (empForm.incrementType === 'percent' && activeEmpId) {
+      const emp = salaries.find(s => s.employeeId === Number(activeEmpId));
+      if (emp) {
+        const factor = 1 + (Number(empForm.percent || 0) / 100);
+        setEmpForm(prev => ({
+          ...prev,
+          proposedBaseSalary: (Number(emp.baseSalary || 0) * factor).toFixed(2),
+          proposedAllowanceSalary: (Number(emp.allowanceSalary || 0) * factor).toFixed(2),
+        }));
+      }
+    }
+  }, [empForm.employeeId, empForm.incrementType, empForm.percent, selectedEmp, salaries]);
+
   const fetchSalaries = async () => {
     const res = await fetch(`${API_URL}/salaries`);
     const result = await res.json();
@@ -179,13 +196,15 @@ const SalaryManagement = () => {
           employeeId: empForm.employeeId,
           proposedBaseSalary: empForm.proposedBaseSalary,
           proposedAllowanceSalary: empForm.proposedAllowanceSalary,
+          incrementType: empForm.incrementType,
+          percent: empForm.incrementType === 'percent' ? Number(empForm.percent) : undefined,
         }),
       });
       const result = await res.json();
       if (result.success) {
         toast.success("Salary request created successfully!");
         setShowEmpModal(false);
-        setEmpForm({ employeeId: '', proposedBaseSalary: '', proposedAllowanceSalary: '' });
+        setEmpForm({ employeeId: '', incrementType: 'flat', percent: '10', proposedBaseSalary: '', proposedAllowanceSalary: '' });
         fetchRequests();
       } else {
         toast.error(result.message || "Failed to create request");
@@ -265,6 +284,8 @@ const SalaryManagement = () => {
     setSelectedEmp(employee);
     setEmpForm({
       employeeId: employee.employeeId,
+      incrementType: 'flat',
+      percent: '10',
       proposedBaseSalary: employee.baseSalary,
       proposedAllowanceSalary: employee.allowanceSalary,
     });
@@ -326,7 +347,7 @@ const SalaryManagement = () => {
           <button
             onClick={() => {
               setSelectedEmp(null);
-              setEmpForm({ employeeId: '', proposedBaseSalary: '', proposedAllowanceSalary: '' });
+              setEmpForm({ employeeId: '', incrementType: 'flat', percent: '10', proposedBaseSalary: '', proposedAllowanceSalary: '' });
               setDialogError('');
               setShowEmpModal(true);
             }}
@@ -1209,6 +1230,8 @@ const SalaryManagement = () => {
                       const emp = salaries.find(s => s.employeeId === Number(empId));
                       setEmpForm({
                         employeeId: empId,
+                        incrementType: 'flat',
+                        percent: '10',
                         proposedBaseSalary: emp ? emp.baseSalary : '',
                         proposedAllowanceSalary: emp ? emp.allowanceSalary : '',
                       });
@@ -1240,6 +1263,56 @@ const SalaryManagement = () => {
                 </div>
               )}
 
+              {/* Increment Method Toggles */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase mb-1.5">Increment Method</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEmpForm(prev => ({ ...prev, incrementType: 'percent' }))}
+                    className={`p-3 border rounded-xl font-medium text-xs transition-all flex items-center justify-center gap-1.5 ${
+                      empForm.incrementType === 'percent'
+                        ? 'bg-slate-800 text-white border-slate-800'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Percent size={14} />
+                    <span>Percentage Increment</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEmpForm(prev => ({ ...prev, incrementType: 'flat' }))}
+                    className={`p-3 border rounded-xl font-medium text-xs transition-all flex items-center justify-center gap-1.5 ${
+                      empForm.incrementType === 'flat'
+                        ? 'bg-slate-800 text-white border-slate-800'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <IndianRupee size={14} />
+                    <span>Flat/Manual Entry</span>
+                  </button>
+                </div>
+              </div>
+
+              {empForm.incrementType === 'percent' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Percentage Increase (%)</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      required
+                      placeholder="e.g. 10"
+                      value={empForm.percent}
+                      onChange={(e) => setEmpForm(prev => ({ ...prev, percent: e.target.value }))}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <span className="absolute right-4 top-2 text-sm text-slate-400 font-bold">%</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">Both base salary and allowance will be increased by this percentage.</p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Proposed Base Salary</label>
@@ -1249,10 +1322,13 @@ const SalaryManagement = () => {
                       type="number"
                       step="0.01"
                       required
+                      disabled={empForm.incrementType === 'percent'}
                       placeholder="0.00"
                       value={empForm.proposedBaseSalary}
                       onChange={(e) => setEmpForm(prev => ({ ...prev, proposedBaseSalary: e.target.value }))}
-                      className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className={`w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                        empForm.incrementType === 'percent' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''
+                      }`}
                     />
                   </div>
                 </div>
@@ -1264,10 +1340,13 @@ const SalaryManagement = () => {
                       type="number"
                       step="0.01"
                       required
+                      disabled={empForm.incrementType === 'percent'}
                       placeholder="0.00"
                       value={empForm.proposedAllowanceSalary}
                       onChange={(e) => setEmpForm(prev => ({ ...prev, proposedAllowanceSalary: e.target.value }))}
-                      className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className={`w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                        empForm.incrementType === 'percent' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''
+                      }`}
                     />
                   </div>
                 </div>

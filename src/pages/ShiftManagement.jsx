@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Clock, Plus, Search, Calendar, User, X, CheckCircle2 } from "lucide-react";
+import { Clock, Plus, Search, Calendar, User, X, CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
 
 const MASTER_SHIFTS = [
@@ -15,6 +15,14 @@ const ShiftManagement = () => {
   const [employeesList, setEmployeesList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
   
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -147,6 +155,12 @@ const ShiftManagement = () => {
     (s.shiftName || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredShifts.length / itemsPerPage);
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = filteredShifts.slice(indexOfFirstItem, indexOfLastItem);
+
   const getShiftBadge = (shiftName, startTime, endTime) => {
     const sName = (shiftName || "").toLowerCase();
     let badgeStyle = "bg-gray-100 text-gray-800 border-gray-200";
@@ -188,16 +202,7 @@ const ShiftManagement = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-gray-200 pb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Shift Management</h1>
-          <p className="text-sm text-gray-500">Configure shifts (a, general, b, c) and assign work schedules to employees</p>
-        </div>
-        <div className="mt-4 md:mt-0">
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl shadow-md transition duration-200 cursor-pointer text-sm"
-          >
-            <Plus size={18} />
-            <span>Assign Shift</span>
-          </button>
+          <p className="text-sm text-gray-500">Configure shifts (a, general, b, c) and view work schedules of employees</p>
         </div>
       </div>
 
@@ -260,154 +265,140 @@ const ShiftManagement = () => {
             <p className="text-sm">No shift assignments found.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Emp Code</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Name</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Shift</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Effective From</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Effective To</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-150">
-                {filteredShifts.map((shift) => (
-                  <tr key={shift.id} className="hover:bg-gray-50/50 transition duration-150">
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">{shift.employeeCode}</td>
-                    <td className="px-6 py-4 text-sm text-gray-700 font-medium">{shift.employeeName}</td>
-                    <td className="px-6 py-4">
-                      {getShiftBadge(shift.shiftName || shift.shiftId, shift.startTime, shift.endTime)}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600 font-medium">
-                      {formatDate(shift.effectiveFrom)}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600 font-medium">
-                      {formatDate(shift.effectiveTo)}
-                    </td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Emp Code</th>
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Name</th>
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Shift</th>
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Effective From</th>
+                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Effective To</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-150">
+                  {currentItems.map((shift) => (
+                    <tr key={shift.id} className="hover:bg-gray-50/50 transition duration-150">
+                      <td className="px-6 py-4 text-sm font-semibold text-gray-900">{shift.employeeCode}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 font-medium">{shift.employeeName}</td>
+                      <td className="px-6 py-4">
+                        {getShiftBadge(shift.shiftName || shift.shiftId, shift.startTime, shift.endTime)}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600 font-medium">
+                        {formatDate(shift.effectiveFrom)}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600 font-medium">
+                        {formatDate(shift.effectiveTo)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-6 py-4 bg-white border-t border-gray-200">
+                <div className="flex flex-1 justify-between sm:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="relative inline-flex items-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="relative ml-3 inline-flex items-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+                <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium">
+                      Showing <span className="font-bold text-gray-800">{indexOfFirstItem + 1}</span> to{" "}
+                      <span className="font-bold text-gray-800">{Math.min(indexOfLastItem, filteredShifts.length)}</span> of{" "}
+                      <span className="font-bold text-gray-800">{filteredShifts.length}</span> assignments
+                    </p>
+                  </div>
+                  <div>
+                    <nav className="isolate inline-flex -space-x-px rounded-xl shadow-xs" aria-label="Pagination">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                        disabled={currentPage === 1}
+                        className="relative inline-flex items-center rounded-l-xl px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        <span className="sr-only">Previous</span>
+                        <ChevronLeft size={16} />
+                      </button>
+
+                      {[...Array(totalPages)].map((_, i) => {
+                        const pageNum = i + 1;
+                        if (
+                          totalPages > 5 &&
+                          pageNum !== 1 &&
+                          pageNum !== totalPages &&
+                          Math.abs(pageNum - currentPage) > 1
+                        ) {
+                          if (pageNum === 2 && currentPage > 3) {
+                            return (
+                              <span key="dots1" className="relative inline-flex items-center px-3 py-2 text-xs font-semibold text-gray-500 ring-1 ring-inset ring-gray-300">
+                                ...
+                              </span>
+                            );
+                          }
+                          if (pageNum === totalPages - 1 && currentPage < totalPages - 2) {
+                            return (
+                              <span key="dots2" className="relative inline-flex items-center px-3 py-2 text-xs font-semibold text-gray-500 ring-1 ring-inset ring-gray-300">
+                                ...
+                              </span>
+                            );
+                          }
+                          return null;
+                        }
+
+                        return (
+                          <button
+                            type="button"
+                            key={pageNum}
+                            onClick={() => setCurrentPage(pageNum)}
+                            className={`relative inline-flex items-center px-3 py-2 text-xs font-bold ring-1 ring-inset ring-gray-300 cursor-pointer ${
+                              currentPage === pageNum
+                                ? "z-10 bg-indigo-600 text-white ring-indigo-600"
+                                : "text-gray-900 hover:bg-gray-50"
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                        disabled={currentPage === totalPages}
+                        className="relative inline-flex items-center rounded-r-xl px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        <span className="sr-only">Next</span>
+                        <ChevronRight size={16} />
+                      </button>
+                    </nav>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
       {/* Modal dialog */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-2xl max-w-md w-full mx-4 shadow-xl border border-gray-200 overflow-hidden transform transition-all duration-300">
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-              <h3 className="font-bold text-gray-950 flex items-center gap-2">
-                <Clock size={20} className="text-indigo-600" />
-                <span>Assign Employee Shift</span>
-              </h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-gray-400 hover:text-gray-700 bg-white border border-gray-200 rounded-lg p-1.5 shadow-sm cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
 
-            {/* Form */}
-            <form onSubmit={handleSubmit}>
-              <div className="p-6 space-y-4">
-                {/* Employee select */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">Employee *</label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-2.5 text-gray-400" size={18} />
-                    <select
-                      name="employeeId"
-                      value={form.employeeId}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none appearance-none bg-white"
-                    >
-                      <option value="">Select Employee</option>
-                      {employeesList.map((emp) => (
-                        <option key={emp.employee_id || emp.id} value={emp.employee_id || emp.id}>
-                          {emp.candidateName || emp.name_as_per_aadhar || emp.name} ({emp.employeeCode || emp.employee_code})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Shift ID select */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">Shift Type *</label>
-                  <select
-                    name="shiftId"
-                    value={form.shiftId}
-                    onChange={handleInputChange}
-                    required
-                    className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none bg-white"
-                  >
-                    {masterShifts.map((m) => (
-                      <option key={m.id} value={m.name}>
-                        {m.name === "general" ? "General Shift (08:45 - 17:35)" : `Shift ${m.name.toUpperCase()} (${m.startTime} - ${m.endTime})`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Effective dates */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">Effective From *</label>
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                      <input
-                        type="date"
-                        name="effectiveFrom"
-                        value={form.effectiveFrom}
-                        onChange={handleInputChange}
-                        required
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">Effective To</label>
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                      <input
-                        type="date"
-                        name="effectiveTo"
-                        value={form.effectiveTo}
-                        onChange={handleInputChange}
-                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="bg-white border border-gray-300 text-gray-700 font-semibold text-sm px-4 py-2 rounded-xl hover:bg-gray-50 transition duration-200 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-4 py-2 rounded-xl shadow-md transition duration-200 cursor-pointer disabled:opacity-55"
-                >
-                  {submitting ? "Assigning..." : "Assign"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

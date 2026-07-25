@@ -46,9 +46,9 @@ const CompensationManagement = () => {
   // Form State
   const [form, setForm] = useState({
     employeeId: "",
-    workDate: new Date().toISOString().slice(0, 10),
-    compensationType: "Comp-Off Leave",
-    hours: "8.00",
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: new Date().toISOString().slice(0, 10),
+    amount: "",
     reason: "",
   });
 
@@ -99,7 +99,7 @@ const CompensationManagement = () => {
 
   const handleCreateRequest = async (e) => {
     e.preventDefault();
-    if (!form.workDate || !form.reason) {
+    if (!form.startDate || !form.endDate || !form.reason) {
       toast.error("Please fill in all required fields");
       return;
     }
@@ -108,9 +108,9 @@ const CompensationManagement = () => {
     try {
       const payload = {
         employeeId: (isAdmin || isHR) && form.employeeId ? Number(form.employeeId) : user?.employeeId,
-        workDate: form.workDate,
-        compensationType: form.compensationType,
-        hours: Number(form.hours) || 8.0,
+        startDate: form.startDate,
+        endDate: form.endDate,
+        amount: form.amount ? Number(form.amount) : null,
         reason: form.reason,
       };
 
@@ -120,9 +120,9 @@ const CompensationManagement = () => {
         setShowRequestModal(false);
         setForm({
           employeeId: "",
-          workDate: new Date().toISOString().slice(0, 10),
-          compensationType: "Comp-Off Leave",
-          hours: "8.00",
+          startDate: new Date().toISOString().slice(0, 10),
+          endDate: new Date().toISOString().slice(0, 10),
+          amount: "",
           reason: "",
         });
         fetchData();
@@ -320,8 +320,8 @@ const CompensationManagement = () => {
                   <th className="py-3.5 px-4">Request No</th>
                   <th className="py-3.5 px-4">Employee</th>
                   <th className="py-3.5 px-4">Department</th>
-                  <th className="py-3.5 px-4">Work Date</th>
-                  <th className="py-3.5 px-4">Type & Hours</th>
+                  <th className="py-3.5 px-4">Date Range</th>
+                  <th className="py-3.5 px-4 text-right">Amount</th>
                   <th className="py-3.5 px-4">Status</th>
                   <th className="py-3.5 px-4">Approval Workflow</th>
                   <th className="py-3.5 px-4 text-right">Actions</th>
@@ -344,12 +344,13 @@ const CompensationManagement = () => {
                         <div className="text-xs text-slate-400 font-mono">{item.biometricEmployeeCode || `ID: ${item.employeeId}`}</div>
                       </td>
                       <td className="py-3.5 px-4 text-slate-600">{item.departmentName || "—"}</td>
-                      <td className="py-3.5 px-4 text-slate-600 font-medium">
-                        {item.workDate ? new Date(item.workDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                      <td className="py-3.5 px-4 text-slate-600 font-medium whitespace-nowrap">
+                        {item.startDate ? new Date(item.startDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                        {" to "}
+                        {item.endDate ? new Date(item.endDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
                       </td>
-                      <td className="py-3.5 px-4">
-                        <span className="font-medium text-slate-800">{item.compensationType}</span>
-                        <div className="text-xs text-slate-500">{item.hours} hrs</div>
+                      <td className="py-3.5 px-4 text-right font-medium text-slate-700">
+                        {item.amount ? `₹${Number(item.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : "—"}
                       </td>
                       <td className="py-3.5 px-4">{getStatusBadge(item.status)}</td>
                       <td className="py-3.5 px-4">
@@ -467,40 +468,38 @@ const CompensationManagement = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Work Date *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Start Date *</label>
                   <input
                     type="date"
                     required
-                    value={form.workDate}
-                    onChange={(e) => setForm({ ...form, workDate: e.target.value })}
+                    value={form.startDate}
+                    onChange={(e) => setForm({ ...form, startDate: e.target.value })}
                     className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Hours / Duration *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">End Date *</label>
                   <input
-                    type="number"
-                    step="0.5"
-                    min="1"
-                    max="24"
+                    type="date"
                     required
-                    value={form.hours}
-                    onChange={(e) => setForm({ ...form, hours: e.target.value })}
+                    value={form.endDate}
+                    onChange={(e) => setForm({ ...form, endDate: e.target.value })}
                     className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Compensation Type *</label>
-                <select
-                  value={form.compensationType}
-                  onChange={(e) => setForm({ ...form, compensationType: e.target.value })}
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Amount (Optional)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.amount}
+                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                  placeholder="Enter amount if applicable"
                   className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                >
-                  <option value="Comp-Off Leave">Comp-Off Leave Credit</option>
-                  <option value="Overtime Allowance">Overtime Allowance / Monetary</option>
-                </select>
+                />
               </div>
 
               <div>
@@ -562,14 +561,18 @@ const CompensationManagement = () => {
                   <span className="font-semibold">{selectedRequest.employeeName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Work Date & Hours:</span>
+                  <span className="text-slate-500">Date Range:</span>
                   <span className="font-medium">
-                    {new Date(selectedRequest.workDate).toLocaleDateString()} ({selectedRequest.hours} hrs)
+                    {selectedRequest.startDate ? new Date(selectedRequest.startDate).toLocaleDateString() : "—"}
+                    {" to "}
+                    {selectedRequest.endDate ? new Date(selectedRequest.endDate).toLocaleDateString() : "—"}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Type:</span>
-                  <span className="font-medium">{selectedRequest.compensationType}</span>
+                  <span className="text-slate-500">Amount:</span>
+                  <span className="font-semibold text-slate-900">
+                    {selectedRequest.amount ? `₹${Number(selectedRequest.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : "—"}
+                  </span>
                 </div>
                 <div>
                   <span className="text-slate-500 block mb-1">Reason:</span>

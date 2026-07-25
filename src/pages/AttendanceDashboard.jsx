@@ -52,6 +52,7 @@ const AttendanceDashboard = () => {
   const [endDate, setEndDate] = useState(getEndOfMonth());
 
   const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const [todayRecords, setTodayRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedEmployeeLogs, setSelectedEmployeeLogs] = useState(null);
@@ -112,6 +113,21 @@ const AttendanceDashboard = () => {
     }
   };
 
+  const fetchTodayRecords = async () => {
+    try {
+      const today = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+      const res = await fetch(`${API_URL}/attendance/sessions?startDate=${todayStr}&endDate=${todayStr}`);
+      const result = await safeJson(res);
+      if (result.success) {
+        setTodayRecords(result.data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching today's records:", err);
+    }
+  };
+
   const fetchAttendanceData = async (start, end) => {
     setLoading(true);
     try {
@@ -122,6 +138,7 @@ const AttendanceDashboard = () => {
       } else {
         throw new Error(result.message || "Failed to fetch attendance sessions");
       }
+      await fetchTodayRecords();
     } catch (err) {
       console.error("Error fetching attendance data:", err);
       toast.error(err.message || "Failed to load attendance data");
@@ -145,6 +162,16 @@ const AttendanceDashboard = () => {
         const result = await safeJson(res);
         if (isCurrent && result.success) {
           setAttendanceRecords(result.data || []);
+        }
+
+        // Fetch today's records immediately
+        const today = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+        const todayRes = await fetch(`${API_URL}/attendance/sessions?startDate=${todayStr}&endDate=${todayStr}`);
+        const todayResult = await safeJson(todayRes);
+        if (isCurrent && todayResult.success) {
+          setTodayRecords(todayResult.data || []);
         }
       } catch (err) {
         console.error("Error fetching existing attendance:", err);
@@ -174,6 +201,16 @@ const AttendanceDashboard = () => {
             const refetchResult = await safeJson(refetchRes);
             if (isCurrent && refetchResult.success) {
               setAttendanceRecords(refetchResult.data || []);
+            }
+
+            // Refetch today's records
+            const today = new Date();
+            const pad = (n) => String(n).padStart(2, "0");
+            const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+            const refetchTodayRes = await fetch(`${API_URL}/attendance/sessions?startDate=${todayStr}&endDate=${todayStr}`);
+            const refetchTodayResult = await safeJson(refetchTodayRes);
+            if (isCurrent && refetchTodayResult.success) {
+              setTodayRecords(refetchTodayResult.data || []);
             }
           } else {
             console.warn("BioTime sync failed:", result.message);
@@ -399,13 +436,13 @@ const AttendanceDashboard = () => {
   );
 
   const totalEmployees = employeesSummaryList.length;
-  const presentCount = attendanceRecords.filter(
+  const presentCount = todayRecords.filter(
     (r) => (r.status || "").toLowerCase() === "present" || Boolean(r.punchIn)
   ).length;
-  const leaveCount = attendanceRecords.filter(
+  const leaveCount = todayRecords.filter(
     (r) => (r.status || "").toLowerCase() === "leave" && !r.punchIn
   ).length;
-  const absentCount = attendanceRecords.filter(
+  const absentCount = todayRecords.filter(
     (r) => (r.status || "").toLowerCase() === "absent" && !r.punchIn
   ).length;
 
@@ -469,7 +506,7 @@ const AttendanceDashboard = () => {
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition duration-200">
           <div className="flex justify-between items-start">
             <div className="space-y-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Present</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Present Today</span>
               <p className="text-2xl font-extrabold text-green-600">{presentCount}</p>
             </div>
             <div className="bg-green-50 p-2.5 rounded-lg text-green-600">
@@ -482,7 +519,7 @@ const AttendanceDashboard = () => {
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition duration-200">
           <div className="flex justify-between items-start">
             <div className="space-y-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">On Leave</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">On Leave Today</span>
               <p className="text-2xl font-extrabold text-blue-600">{leaveCount}</p>
             </div>
             <div className="bg-blue-50 p-2.5 rounded-lg text-blue-600">
@@ -495,7 +532,7 @@ const AttendanceDashboard = () => {
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition duration-200">
           <div className="flex justify-between items-start">
             <div className="space-y-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Absent</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Absent Today</span>
               <p className="text-2xl font-extrabold text-red-600">{absentCount}</p>
             </div>
             <div className="bg-red-50 p-2.5 rounded-lg text-red-600">

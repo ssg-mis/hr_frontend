@@ -48,15 +48,14 @@ const DocumentVerification = () => {
     setTableLoading(true);
     try {
       const res = await jobApplicationApi.list({ stage: 'OfferAccepted', limit: 1000, search: searchTerm });
-      const accepted = res.data || [];
-      setPendingData(accepted.filter((a) => !a.documentChecklist));
+      setPendingData(res.data || []);
 
       const historyRes = await jobApplicationApi.list({
         stage: 'Verified,Hired,Rejected',
         limit: 1000,
         search: searchTerm,
       });
-      setHistoryData((historyRes.data || []).filter((a) => a.documentChecklist));
+      setHistoryData(historyRes.data || []);
     } catch (err) {
       toast.error(err.message || 'Failed to load verification data');
     } finally {
@@ -155,10 +154,9 @@ const DocumentVerification = () => {
       setTableLoading(true);
       try {
         const res = await jobApplicationApi.list({ stage: 'OfferAccepted', limit: 1000, search: searchTerm });
-        const accepted = res.data || [];
-        setPendingData(accepted.filter((a) => !a.documentChecklist));
+        setPendingData(res.data || []);
         const historyRes = await jobApplicationApi.list({ stage: 'Verified,Hired,Rejected', limit: 1000, search: searchTerm });
-        const historyList = (historyRes.data || []).filter((a) => a.documentChecklist);
+        const historyList = historyRes.data || [];
         setHistoryData(historyList);
         // Auto-refresh viewingDetails if it was the same candidate
         const refreshed = historyList.find((a) => a.applicationNumber === verifyingAppNumber);

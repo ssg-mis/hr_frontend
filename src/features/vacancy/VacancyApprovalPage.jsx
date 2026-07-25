@@ -83,9 +83,12 @@ const VacancyApprovalPage = () => {
         search: searchTerm,
       });
       // Backend returns camelCase; filter to the active approval tab client-side.
-      const tabFiltered = (result.data || []).filter(
-        (v) => v.approvalStatus === activeTab
-      );
+      const tabFiltered = (result.data || []).filter((v) => {
+        if (activeTab === 'Pending') {
+          return v.approvalStatus === 'Pending' || v.approvalStatus === 'Pending HR';
+        }
+        return v.approvalStatus === activeTab;
+      });
       setVacancyData(tabFiltered);
       setPagination(
         result.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 }
@@ -247,7 +250,7 @@ const VacancyApprovalPage = () => {
                     <MapPin size={14} />
                     <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Location</span>
                   </div>
-                  <p className="text-sm font-semibold text-gray-800">{reviewingVacancy.preferredLocation || '—'}</p>
+                  <p className="text-sm font-semibold text-gray-800 whitespace-pre-line">{reviewingVacancy.preferredLocation || '—'}</p>
                 </div>
               </div>
 
@@ -457,9 +460,9 @@ const VacancyApprovalPage = () => {
 
         {/* Tab Selection Navigation */}
         <div className="flex border-b border-gray-250">
-          {['Pending', 'Pending HR', 'Approved', 'Rejected'].map((tab) => {
+          {['Pending', 'Approved', 'Rejected'].map((tab) => {
             const isActive = activeTab === tab;
-            const label = tab === 'Pending' ? 'Pending HOD' : tab;
+            const label = tab === 'Pending' ? 'Pending' : tab;
             return (
               <button
                 key={tab}
