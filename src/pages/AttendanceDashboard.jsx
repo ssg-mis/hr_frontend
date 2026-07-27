@@ -48,8 +48,21 @@ const AttendanceDashboard = () => {
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(lastDay)}`;
   };
 
+  // Returns yesterday's date string YYYY-MM-DD
+  const getYesterday = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+
   const [startDate, setStartDate] = useState(getStartOfMonth());
-  const [endDate, setEndDate] = useState(getEndOfMonth());
+  // Default end date: end of current month, but cap at yesterday so we never request today from BioTime
+  const [endDate, setEndDate] = useState(() => {
+    const eom = getEndOfMonth();
+    const yesterday = getYesterday();
+    return eom > yesterday ? yesterday : eom;
+  });
 
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [todayRecords, setTodayRecords] = useState([]);
@@ -150,12 +163,12 @@ const AttendanceDashboard = () => {
   useEffect(() => {
     let isCurrent = true;
 
-    const syncAndFetch = async () => {
+    const loadAndSync = async () => {
       if (!startDate || !endDate) return;
       const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
       if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) return;
 
-      // 1. Fetch current database records immediately
+      // Step 1: Load existing DB data immediately — no waiting for BioTime
       setLoading(true);
       try {
         const res = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
@@ -164,7 +177,6 @@ const AttendanceDashboard = () => {
           setAttendanceRecords(result.data || []);
         }
 
-        // Fetch today's records immediately
         const today = new Date();
         const pad = (n) => String(n).padStart(2, "0");
         const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
@@ -179,7 +191,8 @@ const AttendanceDashboard = () => {
         if (isCurrent) setLoading(false);
       }
 
-      // 2. Trigger the sync from BioTime API
+      // Step 2: Smart sync in background — backend only fetches BioTime for MISSING dates.
+      // Today is excluded from BioTime requests by the backend.
       if (isCurrent) setSyncing(true);
       try {
         const token = localStorage.getItem("token");
@@ -194,24 +207,17 @@ const AttendanceDashboard = () => {
         const result = await safeJson(res);
         if (isCurrent) {
           if (result.success) {
-            toast.success(`Biometric sync complete! Processed ${result.data?.totalProcessed || 0} punches.`);
-            
-            // Refetch updated data from DB
-            const refetchRes = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
-            const refetchResult = await safeJson(refetchRes);
-            if (isCurrent && refetchResult.success) {
-              setAttendanceRecords(refetchResult.data || []);
+            const processed = result.data?.totalProcessed || 0;
+            if (processed > 0) {
+              // New punches were found — refetch from DB and notify
+              toast.success(`Synced ${processed} new punches from BioTime.`);
+              const refetchRes = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
+              const refetchResult = await safeJson(refetchRes);
+              if (isCurrent && refetchResult.success) {
+                setAttendanceRecords(refetchResult.data || []);
+              }
             }
-
-            // Refetch today's records
-            const today = new Date();
-            const pad = (n) => String(n).padStart(2, "0");
-            const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
-            const refetchTodayRes = await fetch(`${API_URL}/attendance/sessions?startDate=${todayStr}&endDate=${todayStr}`);
-            const refetchTodayResult = await safeJson(refetchTodayRes);
-            if (isCurrent && refetchTodayResult.success) {
-              setTodayRecords(refetchTodayResult.data || []);
-            }
+            // If processed === 0, data was already up to date — no toast needed, silent success
           } else {
             console.warn("BioTime sync failed:", result.message);
             toast.error(result.message || "Failed to sync biometric data");
@@ -225,7 +231,7 @@ const AttendanceDashboard = () => {
       }
     };
 
-    syncAndFetch();
+    loadAndSync();
 
     return () => {
       isCurrent = false;
@@ -691,8 +697,16 @@ const AttendanceDashboard = () => {
                       const isUpcoming = (day.status || "").toLowerCase() === "upcoming";
 
                       return (
-                        <tr key={day.workDate} className="hover:bg-gray-50/50 transition duration-150">
-                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">{fmtDate(day.workDate)}</td>
+                        <tr key={`${day.workDate}-${day.sessionId || 'none'}`} className="hover:bg-gray-50/50 transition duration-150">
+                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                            {fmtDate(day.workDate)}
+                            {/* Show shift tag suffix for multi-shift days (shiftTag > 1) */}
+                            {day.shiftTag > 1 && (
+                              <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                                Shift {day.shiftTag}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-xs font-medium">
                             <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold capitalize bg-indigo-50 text-indigo-700 border border-indigo-200">
                               {day.shiftName === 'general' ? 'General' : `Shift ${day.shiftName?.toUpperCase()}`} ({day.startTime}-{day.endTime})
@@ -893,8 +907,6 @@ const AttendanceDashboard = () => {
                     className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none bg-white font-medium"
                   >
                     <option value="CHECK_IN">Check In</option>
-                    <option value="BREAK_START">Start Break</option>
-                    <option value="BREAK_END">End Break</option>
                     <option value="CHECK_OUT">Check Out</option>
                   </select>
                 </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, X, ChevronLeft, ChevronRight, Search, Trash2, Edit2, Link, Briefcase, Calendar, MapPin, IndianRupee, Award, Layers, Users, Info, AlertCircle, Clock, Lock } from 'lucide-react';
+import { Plus, X, ChevronLeft, ChevronRight, Search, Trash2, Edit2, Link, Copy, Briefcase, Calendar, MapPin, IndianRupee, Award, Layers, Users, Info, AlertCircle, Clock, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { vacancyApi } from './vacancy.api';
 import { designationApi } from '../designation/designation.api';
@@ -239,9 +239,9 @@ const VacancyPage = () => {
 
     // Validate Salary Criteria if provided
     if (formData.salaryCriteria && formData.salaryCriteria.trim()) {
-      const salaryRegex = /^\s*\d+(?:,\d+)*(?:\.\d+)?\s*[kK]?\s*(?:-\s*\d+(?:,\d+)*(?:\.\d+)?\s*[kK]?)?\s*(?:LPA|PM|Monthly|Per Month|Per Annum|Lakhs|L)\s*$/i;
+      const salaryRegex = /^\s*\d+(?:,\d+)*(?:\.\d+)?\s*(?:-\s*\d+(?:,\d+)*(?:\.\d+)?\s*)?$/;
       if (!salaryRegex.test(formData.salaryCriteria)) {
-        setFormError('Salary must be a number or range followed by a unit (e.g., "20,000 - 25,000 PM" or "8 - 12 LPA")');
+        setFormError('Salary must be a number or range (e.g., "25000" or "20000 - 25000")');
         if (formScrollRef.current) formScrollRef.current.scrollTop = 0;
         return;
       }
@@ -292,6 +292,12 @@ const VacancyPage = () => {
 
       const hasSocialPlatforms = finalPlatforms.length > 0;
 
+      // Format salaryCriteria with " (PM)" if input is provided
+      let formattedSalary = formData.salaryCriteria ? formData.salaryCriteria.trim() : null;
+      if (formattedSalary && !formattedSalary.endsWith(' (PM)')) {
+        formattedSalary = `${formattedSalary} (PM)`;
+      }
+
       const payload = {
         vacancyName: formData.vacancyName || null,
         designationId: Number(formData.designationId),
@@ -299,7 +305,7 @@ const VacancyPage = () => {
         gender: formData.gender,
         numberOfPosts: parseInt(formData.numberOfPost, 10),
         completionDate: new Date(formData.competitionDate).toISOString(),
-        salaryCriteria: formData.salaryCriteria || null,
+        salaryCriteria: formattedSalary,
         jobDescription: formData.jobDescription || null,
         preferredQualification: formData.preferredQualification || null,
         preferredLocation: formData.preferredLocation || null,
@@ -381,30 +387,113 @@ const VacancyPage = () => {
       const desig = designations.find(d => String(d.id) === String(item.designationId));
       const itemDeptId = desig ? String(desig.departmentId) : '';
 
+      const match = (item.salaryCriteria || '').match(/^\s*[\d\s,.-]+/);
+      const cleanedSalary = match ? match[0].trim() : '';
+
       setFormData({
         vacancyName: item.vacancyName || '',
         designationId: item.designationId ? String(item.designationId) : '',
         departmentId: itemDeptId,
-      salaryCriteria: item.salaryCriteria || '',
-      preferredQualification: item.preferredQualification || '',
-      preferredLocation: item.preferredLocation || '',
-      remarks: item.remarks || '',
-      jobDescription: item.jobDescription || '',
-      gender: item.gender || '',
-      numberOfPost: item.numberOfPosts || '',
-      competitionDate: formattedDate,
-      priority: item.priority || 'Medium',
-      status: item.status || 'NeedMore',
-      experienceRequired: !!item.experienceRequired,
-      postingLinks: {
-        LinkedIn: item.postingLinks?.LinkedIn || '',
-        Naukri: item.postingLinks?.Naukri || '',
-        Indeed: item.postingLinks?.Indeed || '',
-        Facebook: item.postingLinks?.Facebook || '',
-      },
-    });
-    setShowModal(true);
-  };
+        salaryCriteria: cleanedSalary,
+        preferredQualification: item.preferredQualification || '',
+        preferredLocation: item.preferredLocation || '',
+        remarks: item.remarks || '',
+        jobDescription: item.jobDescription || '',
+        gender: item.gender || '',
+        numberOfPost: item.numberOfPosts || '',
+        competitionDate: formattedDate,
+        priority: item.priority || 'Medium',
+        status: item.status || 'NeedMore',
+        experienceRequired: !!item.experienceRequired,
+        postingLinks: {
+          LinkedIn: item.postingLinks?.LinkedIn || '',
+          Naukri: item.postingLinks?.Naukri || '',
+          Indeed: item.postingLinks?.Indeed || '',
+          Facebook: item.postingLinks?.Facebook || '',
+        },
+      });
+      setShowModal(true);
+    };
+
+    const handleDuplicateClick = (item) => {
+      setIsEditing(false);
+      setEditingVacancyNumber(null);
+
+      const activePlatforms = item.socialPlatforms
+        ? item.socialPlatforms.split(',').map((s) => s.trim())
+        : [];
+
+      const selected = [];
+      let hasCustom = false;
+      let customName = '';
+      let customUrl = '';
+
+      activePlatforms.forEach((p) => {
+        if (standardPlatforms.includes(p)) {
+          selected.push(p);
+        } else if (p) {
+          hasCustom = true;
+          customName = p;
+          customUrl = item.postingLinks?.[p] || '';
+        }
+      });
+
+      if (item.postingLinks) {
+        Object.keys(item.postingLinks).forEach((key) => {
+          if (!standardPlatforms.includes(key) && key) {
+            hasCustom = true;
+            customName = key;
+            customUrl = item.postingLinks[key];
+          }
+        });
+      }
+
+      if (hasCustom) {
+        selected.push('Others');
+        setCustomPlatformName(customName);
+        setCustomLinkUrl(customUrl);
+      } else {
+        setCustomPlatformName('');
+        setCustomLinkUrl('');
+      }
+
+      setSelectedPlatforms(selected);
+
+      let formattedDate = '';
+      if (item.completionDate) {
+        formattedDate = new Date(item.completionDate).toISOString().split('T')[0];
+      }
+
+      const desig = designations.find(d => String(d.id) === String(item.designationId));
+      const itemDeptId = desig ? String(desig.departmentId) : '';
+
+      const match = (item.salaryCriteria || '').match(/^\s*[\d\s,.-]+/);
+      const cleanedSalary = match ? match[0].trim() : '';
+
+      setFormData({
+        vacancyName: item.vacancyName || '',
+        designationId: item.designationId ? String(item.designationId) : '',
+        departmentId: itemDeptId,
+        salaryCriteria: cleanedSalary,
+        preferredQualification: item.preferredQualification || '',
+        preferredLocation: item.preferredLocation || '',
+        remarks: item.remarks || '',
+        jobDescription: item.jobDescription || '',
+        gender: item.gender || '',
+        numberOfPost: item.numberOfPosts || '',
+        competitionDate: formattedDate,
+        priority: item.priority || 'Medium',
+        status: 'NeedMore',
+        experienceRequired: !!item.experienceRequired,
+        postingLinks: {
+          LinkedIn: item.postingLinks?.LinkedIn || '',
+          Naukri: item.postingLinks?.Naukri || '',
+          Indeed: item.postingLinks?.Indeed || '',
+          Facebook: item.postingLinks?.Facebook || '',
+        },
+      });
+      setShowModal(true);
+    };
 
   const handleCancel = () => {
     setFormData({
@@ -755,6 +844,13 @@ const VacancyPage = () => {
                             </button>
                           )}
                           <button
+                            onClick={() => handleDuplicateClick(item)}
+                            className="text-gray-400 hover:text-blue-600 p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+                            title="Duplicate Vacancy"
+                          >
+                            <Copy size={15} />
+                          </button>
+                          <button
                             disabled
                             className="text-gray-300 p-1.5 rounded-lg cursor-not-allowed opacity-50"
                             title="Delete Vacancy (Disabled)"
@@ -948,14 +1044,14 @@ const VacancyPage = () => {
                   <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3">Candidate Specifications</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-1">Salary Criteria</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Salary Criteria (PM)</label>
                       <input
                         type="text"
                         name="salaryCriteria"
                         value={formData.salaryCriteria}
                         onChange={handleInputChange}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                        placeholder="e.g. 20,000 - 25,000 PM or 8 - 12 LPA"
+                        placeholder="e.g. 25000 or 20000 - 25000"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -1367,6 +1463,17 @@ const VacancyPage = () => {
                 )}
               </div>
               <div className="flex space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDuplicateClick(viewingVacancy);
+                    setViewingVacancy(null);
+                  }}
+                  className="px-4 py-2 border border-blue-250 text-blue-650 bg-white rounded-xl font-bold hover:bg-blue-50 transition-colors flex items-center text-sm shadow-sm"
+                >
+                  <Copy size={14} className="mr-1.5" />
+                  Duplicate Vacancy
+                </button>
                 <button
                   type="button"
                   onClick={() => setViewingVacancy(null)}
