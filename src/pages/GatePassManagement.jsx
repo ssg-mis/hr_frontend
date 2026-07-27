@@ -22,15 +22,33 @@ import {
   CreditCard,
   AlertCircle,
   Info,
+  Copy,
+  ExternalLink,
+  Share2,
+  ArrowRight,
+  Check,
+  Lock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../lib/api";
+import useAuthStore from "../store/authStore";
 
 const GatePassManagement = () => {
+  const user = useAuthStore((state) => state.user);
+  const roles = user?.roles ?? (user?.role ? [user.role] : []);
+  const hasRole = (r) => roles.some((role) => role.toLowerCase() === r.toLowerCase());
+
+  const isAdmin = hasRole("admin");
+  const isHR = hasRole("hr");
+  const isHOD = hasRole("hod");
+  const isEmployeeOnly = !isAdmin && !isHR && !isHOD;
+
   const [passes, setPasses] = useState([]);
   const [stats, setStats] = useState({
     totalToday: 0,
     currentlyOut: 0,
+    pendingHodCount: 0,
+    pendingHrCount: 0,
     visitorsToday: 0,
     employeesToday: 0,
   });
@@ -52,6 +70,15 @@ const GatePassManagement = () => {
   const [selectedPass, setSelectedPass] = useState(null);
   const [showPrintModal, setShowPrintModal] = useState(false);
 
+  // Rejection Modal state
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectPassId, setRejectPassId] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+
+  // External Visitor Link share modal state
+  const [showShareLinkModal, setShowShareLinkModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+
   // Form State
   const [form, setForm] = useState({
     employeeId: "",
@@ -66,12 +93,24 @@ const GatePassManagement = () => {
     idProofType: "Aadhar",
     idProofNumber: "",
     vehicleNumber: "",
-    expectedOutTime: new Date().toISOString().slice(0, 16),
+    expectedOutTime: new Date(Date.now() + 15 * 60000).toISOString().slice(0, 16),
     expectedInTime: "",
     remarks: "",
   });
 
   const printRef = useRef(null);
+
+  const getPublicVisitorLink = () => {
+    return `${window.location.origin}/visitor-pass-request`;
+  };
+
+  const copyVisitorLink = () => {
+    const link = getPublicVisitorLink();
+    navigator.clipboard.writeText(link);
+    setCopied(true);
+    toast.success("Visitor pass request link copied to clipboard!");
+    setTimeout(() => setCopied(false), 3000);
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -132,30 +171,43 @@ const GatePassManagement = () => {
           (emp) => String(emp.employee_id || emp.id) === String(value)
         );
         if (selected) {
-          const deptId = selected.department_id || selected.departmentId;
-          if (deptId) updated.departmentId = deptId;
+          const deptId = selected.department_id || selected.departmentId || (selected.department && selected.department.id);
+          if (deptId) updated.departmentId = String(deptId);
         }
       }
       return updated;
     });
   };
 
-
   const resetForm = () => {
+    let empId = isEmployeeOnly ? String(user?.employeeId || "") : "";
+    let deptId = user?.departmentId ? String(user.departmentId) : "";
+
+    // If an employee ID is set, attempt to derive department
+    if (empId && employeesList.length > 0) {
+      const selected = employeesList.find(
+        (emp) => String(emp.employee_id || emp.id) === String(empId)
+      );
+      if (selected) {
+        const foundDept = selected.department_id || selected.departmentId || (selected.department && selected.department.id);
+        if (foundDept) deptId = String(foundDept);
+      }
+    }
+
     setForm({
-      employeeId: "",
+      employeeId: empId,
       visitorName: "",
       visitorPhone: "",
       visitorCompany: "",
       hostEmployeeId: "",
       hostName: "",
-      departmentId: "",
+      departmentId: deptId,
       purpose: "",
       outReasonCategory: activeTab === "EMPLOYEE" ? "Official" : "Visit",
       idProofType: "Aadhar",
       idProofNumber: "",
       vehicleNumber: "",
-      expectedOutTime: new Date().toISOString().slice(0, 16),
+      expectedOutTime: new Date(Date.now() + 15 * 60000).toISOString().slice(0, 16),
       expectedInTime: "",
       remarks: "",
     });
@@ -176,7 +228,9 @@ const GatePassManagement = () => {
       return;
     }
 
-    if (activeTab === "EMPLOYEE" && !form.employeeId) {
+    const empIdToSubmit = isEmployeeOnly ? user?.employeeId : form.employeeId ? Number(form.employeeId) : null;
+
+    if (activeTab === "EMPLOYEE" && !empIdToSubmit) {
       toast.error("Please select an employee.");
       return;
     }
@@ -190,16 +244,17 @@ const GatePassManagement = () => {
     try {
       const payload = {
         ...form,
+        employeeId: empIdToSubmit,
+        departmentId: form.departmentId ? Number(form.departmentId) : user?.departmentId || null,
         passType: activeTab,
       };
 
       const res = await api.post("/gate-passes", payload);
       if (res.success) {
-        toast.success(res.message || "Gate pass issued successfully!");
+        toast.success(res.message || "Gate pass request submitted!");
         setShowIssueModal(false);
         resetForm();
         fetchData();
-        // Automatically prompt print preview for the newly issued pass
         setSelectedPass(res.data);
         setShowPrintModal(true);
       }
@@ -211,14 +266,18 @@ const GatePassManagement = () => {
     }
   };
 
-  const handleStatusUpdate = async (passId, newStatus) => {
+  const handleStatusUpdate = async (passId, newStatus, reason = "") => {
     try {
       const res = await api.patch(`/gate-passes/${passId}/status`, {
         status: newStatus,
+        rejectionReason: reason || undefined,
       });
 
       if (res.success) {
         toast.success(res.message || `Pass status updated to ${newStatus}`);
+        if (showRejectModal) setShowRejectModal(false);
+        setRejectionReason("");
+        setRejectPassId(null);
         fetchData();
       }
     } catch (err) {
@@ -227,8 +286,50 @@ const GatePassManagement = () => {
     }
   };
 
+  const openRejectModal = (passId) => {
+    setRejectPassId(passId);
+    setRejectionReason("");
+    setShowRejectModal(true);
+  };
+
   const handlePrint = () => {
-    window.print();
+    const printContent = document.getElementById("printable-pass-area");
+    if (!printContent) return;
+
+    const printWindow = window.open("", "_blank", "width=850,height=950");
+    if (!printWindow) {
+      toast.error("Please allow popup windows to print the pass.");
+      window.print();
+      return;
+    }
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Gate Pass - ${selectedPass?.passNumber || "Ticket"}</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+            @media print {
+              body { margin: 0; padding: 20px; background: white !important; }
+              .no-print { display: none !important; }
+            }
+          </style>
+        </head>
+        <body class="bg-white text-slate-900 flex justify-center items-center min-h-screen p-6">
+          <div class="w-full max-w-lg border-4 border-double border-indigo-950 p-6 rounded-xl space-y-4">
+            ${printContent.innerHTML}
+          </div>
+          <script>
+            setTimeout(() => {
+              window.print();
+              window.close();
+            }, 600);
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const formatDateTime = (dateStr) => {
@@ -245,11 +346,32 @@ const GatePassManagement = () => {
 
   const getStatusBadge = (status) => {
     switch (status) {
+      case "PENDING_HOD":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-800 border border-orange-200">
+            <Clock size={13} />
+            Pending HOD
+          </span>
+        );
+      case "PENDING_HR":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+            <Clock size={13} />
+            Pending HR
+          </span>
+        );
       case "APPROVED":
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
             <CheckCircle2 size={13} />
             Approved
+          </span>
+        );
+      case "REJECTED":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200">
+            <XCircle size={13} />
+            Rejected
           </span>
         );
       case "OUT":
@@ -261,14 +383,14 @@ const GatePassManagement = () => {
         );
       case "IN":
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-teal-100 text-teal-800 border border-teal-200">
             <LogIn size={13} />
             Returned (In)
           </span>
         );
       case "CANCELLED":
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-800 border border-gray-200">
             <XCircle size={13} />
             Cancelled
           </span>
@@ -284,31 +406,6 @@ const GatePassManagement = () => {
 
   return (
     <div className="space-y-6">
-      {/* Printable styles for direct printing */}
-      <style>{`
-        @media print {
-          body * {
-            visibility: hidden;
-          }
-          #printable-pass-area, #printable-pass-area * {
-            visibility: visible;
-          }
-          #printable-pass-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            margin: 0;
-            padding: 20px;
-            background: white !important;
-            color: black !important;
-          }
-          .no-print {
-            display: none !important;
-          }
-        }
-      `}</style>
-
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-gray-200 pb-4 gap-4">
         <div>
@@ -317,10 +414,23 @@ const GatePassManagement = () => {
             <span>Gate Pass Management</span>
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Issue, track, and print exit passes for visitors & employees entering or leaving campus.
+            Raise, approve (HOD & HR), track, and manage gate passes for employees & visitors.
           </p>
         </div>
-        <div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* External Visitor Pass Link Button */}
+          {(isAdmin || isHR) && (
+            <button
+              onClick={() => setShowShareLinkModal(true)}
+              className="flex items-center gap-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-semibold px-4 py-2.5 rounded-xl transition duration-200 cursor-pointer text-sm"
+            >
+              <Share2 size={17} />
+              <span>External Visitor Link</span>
+            </button>
+          )}
+
+          {/* Issue Pass Button */}
           <button
             onClick={() => {
               resetForm();
@@ -329,7 +439,7 @@ const GatePassManagement = () => {
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl shadow-md transition duration-200 cursor-pointer text-sm"
           >
             <Plus size={18} />
-            <span>Issue Gate Pass</span>
+            <span>{isEmployeeOnly ? "Request Gate Pass" : "Issue Gate Pass"}</span>
           </button>
         </div>
       </div>
@@ -338,11 +448,31 @@ const GatePassManagement = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Passes Today</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Total Today</p>
             <h3 className="text-2xl font-extrabold text-gray-900 mt-1">{stats.totalToday || 0}</h3>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-between justify-center">
+          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
             <Ticket size={24} />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 border border-orange-200 bg-orange-50/30 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-orange-700">Pending HOD</p>
+            <h3 className="text-2xl font-extrabold text-orange-900 mt-1">{stats.pendingHodCount || 0}</h3>
+          </div>
+          <div className="w-12 h-12 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center">
+            <Clock size={24} />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 border border-indigo-200 bg-indigo-50/30 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-indigo-700">Pending HR</p>
+            <h3 className="text-2xl font-extrabold text-indigo-900 mt-1">{stats.pendingHrCount || 0}</h3>
+          </div>
+          <div className="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+            <ShieldCheck size={24} />
           </div>
         </div>
 
@@ -353,26 +483,6 @@ const GatePassManagement = () => {
           </div>
           <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
             <LogOut size={24} />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Visitor Passes</p>
-            <h3 className="text-2xl font-extrabold text-gray-900 mt-1">{stats.visitorsToday || 0}</h3>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-            <Users size={24} />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Employee Passes</p>
-            <h3 className="text-2xl font-extrabold text-gray-900 mt-1">{stats.employeesToday || 0}</h3>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
-            <User size={24} />
           </div>
         </div>
       </div>
@@ -425,10 +535,12 @@ const GatePassManagement = () => {
                 className="px-3 py-1.5 border border-gray-300 rounded-xl text-xs font-medium bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
               >
                 <option value="ALL">All Statuses</option>
+                <option value="PENDING_HOD">Pending HOD</option>
+                <option value="PENDING_HR">Pending HR</option>
                 <option value="APPROVED">Approved</option>
                 <option value="OUT">Out Campus</option>
                 <option value="IN">Returned (In)</option>
-                <option value="CANCELLED">Cancelled</option>
+                <option value="REJECTED">Rejected</option>
               </select>
             </div>
           </div>
@@ -467,7 +579,7 @@ const GatePassManagement = () => {
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="font-bold text-indigo-700 text-sm">{pass.passNumber}</span>
-                        <span className="text-[11px] text-gray-400">By {pass.issuedByName || "Admin"}</span>
+                        <span className="text-[11px] text-gray-400">By {pass.issuedByName || "System"}</span>
                       </div>
                     </td>
 
@@ -541,8 +653,48 @@ const GatePassManagement = () => {
                     {/* Actions */}
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        {/* Status workflow triggers */}
-                        {pass.status === "APPROVED" && (
+                        {/* Status PENDING_HOD Actions:
+                            - ONLY HOD (or Admin) can approve HOD stage -> PENDING_HR
+                            - HR cannot approve on behalf of HOD
+                        */}
+                        {pass.status === "PENDING_HOD" && (isHOD || isAdmin) && (
+                          <button
+                            onClick={() => handleStatusUpdate(pass.id, "PENDING_HR")}
+                            className="inline-flex items-center gap-1 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold px-2.5 py-1 rounded-lg transition shadow-sm"
+                            title="Approve as HOD (Moves request to HR approval stage)"
+                          >
+                            <CheckCircle2 size={13} /> Approve (HOD)
+                          </button>
+                        )}
+
+                        {/* Status PENDING_HR Actions:
+                            - ONLY HR or Admin can approve HR stage -> APPROVED
+                            - HOD cannot approve here
+                        */}
+                        {pass.status === "PENDING_HR" && (isHR || isAdmin) && (
+                          <button
+                            onClick={() => handleStatusUpdate(pass.id, "APPROVED")}
+                            className="inline-flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-2.5 py-1 rounded-lg transition shadow-sm"
+                            title="Approve as HR (Final Approval)"
+                          >
+                            <CheckCircle2 size={13} /> Approve (HR)
+                          </button>
+                        )}
+
+                        {/* Reject Button (HOD for PENDING_HOD, HR/Admin for PENDING_HOD or PENDING_HR) */}
+                        {((pass.status === "PENDING_HOD" && (isHOD || isHR || isAdmin)) ||
+                          (pass.status === "PENDING_HR" && (isHR || isAdmin))) && (
+                          <button
+                            onClick={() => openRejectModal(pass.id)}
+                            className="inline-flex items-center gap-1 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold px-2 py-1 rounded-lg transition"
+                            title="Reject Request"
+                          >
+                            <XCircle size={13} /> Reject
+                          </button>
+                        )}
+
+                        {/* Out / In execution workflows */}
+                        {pass.status === "APPROVED" && (isHR || isAdmin) && (
                           <button
                             onClick={() => handleStatusUpdate(pass.id, "OUT")}
                             title="Mark Left Campus (Out)"
@@ -551,7 +703,7 @@ const GatePassManagement = () => {
                             <LogOut size={16} />
                           </button>
                         )}
-                        {pass.status === "OUT" && (
+                        {pass.status === "OUT" && (isHR || isAdmin) && (
                           <button
                             onClick={() => handleStatusUpdate(pass.id, "IN")}
                             title="Mark Returned (In)"
@@ -568,21 +720,10 @@ const GatePassManagement = () => {
                             setShowPrintModal(true);
                           }}
                           title="Print / View Gate Pass"
-                          className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                          className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
                         >
                           <Printer size={16} />
                         </button>
-
-                        {/* Cancel Pass */}
-                        {pass.status !== "CANCELLED" && pass.status !== "IN" && (
-                          <button
-                            onClick={() => handleStatusUpdate(pass.id, "CANCELLED")}
-                            title="Cancel Gate Pass"
-                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition"
-                          >
-                            <XCircle size={16} />
-                          </button>
-                        )}
                       </div>
                     </td>
                   </tr>
@@ -593,6 +734,118 @@ const GatePassManagement = () => {
         )}
       </div>
 
+      {/* Modal: Share External Visitor Link */}
+      {showShareLinkModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-gray-200 overflow-hidden">
+            <div className="px-6 py-4 bg-purple-900 text-white flex justify-between items-center">
+              <h3 className="font-bold text-base flex items-center gap-2">
+                <Share2 size={18} />
+                <span>External Visitor Gate Pass Link</span>
+              </h3>
+              <button
+                onClick={() => setShowShareLinkModal(false)}
+                className="text-purple-200 hover:text-white p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                Share this link with visitors to allow them to submit gate pass requests online. Submitted visitor requests go directly to HR for approval.
+              </p>
+
+              <div className="flex items-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                <input
+                  type="text"
+                  readOnly
+                  value={getPublicVisitorLink()}
+                  className="flex-1 bg-transparent text-xs font-mono text-gray-800 outline-none select-all"
+                />
+                <button
+                  onClick={copyVisitorLink}
+                  className="flex items-center gap-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0"
+                >
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{copied ? "Copied!" : "Copy Link"}</span>
+                </button>
+              </div>
+
+              <div className="pt-2 text-right">
+                <a
+                  href={getPublicVisitorLink()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-purple-700 hover:text-purple-900 font-bold text-xs"
+                >
+                  <span>Open Form Preview</span>
+                  <ExternalLink size={14} />
+                </a>
+              </div>
+            </div>
+
+            <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowShareLinkModal(false)}
+                className="bg-white border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-xl text-sm hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Rejection Reason */}
+      {showRejectModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-gray-200 overflow-hidden">
+            <div className="px-6 py-4 bg-red-50 border-b border-red-100 flex justify-between items-center text-red-900">
+              <h3 className="font-bold text-base flex items-center gap-2">
+                <XCircle size={18} className="text-red-600" />
+                <span>Reject Gate Pass Request</span>
+              </h3>
+              <button
+                onClick={() => setShowRejectModal(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-gray-600">
+                Please provide a reason for rejecting this gate pass request:
+              </p>
+
+              <textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder="Enter rejection reason..."
+                rows={3}
+                className="w-full p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-red-500 outline-none"
+              />
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setShowRejectModal(false)}
+                className="bg-white border border-gray-300 text-gray-700 font-semibold px-4 py-2 rounded-xl text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleStatusUpdate(rejectPassId, "REJECTED", rejectionReason)}
+                className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-xl text-sm shadow transition"
+              >
+                Confirm Rejection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal: Issue Gate Pass */}
       {showIssueModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center bg-black/50 p-4">
@@ -601,7 +854,7 @@ const GatePassManagement = () => {
             <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
               <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
                 <Ticket className="text-indigo-600" size={20} />
-                <span>Issue New Gate Pass</span>
+                <span>{isEmployeeOnly ? "Request Gate Pass" : "Issue New Gate Pass"}</span>
               </h3>
               <button
                 onClick={() => setShowIssueModal(false)}
@@ -611,63 +864,66 @@ const GatePassManagement = () => {
               </button>
             </div>
 
-            {/* Tab switcher */}
-            <div className="flex border-b border-gray-200 bg-gray-100/50 p-1">
-              <button
-                type="button"
-                onClick={() => handleTabChange("EMPLOYEE")}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 ${
-                  activeTab === "EMPLOYEE"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                <User size={16} />
-                <span>Employee Out Pass</span>
-              </button>
+            {/* Tab switcher (only for non-employee or HR/Admin) */}
+            {!isEmployeeOnly && (
+              <div className="flex border-b border-gray-200 bg-gray-100/50 p-1">
+                <button
+                  type="button"
+                  onClick={() => handleTabChange("EMPLOYEE")}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 ${
+                    activeTab === "EMPLOYEE"
+                      ? "bg-white text-indigo-700 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <User size={16} />
+                  <span>Employee Out Pass</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => handleTabChange("VISITOR")}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 ${
-                  activeTab === "VISITOR"
-                    ? "bg-white text-purple-700 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                <Users size={16} />
-                <span>Visitor Gate Pass</span>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => handleTabChange("VISITOR")}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 ${
+                    activeTab === "VISITOR"
+                      ? "bg-white text-purple-700 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <Users size={16} />
+                  <span>Visitor Gate Pass</span>
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleCreatePass}>
               <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                 {activeTab === "EMPLOYEE" ? (
                   /* Employee Pass Form Fields */
                   <>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-bold uppercase text-gray-700">Select Employee *</label>
-                      <select
-                        name="employeeId"
-                        value={form.employeeId}
-                        onChange={handleInputChange}
-                        required
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 bg-white"
-                      >
-                        <option value="">-- Choose Employee --</option>
-                        {employeesList.map((emp) => {
-                          const id = emp.employee_id || emp.id;
-                          const name = emp.candidateName || emp.name_as_per_aadhar || emp.name || "Employee";
-                          const code = emp.employee_code || emp.employeeCode || emp.biotime_emp_code || "";
-                          return (
-                            <option key={id} value={id}>
-                              {name} {code ? `(${code})` : ""}
-                            </option>
-                          );
-                        })}
-                      </select>
-
-                    </div>
+                    {!isEmployeeOnly && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold uppercase text-gray-700">Select Employee *</label>
+                        <select
+                          name="employeeId"
+                          value={form.employeeId}
+                          onChange={handleInputChange}
+                          required
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 bg-white"
+                        >
+                          <option value="">-- Choose Employee --</option>
+                          {employeesList.map((emp) => {
+                            const id = emp.employee_id || emp.id;
+                            const name = emp.candidateName || emp.name_as_per_aadhar || emp.name || "Employee";
+                            const code = emp.employee_code || emp.employeeCode || emp.biotime_emp_code || "";
+                            return (
+                              <option key={id} value={id}>
+                                {name} {code ? `(${code})` : ""}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="flex flex-col gap-1.5">
@@ -684,14 +940,19 @@ const GatePassManagement = () => {
                       </div>
 
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-bold uppercase text-gray-700">Department</label>
+                        <label className="text-xs font-bold uppercase text-gray-700 flex items-center justify-between">
+                          <span>Department</span>
+                          <span className="text-[10px] text-gray-500 font-normal flex items-center gap-1">
+                            <Lock size={10} /> Auto-assigned
+                          </span>
+                        </label>
                         <select
                           name="departmentId"
                           value={form.departmentId}
-                          onChange={handleInputChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-white"
+                          disabled={true}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm bg-gray-100 text-gray-700 font-medium cursor-not-allowed"
                         >
-                          <option value="">-- Select Department --</option>
+                          <option value="">-- Auto-filled Department --</option>
                           {departmentsList.map((d) => (
                             <option key={d.id} value={d.id}>
                               {d.name}
@@ -871,7 +1132,7 @@ const GatePassManagement = () => {
                   disabled={submitting}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-sm shadow-md transition disabled:opacity-50"
                 >
-                  {submitting ? "Issuing..." : "Issue & Print Pass"}
+                  {submitting ? "Submitting..." : "Submit Pass Request"}
                 </button>
               </div>
             </form>
@@ -887,14 +1148,14 @@ const GatePassManagement = () => {
             <div className="no-print px-6 py-4 bg-indigo-900 text-white flex justify-between items-center">
               <h3 className="font-bold text-base flex items-center gap-2">
                 <Printer size={18} />
-                <span>Gate Pass Document Preview</span>
+                <span>Gate Pass Ticket Preview</span>
               </h3>
               <div className="flex items-center gap-2">
                 <button
                   onClick={handlePrint}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow"
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow"
                 >
-                  <Printer size={14} /> Print Pass
+                  <Printer size={14} /> Print Ticket
                 </button>
                 <button
                   onClick={() => setShowPrintModal(false)}
@@ -906,11 +1167,11 @@ const GatePassManagement = () => {
             </div>
 
             {/* Print Pass Document Body */}
-            <div id="printable-pass-area" ref={printRef} className="p-8 bg-white text-gray-900">
+            <div id="printable-pass-area" ref={printRef} className="p-6 bg-white text-gray-900">
               {/* Pass Outer Border Box */}
-              <div className="border-4 border-double border-indigo-950 p-6 rounded-xl relative space-y-5 bg-white">
+              <div className="border-4 border-double border-indigo-950 p-6 rounded-xl relative space-y-4 bg-white">
                 {/* Header */}
-                <div className="text-center border-b-2 border-indigo-950 pb-4">
+                <div className="text-center border-b-2 border-indigo-950 pb-3">
                   <h2 className="text-2xl font-black tracking-wider text-indigo-950 uppercase">
                     CAMPUS GATE PASS
                   </h2>
@@ -925,23 +1186,23 @@ const GatePassManagement = () => {
                     <span className="text-[10px] font-bold text-indigo-950 uppercase tracking-widest block">
                       PASS NUMBER
                     </span>
-                    <span className="text-lg font-black text-indigo-900 tracking-wider">
+                    <span className="text-lg font-black text-indigo-900 tracking-wider font-mono">
                       {selectedPass.passNumber}
                     </span>
                   </div>
 
                   <div className="text-right">
                     <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block">
-                      PASS TYPE
+                      STATUS / TYPE
                     </span>
-                    <span className="text-sm font-extrabold uppercase tracking-wide text-indigo-950 px-2.5 py-0.5 bg-indigo-200 rounded">
-                      {selectedPass.passType} PASS
+                    <span className="text-xs font-extrabold uppercase tracking-wide text-indigo-950 px-2 py-0.5 bg-indigo-200 rounded">
+                      {selectedPass.status} ({selectedPass.passType})
                     </span>
                   </div>
                 </div>
 
                 {/* Details Grid */}
-                <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-xs border-b border-gray-200 pb-4">
+                <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-xs border-b border-gray-200 pb-3">
                   <div>
                     <span className="font-bold text-gray-500 uppercase text-[10px] block">Holder Name:</span>
                     <span className="font-black text-sm text-gray-900">
@@ -976,6 +1237,11 @@ const GatePassManagement = () => {
                   )}
 
                   <div>
+                    <span className="font-bold text-gray-500 uppercase text-[10px] block">Department:</span>
+                    <span className="font-bold text-gray-900">{selectedPass.departmentName || "N/A"}</span>
+                  </div>
+
+                  <div>
                     <span className="font-bold text-gray-500 uppercase text-[10px] block">Purpose:</span>
                     <span className="font-bold text-gray-900">{selectedPass.purpose}</span>
                   </div>
@@ -1002,6 +1268,34 @@ const GatePassManagement = () => {
                   )}
                 </div>
 
+                {/* Audit & Approval Trail */}
+                <div className="space-y-1.5 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-gray-500 font-semibold">HOD Approval:</span>
+                    <span className="font-semibold text-gray-800">
+                      {selectedPass.hodApprovedByName
+                        ? `${selectedPass.hodApprovedByName} (${formatDateTime(selectedPass.hodApprovedAt)})`
+                        : selectedPass.passType === "VISITOR"
+                        ? "N/A (Visitor Direct to HR)"
+                        : "Pending HOD Stage"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-gray-500 font-semibold">HR Approval:</span>
+                    <span className="font-semibold text-gray-800">
+                      {selectedPass.hrApprovedByName
+                        ? `${selectedPass.hrApprovedByName} (${formatDateTime(selectedPass.hrApprovedAt)})`
+                        : "Pending HR Stage"}
+                    </span>
+                  </div>
+                  {selectedPass.rejectionReason && (
+                    <div className="flex justify-between text-[11px] text-red-600 font-medium pt-1 border-t border-red-100">
+                      <span>Rejection Reason:</span>
+                      <span>{selectedPass.rejectionReason}</span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Timestamps */}
                 <div className="grid grid-cols-2 gap-3 text-xs bg-gray-50 p-3 rounded-lg border border-gray-200">
                   <div>
@@ -1023,14 +1317,14 @@ const GatePassManagement = () => {
                 </div>
 
                 {/* Signature / Authority footer */}
-                <div className="pt-4 flex justify-between items-end text-xs">
+                <div className="pt-3 flex justify-between items-end text-xs">
                   <div className="text-center">
                     <div className="w-28 border-b border-gray-400 mb-1"></div>
                     <span className="text-[10px] font-bold uppercase text-gray-500">Security Gate Stamp</span>
                   </div>
 
                   <div className="text-center">
-                    <p className="text-[10px] font-bold text-indigo-900 mb-1">Issued by: {selectedPass.issuedByName || "HR Admin"}</p>
+                    <p className="text-[10px] font-bold text-indigo-900 mb-1">Issued by: {selectedPass.issuedByName || "System"}</p>
                     <div className="w-28 border-b border-gray-400 mb-1"></div>
                     <span className="text-[10px] font-bold uppercase text-gray-500">HR / Admin Auth Sign</span>
                   </div>

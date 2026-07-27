@@ -263,6 +263,27 @@ const LeaveRequest = () => {
       return;
     }
 
+    const selectedPolicy = leaveTypes.find(t => t.leaveName === formData.leaveType || t.leaveCode === formData.leaveCode);
+    if (selectedPolicy) {
+      const activeLeaves = leavesData.filter(leave =>
+        leave.status && !leave.status.toLowerCase().includes('reject') &&
+        (leave.leaveCode === selectedPolicy.leaveCode || leave.leaveType === selectedPolicy.leaveName)
+      );
+      const usedDays = activeLeaves.reduce((sum, l) => sum + (l.days || 0), 0);
+      const totalLimit = selectedPolicy.balance || 0;
+      const remaining = totalLimit - usedDays;
+      const reqDays = calculateDays(formData.fromDate, formData.toDate);
+
+      if (remaining <= 0) {
+        toast.error(`You have no leave balance left for ${formData.leaveType} (0 days remaining).`);
+        return;
+      }
+      if (reqDays > remaining) {
+        toast.error(`Cannot request ${reqDays} day(s). You only have ${remaining} day(s) of ${formData.leaveType} balance remaining.`);
+        return;
+      }
+    }
+
     try {
       setSubmitting(true);
       const result = await api.post('/leaves', {
@@ -301,18 +322,15 @@ const LeaveRequest = () => {
 
 
 
-  // Calculate leave balances dynamically based on policies and approved leaves
+  // Calculate leave balances dynamically based on policies and approved/pending leaves
   const getLeaveStats = () => {
-    const approvedLeaves = leavesData.filter(leave =>
-      leave.status && leave.status.toLowerCase() === 'approved' &&
-      leave.employeeId?.toString() === employeeId?.toString() &&
-      (selectedMonth === 'all' ||
-        isDateInMonth(leave.startDate, selectedMonth) ||
-        isDateInMonth(leave.endDate, selectedMonth))
+    const activeLeaves = leavesData.filter(leave =>
+      leave.status && !leave.status.toLowerCase().includes('reject') &&
+      leave.employeeId?.toString() === employeeId?.toString()
     );
 
     return leaveTypes.map(policy => {
-      const used = approvedLeaves
+      const used = activeLeaves
         .filter(leave => leave.leaveCode === policy.leaveCode || leave.leaveType === policy.leaveName)
         .reduce((sum, leave) => sum + (leave.days || 0), 0);
       
@@ -576,6 +594,19 @@ const LeaveRequest = () => {
                     </>
                   )}
                 </select>
+                {formData.leaveType && (() => {
+                  const stat = leaveStats.find(s => s.leaveName === formData.leaveType || s.leaveCode === formData.leaveCode);
+                  if (!stat) return null;
+                  return stat.remaining <= 0 ? (
+                    <p className="text-xs text-red-600 font-semibold mt-1 flex items-center">
+                      ⚠️ No leave balance left for this leave type (0 days remaining).
+                    </p>
+                  ) : (
+                    <p className="text-xs text-emerald-600 font-medium mt-1">
+                      Available balance: {stat.remaining} day(s) remaining out of {stat.total}
+                    </p>
+                  );
+                })()}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { IndianRupee, Download, Eye, Calendar, TrendingUp, CheckCircle, XCircle } from 'lucide-react';
+import { IndianRupee, Download, Eye, Calendar, TrendingUp, CheckCircle, XCircle, Printer } from 'lucide-react';
 import { api } from '../lib/api';
 import useAuthStore from '../store/authStore';
 import useDataStore from '../store/dataStore';
 import toast from 'react-hot-toast';
+import { generatePayslipPDF, parsePayslipNumbers } from '../lib/generatePayslipPDF';
+import PayslipPreviewModal from '../components/PayslipPreviewModal';
 
 const MySalary = () => {
   // const { user } = useAuthStore();
@@ -16,6 +18,9 @@ const MySalary = () => {
   const [pfLoading, setPfLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedPayslip, setSelectedPayslip] = useState(null);
+  const [showPayslipModal, setShowPayslipModal] = useState(false);
+  const [payslipLoading, setPayslipLoading] = useState(false);
   //  const salaryData = getFilteredData('salaryData', user);
 
   //  Filter salary by selected year
@@ -84,6 +89,107 @@ const MySalary = () => {
     fetchSalaryData();
     fetchPfData();
   }, []);
+
+  // Fetch payslip data for a specific record
+  const fetchPayslipAndShow = async (record) => {
+    try {
+      setPayslipLoading(true);
+      const userData = localStorage.getItem("user");
+      if (!userData) throw new Error("User details not found");
+      const currentUser = JSON.parse(userData);
+      const userEmpCode = currentUser.employeeCode || currentUser.username || '';
+      
+      // Extract month from record.month (e.g., "July 2026" -> "2026-07")
+      const monthParts = record.month.split(' ');
+      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const monthNum = String(monthNames.indexOf(monthParts[0]) + 1).padStart(2, '0');
+      const period = `${monthParts[1]}-${monthNum}`;
+      
+      const result = await api.get(`/salaries/payslip?employeeCode=${encodeURIComponent(userEmpCode)}&period=${period}&type=Monthly`);
+      const payslips = result.data || [];
+      
+      if (payslips.length > 0) {
+        const payslip = parsePayslipNumbers(payslips[0]);
+        setSelectedPayslip(payslip);
+        setShowPayslipModal(true);
+      } else {
+        // Fallback: construct payslip data from the salary record itself
+        const fallbackPayslip = {
+          employeeName: currentUser.name || currentUser.username || 'N/A',
+          employeeCode: userEmpCode,
+          department: 'N/A',
+          designation: 'N/A',
+          period: period,
+          type: 'Monthly',
+          daysWorked: 30,
+          unpaidLeaves: 0,
+          basicPay: record.basicSalary || 0,
+          allowance: record.allowances || 0,
+          compensation: record.overtime || 0,
+          leaveAdjustment: 0,
+          grossSalary: (record.basicSalary || 0) + (record.allowances || 0) + (record.overtime || 0),
+          pfDeduction: record.pfDeduction || 0,
+          esicDeduction: 0,
+          emiDeduction: record.emiDeduction || 0,
+          canteenDeduction: 0,
+          otherDeductions: 0,
+          totalDeductions: record.deductions || 0,
+          netSalary: record.netSalary || 0,
+          status: record.status || 'N/A',
+        };
+        setSelectedPayslip(fallbackPayslip);
+        setShowPayslipModal(true);
+      }
+    } catch (err) {
+      console.error('Error fetching payslip:', err);
+      toast.error('Failed to load payslip data');
+    } finally {
+      setPayslipLoading(false);
+    }
+  };
+
+  const handleDownloadPayslip = async (record) => {
+    try {
+      const userData = localStorage.getItem("user");
+      if (!userData) throw new Error("User details not found");
+      const currentUser = JSON.parse(userData);
+      const userEmpCode = currentUser.employeeCode || currentUser.username || '';
+      
+      const monthParts = record.month.split(' ');
+      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const monthNum = String(monthNames.indexOf(monthParts[0]) + 1).padStart(2, '0');
+      const period = `${monthParts[1]}-${monthNum}`;
+      
+      const result = await api.get(`/salaries/payslip?employeeCode=${encodeURIComponent(userEmpCode)}&period=${period}&type=Monthly`);
+      const payslips = result.data || [];
+      
+      if (payslips.length > 0) {
+        generatePayslipPDF(parsePayslipNumbers(payslips[0]), { action: 'download' });
+      } else {
+        // Fallback download from local data
+        const fallbackPayslip = {
+          employeeName: currentUser.name || currentUser.username || 'N/A',
+          employeeCode: userEmpCode,
+          period: period,
+          type: 'Monthly',
+          basicPay: record.basicSalary || 0,
+          allowance: record.allowances || 0,
+          compensation: record.overtime || 0,
+          grossSalary: (record.basicSalary || 0) + (record.allowances || 0) + (record.overtime || 0),
+          pfDeduction: record.pfDeduction || 0,
+          emiDeduction: record.emiDeduction || 0,
+          totalDeductions: record.deductions || 0,
+          netSalary: record.netSalary || 0,
+          status: record.status || 'N/A',
+        };
+        generatePayslipPDF(fallbackPayslip, { action: 'download' });
+      }
+      toast.success('Payslip downloaded!');
+    } catch (err) {
+      console.error('Download error:', err);
+      toast.error('Failed to download payslip');
+    }
+  };
 
   // Calculate yearly statistics
   // Calculate yearly statistics with type safety
@@ -272,7 +378,7 @@ const MySalary = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Net Salary</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pay Date</th>
-                  {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th> */}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -325,24 +431,25 @@ const MySalary = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {new Date(record.payDate).toLocaleDateString()}
                     </td>
-                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <div className="flex space-x-2">
                         <button
-                          onClick={() => handleViewPayslip(record)}
-                          className="text-indigo-600 hover:text-indigo-900"
+                          onClick={() => fetchPayslipAndShow(record)}
+                          className="text-indigo-600 hover:text-indigo-900 p-1 hover:bg-indigo-50 rounded transition-colors"
                           title="View Payslip"
+                          disabled={payslipLoading}
                         >
                           <Eye size={16} />
                         </button>
                         <button
                           onClick={() => handleDownloadPayslip(record)}
-                          className="text-green-600 hover:text-green-900"
+                          className="text-green-600 hover:text-green-900 p-1 hover:bg-green-50 rounded transition-colors"
                           title="Download Payslip"
                         >
                           <Download size={16} />
                         </button>
                       </div>
-                    </td> */}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -382,6 +489,13 @@ const MySalary = () => {
           </div>
         </div>
       )}
+
+      {/* Payslip Preview Modal */}
+      <PayslipPreviewModal
+        isOpen={showPayslipModal}
+        onClose={() => setShowPayslipModal(false)}
+        payslipData={selectedPayslip}
+      />
     </div>
   );
 };

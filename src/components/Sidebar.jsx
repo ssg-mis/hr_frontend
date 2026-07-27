@@ -266,7 +266,7 @@ const Sidebar = ({ onClose }) => {
       });
     }
 
-    if (isHR) addItem({ path: '/gate-pass', icon: Ticket, label: 'Gate Pass Management' });
+    if (isHR || isHOD) addItem({ path: '/gate-pass', icon: Ticket, label: 'Gate Pass Management' });
     if (isHR) addItem({ path: '/canteen', icon: Utensils, label: 'Canteen Management' });
 
 
@@ -306,6 +306,7 @@ const Sidebar = ({ onClose }) => {
           { path: '/esic-management', label: 'ESIC Management' },
         ],
       },
+      { path: '/gate-pass', icon: Ticket, label: 'Gate Pass Request' },
       { path: '/canteen', icon: Utensils, label: 'Canteen Info' },
       { path: '/resignation-module', icon: UserMinus, label: 'Resignation' },
     ];

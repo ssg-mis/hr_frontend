@@ -14,6 +14,7 @@ const DOC_ITEMS = [
   { key: 'experienceLetter', label: 'Experience Letter', field: 'experienceLetter', isLink: true },
   { key: 'salarySlip', label: 'Salary Slip', field: 'salarySlip', isLink: true },
   { key: 'relievingLetter', label: 'Relieving Letter', field: 'relievingLetter', isLink: true },
+  { key: 'bankStatement', label: 'Bank Statement', field: 'bankStatement', isLink: true },
 ];
 
 const statusBadge = (verified) => (
@@ -112,7 +113,7 @@ const DocumentVerification = () => {
     if (decision === 'Verified') {
       const requiredKeys = ['aadhar', 'photo', 'resume'];
       if (verifying.experienceRequired) {
-        requiredKeys.push('experienceLetter', 'salarySlip', 'relievingLetter');
+        requiredKeys.push('experienceLetter', 'salarySlip', 'relievingLetter', 'bankStatement');
       }
 
       // Check checklist checkboxes

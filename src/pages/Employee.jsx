@@ -71,7 +71,7 @@ const DetailModal = ({ employee, onClose }) => {
   const fields = [
     { label: 'Employee Code', value: employee.employeeCode, icon: Hash },
     { label: 'Full Name', value: employee.candidateName, icon: Users },
-
+    { label: 'Company Branch', value: employee.branchName ? `${employee.branchName}${employee.branchAddress ? ` (${employee.branchAddress})` : ''}` : '—', icon: Building2 },
     { label: 'Department', value: employee.departmentName, icon: Building2 },
     { label: 'Designation', value: employee.applyingForPost, icon: Briefcase },
     { label: 'Phone', value: employee.candidatePhone, icon: Phone },
@@ -140,6 +140,7 @@ const DetailModal = ({ employee, onClose }) => {
                 { label: 'Experience Letter', value: employee.experienceLetter },
                 { label: 'Salary Slip', value: employee.salarySlip },
                 { label: 'Relieving Letter', value: employee.relievingLetter },
+                { label: 'Bank Statement', value: employee.bankStatement },
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 bg-gray-50 text-xs">
                   <span className="font-semibold text-gray-600">{label}</span>
@@ -291,7 +292,8 @@ const Employee = () => {
           (e.candidatePhone || '').toLowerCase().includes(q) ||
           (e.candidateEmail || '').toLowerCase().includes(q) ||
           (e.applyingForPost || '').toLowerCase().includes(q) ||
-          (e.departmentName || '').toLowerCase().includes(q)
+          (e.departmentName || '').toLowerCase().includes(q) ||
+          (e.branchName || '').toLowerCase().includes(q)
         );
       }
 

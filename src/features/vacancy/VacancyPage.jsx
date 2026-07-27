@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { vacancyApi } from './vacancy.api';
 import { designationApi } from '../designation/designation.api';
 import { departmentApi } from '../department/department.api';
+import { companyBranchApi } from '../companyBranch/companyBranch.api';
 
 const VacancyPage = () => {
   const [showModal, setShowModal] = useState(false);
@@ -15,6 +16,7 @@ const VacancyPage = () => {
     vacancyName: '',
     designationId: '',
     departmentId: '',
+    branchId: '',
     salaryCriteria: '',
     preferredQualification: '',
     preferredLocation: '',
@@ -55,6 +57,7 @@ const VacancyPage = () => {
   const [selectedPlatforms, setSelectedPlatforms] = useState([]);
   const [designations, setDesignations] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [formError, setFormError] = useState('');
   const formScrollRef = useRef(null);
 
@@ -69,14 +72,6 @@ const VacancyPage = () => {
 
   const standardPlatforms = ['LinkedIn', 'Naukri', 'Indeed', 'Facebook'];
   const platforms = ['LinkedIn', 'Naukri', 'Indeed', 'Facebook', 'Others'];
-
-  const PREFERRED_LOCATIONS = [
-    "SHRI SHYAM WAREHOUSING AND POWER PVT. LTD.\nVillage - BANARI",
-    "SHRI SHYAM OIL EXTRACTIONS PVT. LTD.\nVillage - BANARI",
-    "SHRI SHYAM ETHANOL AND SPIRITS PVT. LTD.\nVillage - BANARI",
-    "SHRI SHYAM GLOBAL PVT. LTD.\nVillage - BANARI",
-    "SHRI SHYAM WAREHOUSING AND POWER PVT. LTD. ( COLD STORAGE DIVISON)\nADDRESS- INDUSTRIAL AREA CHAMPA"
-  ];
 
   const handlePlatformChange = (platform) => {
     setSelectedPlatforms((prev) => {
@@ -97,7 +92,7 @@ const VacancyPage = () => {
     });
   };
 
-  // Master data (designations + departments) loads once on mount.
+  // Master data (designations + departments + branches) loads once on mount.
   useEffect(() => {
     loadMasters();
   }, []);
@@ -109,15 +104,17 @@ const VacancyPage = () => {
 
   const loadMasters = async () => {
     try {
-      const [desigs, depts] = await Promise.all([
+      const [desigs, depts, branchList] = await Promise.all([
         designationApi.list(),
         departmentApi.list(),
+        companyBranchApi.list(),
       ]);
       setDesignations(desigs || []);
       setDepartments(depts || []);
+      setBranches(branchList || []);
     } catch (error) {
       console.error('Error loading master data:', error);
-      toast.error('Could not load designations/departments');
+      toast.error('Could not load designations/departments/branches');
     }
   };
 
@@ -302,6 +299,7 @@ const VacancyPage = () => {
         vacancyName: formData.vacancyName || null,
         designationId: Number(formData.designationId),
         departmentId: Number(formData.departmentId),
+        branchId: formData.branchId ? Number(formData.branchId) : null,
         gender: formData.gender,
         numberOfPosts: parseInt(formData.numberOfPost, 10),
         completionDate: new Date(formData.competitionDate).toISOString(),
@@ -394,6 +392,7 @@ const VacancyPage = () => {
         vacancyName: item.vacancyName || '',
         designationId: item.designationId ? String(item.designationId) : '',
         departmentId: itemDeptId,
+        branchId: item.branchId ? String(item.branchId) : '',
         salaryCriteria: cleanedSalary,
         preferredQualification: item.preferredQualification || '',
         preferredLocation: item.preferredLocation || '',
@@ -474,6 +473,7 @@ const VacancyPage = () => {
         vacancyName: item.vacancyName || '',
         designationId: item.designationId ? String(item.designationId) : '',
         departmentId: itemDeptId,
+        branchId: item.branchId ? String(item.branchId) : '',
         salaryCriteria: cleanedSalary,
         preferredQualification: item.preferredQualification || '',
         preferredLocation: item.preferredLocation || '',
@@ -500,6 +500,7 @@ const VacancyPage = () => {
       vacancyName: '',
       designationId: '',
       departmentId: '',
+      branchId: '',
       salaryCriteria: '',
       preferredQualification: '',
       preferredLocation: '',
@@ -1096,24 +1097,27 @@ const VacancyPage = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-1">Preferred Location</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Company Branch</label>
                       <select
-                        name="preferredLocation"
-                        value={formData.preferredLocation}
-                        onChange={handleInputChange}
+                        name="branchId"
+                        value={formData.branchId}
+                        onChange={(e) => {
+                          const bId = e.target.value;
+                          const selectedB = branches.find((b) => String(b.id) === String(bId));
+                          setFormData((prev) => ({
+                            ...prev,
+                            branchId: bId,
+                            preferredLocation: selectedB ? `${selectedB.name}\n${selectedB.address || ''}` : prev.preferredLocation,
+                          }));
+                        }}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
                       >
-                        <option value="">Select Location</option>
-                        {PREFERRED_LOCATIONS.map((loc) => (
-                          <option key={loc} value={loc}>
-                            {loc}
+                        <option value="">Select Branch</option>
+                        {branches.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name} ({b.address})
                           </option>
                         ))}
-                        {formData.preferredLocation && !PREFERRED_LOCATIONS.includes(formData.preferredLocation) && (
-                          <option value={formData.preferredLocation}>
-                            {formData.preferredLocation}
-                          </option>
-                        )}
                       </select>
                     </div>
                     <div className="md:col-span-2">

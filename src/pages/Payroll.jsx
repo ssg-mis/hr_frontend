@@ -2,27 +2,51 @@ import React, { useState, useEffect } from "react";
 import { 
   Search, Calendar, Clock, Download, Plus, Check, X, FileText, 
   BarChart3, CreditCard, Calculator, Filter, Eye, Trash2, Save, 
-  AlertCircle, ChevronRight, User, Settings, ShieldAlert, BadgeInfo
+  AlertCircle, ChevronLeft, ChevronRight, User, Settings, ShieldAlert, BadgeInfo, Printer
 } from "lucide-react";
 import { jsPDF } from "jspdf";
-import "jspdf-autotable";
+import autoTable from "jspdf-autotable";
 import api from "../lib/api";
 import useAuthStore from "../store/authStore";
 import toast from "react-hot-toast";
+import { generatePayslipPDF, generateBulkPayslipsPDF } from "../lib/generatePayslipPDF";
+import PayslipPreviewModal from "../components/PayslipPreviewModal";
+
+// Helper to safely invoke autoTable regardless of build bundle structure
+const applyAutoTable = (doc, options) => {
+  if (typeof doc.autoTable === 'function') {
+    doc.autoTable(options);
+  } else if (typeof autoTable === 'function') {
+    autoTable(doc, options);
+  }
+};
+
 
 const Payroll = () => {
   const { user, isAdmin, isHR, isHOD } = useAuthStore();
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
+
   const [activeMode, setActiveMode] = useState("Monthly"); // "Monthly" | "Daily"
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // "YYYY-MM"
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthStr); // "YYYY-MM"
   
   // Daily date range
   const [startDate, setStartDate] = useState(new Date(new Date().setDate(1)).toISOString().slice(0, 10)); // 1st of current month
-  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10)); // Today
+  const [endDate, setEndDate] = useState(todayStr); // Today
   
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Reset page to 1 when filters or search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, departmentFilter, selectedMonth, activeMode, startDate, endDate]);
   
   // Raw data from APIs
   const [employees, setEmployees] = useState([]);
@@ -33,6 +57,7 @@ const Payroll = () => {
   const [compensationList, setCompensationList] = useState([]);
   const [canteenData, setCanteenData] = useState([]); // Monthly array or Daily logs
   const [leavesList, setLeavesList] = useState([]);
+  const [attendanceData, setAttendanceData] = useState([]);
   
   // Calculated & Edited payroll records
   const [payrollRows, setPayrollRows] = useState([]);
@@ -42,38 +67,57 @@ const Payroll = () => {
   const [selectedRowForPayslip, setSelectedRowForPayslip] = useState(null);
   const [showPayslipModal, setShowPayslipModal] = useState(false);
 
+  // Helper to safely extract arrays from backend responses
+  const getArrayData = (res) => {
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res?.data)) return res.data;
+    if (Array.isArray(res?.data?.data)) return res.data.data;
+    return [];
+  };
+
   // Load basic configurations
   const loadBaseData = async () => {
     setLoading(true);
     try {
       // 1. Fetch active employees
       const empRes = await api.get("/employees");
-      const activeEmps = (empRes.data || []).filter(e => e.status === "Active");
+      const activeEmps = getArrayData(empRes).filter(e => e.status === "Active");
       setEmployees(activeEmps);
 
       // 2. Fetch salaries
       const salRes = await api.get("/salaries");
-      setSalariesList(salRes.data || []);
+      setSalariesList(getArrayData(salRes));
 
       // 3. Fetch PF preferences
       const pfRes = await api.get("/pf");
-      setPfDetailsList(pfRes.data || []);
+      setPfDetailsList(getArrayData(pfRes));
 
       // 4. Fetch ESIC preferences
       const esicRes = await api.get("/esic");
-      setEsicDetailsList(esicRes.data || []);
+      setEsicDetailsList(getArrayData(esicRes));
 
       // 5. Fetch EMIs
       const emiRes = await api.get("/emis");
-      setEmisList((emiRes.data || []).filter(e => e.status === "Active"));
+      setEmisList(getArrayData(emiRes).filter(e => e.status === "Active"));
 
       // 6. Fetch approved compensations
-      const compRes = await api.get("/compensation?status=Approved");
-      setCompensationList(compRes.data || []);
+      const compRes = await api.get("/compensation");
+      const allComps = getArrayData(compRes);
+      const approvedComps = allComps.filter(c => {
+        const statusLower = (c.status || "").toLowerCase();
+        const hrStatusLower = (c.hrStatus || "").toLowerCase();
+        const hodStatusLower = (c.hodStatus || "").toLowerCase();
+        return (
+          statusLower === "approved" ||
+          hrStatusLower === "approved" ||
+          (hodStatusLower === "approved" && hrStatusLower === "approved")
+        );
+      });
+      setCompensationList(approvedComps);
 
       // 7. Fetch approved leaves for LWP calculations
       const leavesRes = await api.get("/leaves?limit=10000");
-      setLeavesList((leavesRes.data || []).filter(l => l.status === "Approved"));
+      setLeavesList(getArrayData(leavesRes).filter(l => l.status === "Approved"));
 
     } catch (err) {
       console.error("Error fetching base payroll configurations:", err);
@@ -87,7 +131,7 @@ const Payroll = () => {
     loadBaseData();
   }, []);
 
-  // Fetch canteen deductions and saved runs when month or date range changes
+  // Fetch canteen deductions, attendance logs and saved runs when month or date range changes
   const loadPeriodSpecificData = async () => {
     setLoading(true);
     try {
@@ -105,6 +149,24 @@ const Payroll = () => {
         const cantRes = await api.get(`/canteen/logs?startDate=${startDate}&endDate=${endDate}`);
         setCanteenData(cantRes.data || []);
       }
+
+      // Fetch attendance sessions for present days & absent calculation
+      let startD = startDate;
+      let endD = endDate;
+      if (activeMode === "Monthly") {
+        const [yearStr, monthStr] = selectedMonth.split("-").map(Number);
+        const lastDay = new Date(yearStr, monthStr, 0).getDate();
+        startD = `${selectedMonth}-01`;
+        endD = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`;
+        if (endD > todayStr) endD = todayStr;
+      }
+      try {
+        const attRes = await api.get(`/attendance/sessions?startDate=${startD}&endDate=${endD}`);
+        setAttendanceData(attRes.data || []);
+      } catch (attErr) {
+        console.error("Attendance API query error:", attErr);
+        setAttendanceData([]);
+      }
     } catch (err) {
       console.error("Error loading period-specific data:", err);
     } finally {
@@ -116,30 +178,153 @@ const Payroll = () => {
     loadPeriodSpecificData();
   }, [activeMode, selectedMonth, startDate, endDate]);
 
+  // Helper to compute approved live compensation for an employee in current period
+  const getApprovedCompensationAmount = (empId, monthlyBase) => {
+    let compSum = 0;
+    const empComps = compensationList.filter(c => Number(c.employeeId) === Number(empId));
+    if (activeMode === "Monthly") {
+      const [yearStr, monthStr] = selectedMonth.split("-").map(Number);
+      empComps.forEach(c => {
+        const rawDate = c.workDate || c.startDate || c.createdAt || c.hrApprovedAt || c.hodApprovedAt;
+        let dateMatch = true;
+        if (rawDate) {
+          const wDate = new Date(rawDate);
+          if (!isNaN(wDate.getTime())) {
+            const rawStr = String(rawDate);
+            dateMatch = 
+              rawStr.includes(selectedMonth) ||
+              (wDate.getFullYear() === yearStr && (wDate.getMonth() + 1) === monthStr) ||
+              (wDate.getUTCFullYear() === yearStr && (wDate.getUTCMonth() + 1) === monthStr);
+          }
+        }
+        if (dateMatch) {
+          let compAmt = 0;
+          if (c.amount !== undefined && c.amount !== null && parseFloat(c.amount) > 0) {
+            compAmt = parseFloat(c.amount);
+          } else if (c.hours !== undefined && c.hours !== null && parseFloat(c.hours) > 0) {
+            const hours = parseFloat(c.hours);
+            const hourlyRate = monthlyBase > 0 ? (monthlyBase / 240) * 1.5 : 0;
+            compAmt = parseFloat((hours * hourlyRate).toFixed(2));
+          }
+          compSum += compAmt;
+        }
+      });
+    } else {
+      const rangeStart = new Date(startDate);
+      const rangeEnd = new Date(endDate + "T23:59:59");
+      empComps.forEach(c => {
+        const rawDate = c.workDate || c.startDate || c.createdAt || c.hrApprovedAt || c.hodApprovedAt;
+        let dateMatch = true;
+        if (rawDate) {
+          const wDate = new Date(rawDate);
+          if (!isNaN(wDate.getTime())) {
+            dateMatch = wDate >= rangeStart && wDate <= rangeEnd;
+          }
+        }
+        if (dateMatch) {
+          let compAmt = 0;
+          if (c.amount !== undefined && c.amount !== null && parseFloat(c.amount) > 0) {
+            compAmt = parseFloat(c.amount);
+          } else if (c.hours !== undefined && c.hours !== null && parseFloat(c.hours) > 0) {
+            const hours = parseFloat(c.hours);
+            const hourlyRate = monthlyBase > 0 ? (monthlyBase / 240) * 1.5 : 0;
+            compAmt = parseFloat((hours * hourlyRate).toFixed(2));
+          }
+          compSum += compAmt;
+        }
+      });
+    }
+    return parseFloat(compSum.toFixed(2));
+  };
+
+  // Helper to compute live canteen deduction for an employee in current period
+  const getLiveCanteenDeductionForEmployee = (empId) => {
+    if (!canteenData || !Array.isArray(canteenData) || canteenData.length === 0) return 0;
+    
+    if (activeMode === "Monthly") {
+      // canteenData comes from GET /canteen/deductions?month=YYYY-MM
+      const canteenItems = canteenData.filter(c => Number(c.employeeId) === Number(empId));
+      const total = canteenItems.reduce((sum, item) => {
+        const val = item.totalDeduction !== undefined && item.totalDeduction !== null
+          ? item.totalDeduction
+          : (item.amount !== undefined && item.amount !== null ? item.amount : item.price || 0);
+        return sum + (parseFloat(val) || 0);
+      }, 0);
+      return parseFloat(total.toFixed(2));
+    } else {
+      // canteenData comes from GET /canteen/logs?startDate=...&endDate=...
+      const empLogs = canteenData.filter(log => Number(log.employeeId) === Number(empId));
+      const total = empLogs.reduce((sum, item) => {
+        const val = item.price !== undefined && item.price !== null
+          ? item.price
+          : (item.amount || item.totalDeduction || 0);
+        return sum + (parseFloat(val) || 0);
+      }, 0);
+      return parseFloat(total.toFixed(2));
+    }
+  };
+
   // Trigger recalculations when base data or period data updates
   useEffect(() => {
     if (employees.length === 0) return;
 
     // If we have saved payroll records in the DB for this period, load them directly.
     if (savedPayrollRuns.length > 0) {
-      const rows = savedPayrollRuns.map(run => ({
-        ...run,
-        // Ensure numeric fields are floating point numbers for frontend input controls
-        daysWorked: parseFloat(run.daysWorked),
-        basicPay: parseFloat(run.basicPay),
-        allowance: parseFloat(run.allowance),
-        compensation: parseFloat(run.compensation),
-        leaveAdjustment: parseFloat(run.leaveAdjustment),
-        grossSalary: parseFloat(run.grossSalary),
-        pfDeduction: parseFloat(run.pfDeduction),
-        esicDeduction: parseFloat(run.esicDeduction),
-        emiDeduction: parseFloat(run.emiDeduction),
-        canteenDeduction: parseFloat(run.canteenDeduction),
-        otherDeductions: parseFloat(run.otherDeductions),
-        totalDeductions: parseFloat(run.totalDeductions),
-        netSalary: parseFloat(run.netSalary),
-        isSaved: true
-      }));
+      const rows = savedPayrollRuns.map(run => {
+        const empRecord = employees.find(e => e.id === run.employeeId);
+        const salRecord = salariesList.find(s => s.employeeId === run.employeeId);
+        const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : parseFloat(run.basicPay || 0);
+        const liveComp = getApprovedCompensationAmount(run.employeeId, monthlyBase);
+        
+        // Merge live compensation if saved compensation is less than live approved compensation, or if status is Draft
+        const finalComp = (run.status === "Draft" || parseFloat(run.compensation || 0) < liveComp)
+          ? liveComp
+          : parseFloat(run.compensation || 0);
+
+        // Merge live canteen deduction if saved canteen is less than live canteen, or if status is Draft
+        const liveCanteen = getLiveCanteenDeductionForEmployee(run.employeeId);
+        const finalCanteen = (run.status === "Draft" || parseFloat(run.canteenDeduction || 0) < liveCanteen)
+          ? liveCanteen
+          : parseFloat(run.canteenDeduction || 0);
+
+        const basicPay = parseFloat(run.basicPay || 0);
+        const allowance = parseFloat(run.allowance || 0);
+        const grossSalary = parseFloat((basicPay + allowance + finalComp).toFixed(2));
+        
+        const pfDeduction = parseFloat(run.pfDeduction || 0);
+        const esicDeduction = parseFloat(run.esicDeduction || 0);
+        const emiDeduction = parseFloat(run.emiDeduction || 0);
+        const leaveAdjustment = parseFloat(run.leaveAdjustment || 0);
+        const otherDeductions = parseFloat(run.otherDeductions || 0);
+
+        const totalDeductions = parseFloat(
+          (pfDeduction + esicDeduction + emiDeduction + finalCanteen + leaveAdjustment + otherDeductions).toFixed(2)
+        );
+        const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
+
+        return {
+          ...run,
+          branchName: run.branchName || empRecord?.branchName || "—",
+          branchAddress: run.branchAddress || empRecord?.branchAddress || "",
+          paymentMode: run.paymentMode || "Cash",
+          daysWorked: parseFloat(run.daysWorked),
+          paidLeaves: 0,
+          unpaidLeaves: parseFloat(run.leaveAdjustment ? (parseFloat(run.leaveAdjustment) / (parseFloat(run.basicPay || 1) / 30)).toFixed(0) : 0),
+          basicPay,
+          allowance,
+          compensation: finalComp,
+          leaveAdjustment,
+          grossSalary,
+          pfDeduction,
+          esicDeduction,
+          emiDeduction,
+          canteenDeduction: finalCanteen,
+          otherDeductions,
+          totalDeductions,
+          netSalary,
+          isSaved: true
+        };
+      });
       setPayrollRows(rows);
       return;
     }
@@ -172,48 +357,80 @@ const Payroll = () => {
         const end = new Date(endDate);
         const diffTime = Math.abs(end.getTime() - start.getTime());
         daysInPeriod = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        workedDays = daysInPeriod; // Default to full period worked
+        workedDays = daysInPeriod;
       }
 
-      // Calculate leave adjustments (LWP)
+      // Calculate leaves (Paid vs LWP Unpaid)
       const empLeaves = leavesList.filter(l => l.employeeId === emp.id);
       let lwpDays = 0;
+      let paidLeaveDays = 0;
 
       if (activeMode === "Monthly") {
         const [yearStr, monthStr] = selectedMonth.split("-").map(Number);
+        const firstOfMonth = new Date(yearStr, monthStr - 1, 1);
+        const lastOfMonth = new Date(yearStr, monthStr, 0);
+
         empLeaves.forEach(l => {
           const lStart = new Date(l.startDate);
           const lEnd = new Date(l.endDate);
-          
-          // Calculate overlaps with the target month
-          const firstOfMonth = new Date(yearStr, monthStr - 1, 1);
-          const lastOfMonth = new Date(yearStr, monthStr, 0);
-          
           const overlapStart = lStart > firstOfMonth ? lStart : firstOfMonth;
           const overlapEnd = lEnd < lastOfMonth ? lEnd : lastOfMonth;
 
-          if (overlapStart <= overlapEnd && (l.leaveCode === "LWP" || l.leaveType?.toLowerCase().includes("without pay"))) {
+          if (overlapStart <= overlapEnd) {
             const diff = Math.abs(overlapEnd.getTime() - overlapStart.getTime());
-            lwpDays += Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
+            const daysCount = Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
+            const code = (l.leaveCode || '').toUpperCase();
+            const typeStr = (l.leaveType || '').toLowerCase();
+            if (code === "LWP" || typeStr.includes("without pay") || code.includes("UNPAID")) {
+              lwpDays += daysCount;
+            } else {
+              paidLeaveDays += daysCount;
+            }
           }
         });
       } else {
-        // Daily Mode Leave overlap check
         const rangeStart = new Date(startDate);
         const rangeEnd = new Date(endDate);
+
         empLeaves.forEach(l => {
           const lStart = new Date(l.startDate);
           const lEnd = new Date(l.endDate);
-
           const overlapStart = lStart > rangeStart ? lStart : rangeStart;
           const overlapEnd = lEnd < rangeEnd ? lEnd : rangeEnd;
 
-          if (overlapStart <= overlapEnd && (l.leaveCode === "LWP" || l.leaveType?.toLowerCase().includes("without pay"))) {
+          if (overlapStart <= overlapEnd) {
             const diff = Math.abs(overlapEnd.getTime() - overlapStart.getTime());
-            lwpDays += Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
+            const daysCount = Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
+            const code = (l.leaveCode || '').toUpperCase();
+            const typeStr = (l.leaveType || '').toLowerCase();
+            if (code === "LWP" || typeStr.includes("without pay") || code.includes("UNPAID")) {
+              lwpDays += daysCount;
+            } else {
+              paidLeaveDays += daysCount;
+            }
           }
         });
       }
+
+      // Attendance integration: Present Days & Unexcused Absences from actual DB records
+      const empAttRecords = attendanceData.filter(a => a.employeeId === emp.id);
+      const presentLogs = empAttRecords.filter(a => a.status === "Present" || a.punchIn || a.firstCheckIn);
+      let presentDaysCount = presentLogs.length;
+
+      // Count unexcused absent days from attendance logs (status === "Absent")
+      const unexcusedAbsents = empAttRecords.filter(a => a.status === "Absent").length;
+
+      // Total Unpaid Leaves = Approved LWP + Unexcused Absents
+      let totalUnpaidLeaves = lwpDays + unexcusedAbsents;
+
+      // Fallback for present days if attendance logs haven't been recorded for this period:
+      if (empAttRecords.length === 0) {
+        presentDaysCount = Math.max(0, workedDays - lwpDays - paidLeaveDays);
+        totalUnpaidLeaves = lwpDays;
+      }
+
+      // Payable Days = Total Period Days - Total Unpaid Leaves
+      let payableDays = Math.max(0, workedDays - totalUnpaidLeaves);
 
       // Calculate base and allowance for period
       let basicPay = monthlyBase;
@@ -221,52 +438,18 @@ const Payroll = () => {
       let leaveAdjustment = 0;
 
       if (activeMode === "Monthly") {
-        // Leave Adjustment deduction for Monthly: (Monthly Base / 30) * LWP days
-        leaveAdjustment = lwpDays > 0 ? parseFloat(((monthlyBase / 30) * lwpDays).toFixed(2)) : 0;
+        leaveAdjustment = totalUnpaidLeaves > 0 ? parseFloat(((monthlyBase / 30) * totalUnpaidLeaves).toFixed(2)) : 0;
       } else {
-        // Daily: pro-rate monthly base/allowance based on worked days
-        basicPay = parseFloat(((monthlyBase / 30) * workedDays).toFixed(2));
-        allowance = parseFloat(((monthlyAllowance / 30) * workedDays).toFixed(2));
-        // Daily already represents actual days worked, so no extra LWP deduction needed unless manually adjusted.
+        basicPay = parseFloat(((monthlyBase / 30) * payableDays).toFixed(2));
+        allowance = parseFloat(((monthlyAllowance / 30) * payableDays).toFixed(2));
         leaveAdjustment = 0;
       }
 
       // Fetch canteen deductions
-      let canteenDeduction = 0;
-      if (activeMode === "Monthly") {
-        const canteenItem = canteenData.find(c => c.employeeId === emp.id);
-        canteenDeduction = canteenItem ? parseFloat(canteenItem.totalDeduction) : 0;
-      } else {
-        // Filter daily logs in date range
-        const empLogs = canteenData.filter(log => log.employeeId === emp.id);
-        canteenDeduction = empLogs.reduce((sum, item) => sum + parseFloat(item.price), 0);
-      }
+      const canteenDeduction = getLiveCanteenDeductionForEmployee(emp.id);
 
-      // Fetch approved overtime compensation
-      let compensation = 0;
-      const empComps = compensationList.filter(c => c.employeeId === emp.id);
-      
-      if (activeMode === "Monthly") {
-        const [yearStr, monthStr] = selectedMonth.split("-").map(Number);
-        empComps.forEach(c => {
-          const wDate = new Date(c.workDate);
-          if (wDate.getFullYear() === yearStr && (wDate.getMonth() + 1) === monthStr) {
-            // Overtime conversion: if hours, calculate as: hours * (baseSalary / 240) * 1.5
-            const hours = parseFloat(c.hours) || 8;
-            compensation += parseFloat((hours * (monthlyBase / 240) * 1.5).toFixed(2));
-          }
-        });
-      } else {
-        const rangeStart = new Date(startDate);
-        const rangeEnd = new Date(endDate);
-        empComps.forEach(c => {
-          const wDate = new Date(c.workDate);
-          if (wDate >= rangeStart && wDate <= rangeEnd) {
-            const hours = parseFloat(c.hours) || 8;
-            compensation += parseFloat((hours * (monthlyBase / 240) * 1.5).toFixed(2));
-          }
-        });
-      }
+      // Fetch approved overtime and special compensation
+      const compensation = getApprovedCompensationAmount(emp.id, monthlyBase);
 
       // PF Calculation
       let pfDeduction = 0;
@@ -310,10 +493,14 @@ const Payroll = () => {
         employeeCode: emp.biometricEmployeeCode,
         employeeName: emp.candidateName,
         department: emp.departmentName || "—",
+        branchName: emp.branchName || "—",
+        branchAddress: emp.branchAddress || "",
         period: activeMode === "Monthly" ? selectedMonth : `${startDate}:${endDate}`,
         type: activeMode,
-        daysWorked: workedDays,
-        unpaidLeaves: lwpDays,
+        daysWorked: payableDays,
+        presentDays: presentDaysCount,
+        paidLeaves: paidLeaveDays,
+        unpaidLeaves: totalUnpaidLeaves,
         basicPay,
         allowance,
         compensation,
@@ -327,14 +514,15 @@ const Payroll = () => {
         totalDeductions,
         netSalary,
         status: "Draft",
-        payDate: new Date().toISOString().slice(0, 10),
+        paymentMode: "Cash",
+        payDate: todayStr,
         remarks: "",
         isSaved: false
       };
     });
 
     setPayrollRows(generated);
-  }, [employees, salariesList, pfDetailsList, esicDetailsList, emisList, compensationList, canteenData, leavesList, savedPayrollRuns, activeMode, selectedMonth, startDate, endDate]);
+  }, [employees, salariesList, pfDetailsList, esicDetailsList, emisList, compensationList, canteenData, leavesList, attendanceData, savedPayrollRuns, activeMode, selectedMonth, startDate, endDate]);
 
   // Recalculates calculated columns on input overrides
   const handleCellChange = (empId, field, val) => {
@@ -379,6 +567,7 @@ const Payroll = () => {
           const salRecord = salariesList.find(s => s.employeeId === empId);
           const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : 0;
           updatedRow.leaveAdjustment = parseFloat(((monthlyBase / 30) * updatedRow.unpaidLeaves).toFixed(2));
+          updatedRow.daysWorked = Math.max(0, 30 - updatedRow.unpaidLeaves);
         }
 
         // Totals recalculations
@@ -408,6 +597,10 @@ const Payroll = () => {
     setPayrollRows(prev => prev.map(row => row.employeeId === empId ? { ...row, status: statusVal } : row));
   };
 
+  const handlePaymentModeChange = (empId, modeVal) => {
+    setPayrollRows(prev => prev.map(row => row.employeeId === empId ? { ...row, paymentMode: modeVal } : row));
+  };
+
   const handleRemarksChange = (empId, val) => {
     setPayrollRows(prev => prev.map(row => row.employeeId === empId ? { ...row, remarks: val } : row));
   };
@@ -434,6 +627,7 @@ const Payroll = () => {
         totalDeductions: row.totalDeductions.toString(),
         netSalary: row.netSalary.toString(),
         status: row.status,
+        paymentMode: row.paymentMode || "Cash",
         payDate: row.payDate,
         remarks: row.remarks
       }));
@@ -451,184 +645,192 @@ const Payroll = () => {
     }
   };
 
-  // Export to Excel (CSV)
+  // Export to CSV
   const handleExportCSV = () => {
     const headers = [
-      "Employee Code", "Employee Name", "Department", "Period Type", "Period", 
-      "Days Worked", "Unpaid Leaves", "Basic Pay (₹)", "Allowance (₹)", 
-      "Compensation (₹)", "LWP Adjustment (₹)", "Gross Salary (₹)", 
-      "PF (₹)", "ESIC (₹)", "EMI (₹)", "Canteen (₹)", "Other Deductions (₹)", 
-      "Total Deductions (₹)", "Net Salary (₹)", "Status", "Pay Date", "Remarks"
+      "Employee Code", "Employee Name", "Department", "Payable Days", "Paid Leaves", "Unpaid Leaves",
+      "Basic Pay", "Allowance", "Compensation", "Leave Adjustment", "Gross Salary", 
+      "PF Deduction", "ESIC Deduction", "EMI Deduction", "Canteen Deduction", 
+      "Other Deductions", "Total Deductions", "Net Salary", "Status", "Payment Mode", "Remarks"
     ];
 
-    const rows = filteredRows.map(row => [
-      row.employeeCode, row.employeeName, row.department, row.type, row.period,
-      row.daysWorked, row.unpaidLeaves, row.basicPay, row.allowance,
-      row.compensation, row.leaveAdjustment, row.grossSalary,
-      row.pfDeduction, row.esicDeduction, row.emiDeduction, row.canteenDeduction, row.otherDeductions,
-      row.totalDeductions, row.netSalary, row.status, row.payDate, row.remarks
-    ]);
+    const csvRows = [headers.join(",")];
+    filteredRows.forEach(row => {
+      csvRows.push([
+        `"${row.employeeCode}"`,
+        `"${row.employeeName}"`,
+        `"${row.department}"`,
+        row.daysWorked,
+        row.paidLeaves || 0,
+        row.unpaidLeaves,
+        row.basicPay,
+        row.allowance,
+        row.compensation,
+        row.leaveAdjustment,
+        row.grossSalary,
+        row.pfDeduction,
+        row.esicDeduction,
+        row.emiDeduction,
+        row.canteenDeduction,
+        row.otherDeductions,
+        row.totalDeductions,
+        row.netSalary,
+        `"${row.status}"`,
+        `"${row.paymentMode || 'Cash'}"`,
+        `"${row.remarks || ''}"`
+      ].join(","));
+    });
 
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + [headers.join(","), ...rows.map(e => e.map(val => `"${val}"`).join(","))].join("\n");
-    
+    const csvContent = "data:text/csv;charset=utf-8," + csvRows.join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `payroll_export_${activeMode}_${activeMode === "Monthly" ? selectedMonth : `${startDate}_to_${endDate}`}.csv`);
+    const periodStr = activeMode === "Monthly" ? selectedMonth : `${startDate}_to_${endDate}`;
+    link.setAttribute("download", `payroll_${activeMode}_${periodStr}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Export to PDF
+  // Export Summary PDF with statutory compliance columns
   const handleExportPDF = () => {
-    const doc = new jsPDF("landscape");
-    doc.text(`HR FMS - ${activeMode} Payroll Sheet`, 14, 15);
-    doc.setFontSize(10);
-    const periodStr = activeMode === "Monthly" ? selectedMonth : `${startDate} to ${endDate}`;
-    doc.text(`Period: ${periodStr}  |  Generated on: ${new Date().toLocaleDateString()}`, 14, 21);
+    try {
+      if (!filteredRows || filteredRows.length === 0) {
+        toast.error("No payroll data available to export.");
+        return;
+      }
 
-    const tableHeaders = [
-      ["Code", "Name", "Dept", "Basic", "Allow.", "OT/Comp", "LWP Ded", "Gross", "PF", "ESIC", "EMI", "Canteen", "Other Ded", "Total Ded", "Net", "Status"]
-    ];
+      // Use landscape A3 for 32 compliance columns
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.text("SHRI SHYAM WAREHOUSING AND POWER PVT. LTD.", 14, 12);
 
-    const tableData = filteredRows.map(row => [
-      row.employeeCode,
-      row.employeeName,
-      row.department,
-      `Rs.${row.basicPay}`,
-      `Rs.${row.allowance}`,
-      `Rs.${row.compensation}`,
-      `Rs.${row.leaveAdjustment}`,
-      `Rs.${row.grossSalary}`,
-      `Rs.${row.pfDeduction}`,
-      `Rs.${row.esicDeduction}`,
-      `Rs.${row.emiDeduction}`,
-      `Rs.${row.canteenDeduction}`,
-      `Rs.${row.otherDeductions}`,
-      `Rs.${row.totalDeductions}`,
-      `Rs.${row.netSalary}`,
-      row.status
-    ]);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      const periodStr = activeMode === "Monthly" ? selectedMonth : `${startDate} to ${endDate}`;
+      doc.text(`Village - BANARI  |  ${activeMode} Statutory Payroll Summary Sheet  |  Period: ${periodStr}  |  Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 18);
 
-    doc.autoTable({
-      head: tableHeaders,
-      body: tableData,
-      startY: 26,
-      theme: "grid",
-      styles: { fontSize: 7, cellPadding: 1.5 },
-      headStyles: { fillColor: [59, 130, 246] }
-    });
+      const tableHeaders = [
+        [
+          "Sr. No.", "EMPCODE", "NAME", "UAN NO.", "IP No.", "TOTAL_DAYS", 
+          "PAID_DAYS", "ABSENT_DAYS", "OT HRS", "BASIC+DA", "EARN BASIC+DA", 
+          "ALLOW_RATE(TA,MOB,HRA,CON.)", "EARN ALLOW (TA,MOB,HRA,CON.)", "TOTAL", 
+          "WASHING ALL.", "OT", "GROSS", "EPF WAGES", "PF", "LABOUR WELFARE FUND", 
+          "ESIC", "ADV", "Penalty", "Canteen", "TOTAL DEDUCTION.", "NET SALARY", 
+          "Diwali Bonus", "NET PAY AMOUNT", "PAY-MODE", "BANK A/C NO.", "IFSC", "REMARK"
+        ]
+      ];
 
-    doc.save(`payroll_sheet_${activeMode}_${periodStr}.pdf`);
+      const fmt = (val) => {
+        if (val === "" || val === null || val === undefined) return "";
+        const num = Number(val);
+        if (isNaN(num)) return val;
+        return num.toFixed(2);
+      };
+
+      const tableData = filteredRows.map((row, index) => {
+        const pfRec = pfDetailsList.find(p => p.employeeId === row.employeeId);
+        const esicRec = esicDetailsList.find(e => e.employeeId === row.employeeId);
+        const salRec = salariesList.find(s => s.employeeId === row.employeeId);
+
+        const monthlyBase = salRec ? parseFloat(salRec.baseSalary) : 0;
+        const monthlyAllowance = salRec ? parseFloat(salRec.allowanceSalary) : 0;
+        const earnedTotal = (row.basicPay || 0) + (row.allowance || 0);
+        const epfWages = Math.min(row.basicPay || 0, 15000);
+
+        let totalDays = 30;
+        if (activeMode === "Daily" && startDate && endDate) {
+          const start = new Date(startDate);
+          const end = new Date(endDate);
+          const diffTime = Math.abs(end.getTime() - start.getTime());
+          totalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        } else if (activeMode === "Monthly" && selectedMonth) {
+          const [yr, mo] = selectedMonth.split("-").map(Number);
+          totalDays = new Date(yr, mo, 0).getDate();
+        }
+
+        return [
+          index + 1,
+          row.employeeCode || "-",
+          row.employeeName || "-",
+          pfRec?.uanNumber || "",
+          esicRec?.esicNumber || "",
+          totalDays,
+          row.daysWorked || 0,
+          row.unpaidLeaves || 0,
+          row.compensation > 0 ? ((row.compensation / ((monthlyBase || 1) / 240 * 1.5)).toFixed(1)) : "0",
+          fmt(monthlyBase),
+          fmt(row.basicPay),
+          fmt(monthlyAllowance),
+          fmt(row.allowance),
+          fmt(earnedTotal),
+          "", // WASHING ALL.
+          fmt(row.compensation),
+          fmt(row.grossSalary),
+          fmt(epfWages),
+          fmt(row.pfDeduction),
+          "", // LABOUR WELFARE FUND
+          fmt(row.esicDeduction),
+          fmt(row.emiDeduction),
+          fmt(row.otherDeductions),
+          fmt(row.canteenDeduction),
+          fmt(row.totalDeductions),
+          fmt(row.netSalary),
+          "", // Diwali Bonus
+          fmt(row.netSalary), // NET PAY AMOUNT
+          "", // PAY-MODE
+          "", // BANK A/C NO.
+          "", // IFSC
+          row.remarks || ""
+        ];
+      });
+
+      applyAutoTable(doc, {
+        head: tableHeaders,
+        body: tableData,
+        startY: 22,
+        theme: "grid",
+        styles: { fontSize: 6, cellPadding: 1, font: "helvetica" },
+        headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 5.5 },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        columnStyles: {
+          0: { cellWidth: 10, halign: "center" },
+          1: { cellWidth: 14, halign: "center" },
+          2: { cellWidth: 22 },
+          3: { cellWidth: 16, halign: "center" },
+          4: { cellWidth: 16, halign: "center" },
+        }
+      });
+
+      doc.save(`Payroll_Summary_${activeMode}_${periodStr}.pdf`);
+      toast.success("Payroll Summary PDF exported with statutory compliance columns!");
+    } catch (err) {
+      console.error("Export PDF error:", err);
+      toast.error("Failed to export summary PDF: " + (err.message || err));
+    }
   };
 
-  // Generate individual printable PDF payslip
+  // Generate individual printable PDF payslip using shared utility
   const handleDownloadPayslipPDF = (row) => {
-    const doc = new jsPDF();
-    
-    // Title & Header
-    doc.setFontSize(22);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(30, 41, 59); // Slate-800
-    doc.text("BOTIVATE INTERNSHIP HR", 105, 20, { align: "center" });
-    
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(100, 116, 139); // Slate-500
-    doc.text("Salary Slip / Payslip", 105, 26, { align: "center" });
-    doc.text(`Period: ${row.period} (${row.type} Payroll)`, 105, 32, { align: "center" });
-    
-    // Horizontal Separator
-    doc.setDrawColor(226, 232, 240); // Slate-200
-    doc.line(14, 38, 196, 38);
-    
-    // Employee Info Grid
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(71, 85, 105);
-    
-    doc.text("Employee Name:", 14, 46);
-    doc.setFont("helvetica", "normal");
-    doc.text(row.employeeName, 50, 46);
-    
-    doc.setFont("helvetica", "bold");
-    doc.text("Employee Code:", 110, 46);
-    doc.setFont("helvetica", "normal");
-    doc.text(row.employeeCode, 150, 46);
-    
-    doc.setFont("helvetica", "bold");
-    doc.text("Department:", 14, 52);
-    doc.setFont("helvetica", "normal");
-    doc.text(row.department, 50, 52);
-    
-    doc.setFont("helvetica", "bold");
-    doc.text("Days Worked:", 110, 52);
-    doc.setFont("helvetica", "normal");
-    doc.text(String(row.daysWorked), 150, 52);
-    
-    doc.setFont("helvetica", "bold");
-    doc.text("Status:", 14, 58);
-    doc.setFont("helvetica", "normal");
-    doc.text(row.status, 50, 58);
+    generatePayslipPDF(row, { action: 'download' });
+  };
 
-    doc.setFont("helvetica", "bold");
-    doc.text("Unpaid Leaves:", 110, 58);
-    doc.setFont("helvetica", "normal");
-    doc.text(String(row.unpaidLeaves), 150, 58);
-    
-    // Separator
-    doc.line(14, 64, 196, 64);
-    
-    // Earnings & Deductions Table
-    const headers = [["Earnings Description", "Amount (Rs.)", "Deductions Description", "Amount (Rs.)"]];
-    const body = [
-      ["Basic Pay", row.basicPay.toFixed(2), "PF Contribution", row.pfDeduction.toFixed(2)],
-      ["Allowances", row.allowance.toFixed(2), "ESIC Deduction", row.esicDeduction.toFixed(2)],
-      ["OT & Compensation", row.compensation.toFixed(2), "EMI Deduction", row.emiDeduction.toFixed(2)],
-      ["", "", "Canteen Deduction", row.canteenDeduction.toFixed(2)],
-      ["", "", "LWP Leave Adjustment", row.leaveAdjustment.toFixed(2)],
-      ["", "", "Other Deductions", row.otherDeductions.toFixed(2)],
-      ["Gross Earnings", row.grossSalary.toFixed(2), "Total Deductions", row.totalDeductions.toFixed(2)]
-    ];
+  // Print individual payslip
+  const handlePrintPayslip = (row) => {
+    generatePayslipPDF(row, { action: 'print' });
+  };
 
-    doc.autoTable({
-      head: headers,
-      body: body,
-      startY: 70,
-      theme: "grid",
-      styles: { fontSize: 10, cellPadding: 4 },
-      headStyles: { fillColor: [59, 130, 246] },
-      columnStyles: {
-        0: { fontStyle: "normal" },
-        1: { halign: "right" },
-        2: { fontStyle: "normal" },
-        3: { halign: "right" }
-      }
-    });
-
-    // Net Salary Block
-    const finalY = doc.lastAutoTable.finalY + 15;
-    doc.setFillColor(243, 244, 246);
-    doc.rect(14, finalY, 182, 18, "F");
-    
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(30, 41, 59);
-    doc.text("NET SALARY (Take-home Pay):", 20, finalY + 11);
-    
-    doc.setFontSize(14);
-    doc.setTextColor(59, 130, 246);
-    doc.text(`Rs. ${row.netSalary.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 190, finalY + 11, { align: "right" });
-    
-    // Footer notes
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(8);
-    doc.setTextColor(148, 163, 184);
-    doc.text("This is a computer-generated document and does not require a physical signature.", 105, finalY + 30, { align: "center" });
-
-    doc.save(`Payslip_${row.employeeCode}_${row.period}.pdf`);
+  // Bulk download all visible payslips as a single PDF
+  const handleBulkDownload = () => {
+    if (filteredRows.length === 0) {
+      toast.error("No payroll data to download");
+      return;
+    }
+    const periodStr = activeMode === "Monthly" ? selectedMonth : `${startDate}_to_${endDate}`;
+    generateBulkPayslipsPDF(filteredRows, periodStr);
+    toast.success(`Downloading ${filteredRows.length} payslips...`);
   };
 
   // Filter rows based on search term and department
@@ -643,6 +845,11 @@ const Payroll = () => {
     return matchesSearch && matchesDept;
   });
 
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, filteredRows.length);
+  const paginatedRows = filteredRows.slice(startIndex, endIndex);
+
   const uniqueDepartments = Array.from(new Set(employees.map(e => e.departmentName).filter(Boolean)));
 
   return (
@@ -655,7 +862,7 @@ const Payroll = () => {
             Payroll Creation
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Compute, adjust, and process monthly and daily payrolls with PF, ESIC, EMI, canteen, and leave adjustments.
+            Compute, adjust, and process monthly and daily payrolls with Attendance, PF, ESIC, EMI, Canteen, and Overtime.
           </p>
         </div>
 
@@ -672,7 +879,19 @@ const Payroll = () => {
             className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm text-sm"
           >
             <FileText size={16} />
-            Export PDF
+            Export Summary PDF
+          </button>
+          <button
+            onClick={handleBulkDownload}
+            disabled={payrollRows.length === 0}
+            className={`px-4 py-2 border text-sm rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm ${
+              payrollRows.length === 0
+                ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <Download size={16} />
+            Bulk Payslips PDF
           </button>
           <button
             onClick={handleSavePayroll}
@@ -716,7 +935,7 @@ const Payroll = () => {
             </button>
           </div>
 
-          {/* Period Selector */}
+          {/* Period Selector with Future Date Guards */}
           <div className="flex items-center gap-2">
             {activeMode === "Monthly" ? (
               <div className="flex items-center gap-2">
@@ -724,7 +943,16 @@ const Payroll = () => {
                 <input
                   type="month"
                   value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  max={currentMonthStr}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val > currentMonthStr) {
+                      toast.error("Future months cannot be selected for payroll!");
+                      setSelectedMonth(currentMonthStr);
+                    } else {
+                      setSelectedMonth(val);
+                    }
+                  }}
                   className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -734,14 +962,32 @@ const Payroll = () => {
                 <input
                   type="date"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  max={todayStr}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val > todayStr) {
+                      toast.error("Future dates cannot be selected for payroll!");
+                      setStartDate(todayStr);
+                    } else {
+                      setStartDate(val);
+                    }
+                  }}
                   className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <span className="text-gray-400">to</span>
                 <input
                   type="date"
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  max={todayStr}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val > todayStr) {
+                      toast.error("Future dates cannot be selected for payroll!");
+                      setEndDate(todayStr);
+                    } else {
+                      setEndDate(val);
+                    }
+                  }}
                   className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -779,8 +1025,8 @@ const Payroll = () => {
             <BadgeInfo className="w-5 h-5 flex-shrink-0 text-blue-500" />
             <span>
               {savedPayrollRuns.length > 0 
-                ? "Showing SAVED payroll run from the database. Modifications will overwrite the saved data." 
-                : "Showing DRAFT payroll calculation. Click 'Save Payroll Run' to store in DB."}
+                ? "Showing SAVED payroll run from database." 
+                : "Showing DRAFT calculation. Click 'Save Payroll Run' to save."}
             </span>
           </div>
         </div>
@@ -800,45 +1046,53 @@ const Payroll = () => {
             <p className="text-sm text-gray-500 mt-1">Ensure employees are active and salaries are configured.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[calc(100vh-280px)]">
             <table className="w-full text-left border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-20 bg-gray-50 shadow-sm">
                 <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  <th className="py-4 px-4 sticky left-0 bg-gray-50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Emp Details</th>
-                  <th className="py-4 px-3 text-center">Days Worked</th>
-                  {activeMode === "Monthly" && <th className="py-4 px-3 text-center">Unpaid Leaves</th>}
-                  <th className="py-4 px-3 text-right">Basic Pay (₹)</th>
-                  <th className="py-4 px-3 text-right">Allowance (₹)</th>
-                  <th className="py-4 px-3 text-right">OT & Comp (₹)</th>
-                  {activeMode === "Monthly" && <th className="py-4 px-3 text-right">LWP Adjust (₹)</th>}
-                  <th className="py-4 px-3 text-right font-semibold text-green-600 bg-green-50/30">Gross Salary (₹)</th>
-                  <th className="py-4 px-3 text-right">PF (₹)</th>
-                  <th className="py-4 px-3 text-right">ESIC (₹)</th>
-                  <th className="py-4 px-3 text-right">EMI (₹)</th>
-                  <th className="py-4 px-3 text-right">Canteen (₹)</th>
-                  <th className="py-4 px-3 text-right">Other Deduct (₹)</th>
-                  <th className="py-4 px-3 text-right font-semibold text-red-600 bg-red-50/30">Total Deduct (₹)</th>
-                  <th className="py-4 px-3 text-right font-bold text-blue-600 bg-blue-50/30">Net Salary (₹)</th>
-                  <th className="py-4 px-3 text-center">Status</th>
-                  <th className="py-4 px-3">Remarks</th>
-                  <th className="py-4 px-4 text-center">Actions</th>
+                  <th className="py-4 px-4 sticky top-0 left-0 bg-gray-50 z-30 shadow-[2px_2px_5px_-2px_rgba(0,0,0,0.1)]">Emp Details</th>
+                  <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Payable Days</th>
+                  <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Paid Leaves</th>
+                  <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Unpaid Leaves (LWP)</th>
+                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">Basic Pay (₹)</th>
+                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">Allowance (₹)</th>
+                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">OT & Comp (₹)</th>
+                  {activeMode === "Monthly" && <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">LWP Adjust (₹)</th>}
+                  <th className="py-4 px-3 text-right font-semibold text-green-600 bg-green-50/80 sticky top-0 z-20">Gross Salary (₹)</th>
+                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">PF (₹)</th>
+                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">ESIC (₹)</th>
+                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">EMI (₹)</th>
+                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">Canteen (₹)</th>
+                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">Other Deduct (₹)</th>
+                  <th className="py-4 px-3 text-right font-semibold text-red-600 bg-red-50/80 sticky top-0 z-20">Total Deduct (₹)</th>
+                  <th className="py-4 px-3 text-right font-bold text-blue-600 bg-blue-50/80 sticky top-0 z-20">Net Salary (₹)</th>
+                  <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Paid Via</th>
+                  <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Status</th>
+                  <th className="py-4 px-3 sticky top-0 bg-gray-50 z-20">Remarks</th>
+                  <th className="py-4 px-4 text-center sticky top-0 bg-gray-50 z-20">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
-                {filteredRows.map((row) => (
+                {paginatedRows.map((row) => (
                   <tr key={row.employeeId} className="hover:bg-gray-50/60 transition-colors">
                     {/* Sticky Emp Info */}
                     <td className="py-3.5 px-4 sticky left-0 bg-white group-hover:bg-gray-50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                       <div className="font-semibold text-gray-900">{row.employeeName}</div>
-                      <div className="text-xs text-gray-500 flex items-center gap-1.5 mt-0.5">
+                      <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1.5 mt-0.5">
                         <span className="bg-gray-100 px-1.5 py-0.5 rounded font-mono">{row.employeeCode}</span>
                         <span>•</span>
                         <span>{row.department}</span>
+                        {row.branchName && row.branchName !== "—" && (
+                          <>
+                            <span>•</span>
+                            <span className="text-indigo-600 font-semibold">{row.branchName}</span>
+                          </>
+                        )}
                       </div>
                     </td>
 
-                    {/* Days Worked */}
-                    <td className="py-3.5 px-3 text-center">
+                    {/* Payable Days */}
+                    <td className="py-3.5 px-3 text-center font-medium">
                       <input
                         type="number"
                         min="0"
@@ -853,20 +1107,23 @@ const Payroll = () => {
                       />
                     </td>
 
-                    {/* Unpaid Leaves */}
-                    {activeMode === "Monthly" && (
-                      <td className="py-3.5 px-3 text-center">
-                        <input
-                          type="number"
-                          min="0"
-                          max="31"
-                          step="1"
-                          value={row.unpaidLeaves}
-                          onChange={(e) => handleCellChange(row.employeeId, "unpaidLeaves", e.target.value)}
-                          className="w-16 border border-gray-200 rounded px-2 py-1 text-center text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        />
-                      </td>
-                    )}
+                    {/* Paid Leaves */}
+                    <td className="py-3.5 px-3 text-center font-mono text-blue-600">
+                      {row.paidLeaves || 0}
+                    </td>
+
+                    {/* Unpaid Leaves (LWP) */}
+                    <td className="py-3.5 px-3 text-center">
+                      <input
+                        type="number"
+                        min="0"
+                        max="31"
+                        step="1"
+                        value={row.unpaidLeaves}
+                        onChange={(e) => handleCellChange(row.employeeId, "unpaidLeaves", e.target.value)}
+                        className="w-16 border border-gray-200 rounded px-2 py-1 text-center text-sm font-mono text-rose-600 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
+                    </td>
 
                     {/* Basic Pay */}
                     <td className="py-3.5 px-3 text-right">
@@ -942,6 +1199,19 @@ const Payroll = () => {
                       {row.netSalary.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </td>
 
+                    {/* Paid Via (Payment Mode) */}
+                    <td className="py-3.5 px-3 text-center">
+                      <select
+                        value={row.paymentMode || "Cash"}
+                        onChange={(e) => handlePaymentModeChange(row.employeeId, e.target.value)}
+                        className="text-xs font-semibold px-2 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
+                      >
+                        <option value="Cash">Cash</option>
+                        <option value="Card">Card</option>
+                        <option value="Bank Transfer">Bank Transfer</option>
+                      </select>
+                    </td>
+
                     {/* Status */}
                     <td className="py-3.5 px-3 text-center">
                       <select
@@ -973,17 +1243,33 @@ const Payroll = () => {
                     </td>
 
                     {/* Actions */}
-                    <td className="py-3.5 px-4 text-center">
-                      <button
-                        onClick={() => {
-                          setSelectedRowForPayslip(row);
-                          setShowPayslipModal(true);
-                        }}
-                        title="View Payslip"
-                        className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
-                      >
-                        <Eye size={16} />
-                      </button>
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => {
+                            setSelectedRowForPayslip(row);
+                            setShowPayslipModal(true);
+                          }}
+                          title="View Payslip"
+                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
+                        >
+                          <Eye size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDownloadPayslipPDF(row)}
+                          title="Download Payslip PDF"
+                          className="p-1.5 text-slate-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                        >
+                          <Download size={16} />
+                        </button>
+                        <button
+                          onClick={() => handlePrintPayslip(row)}
+                          title="Print Payslip"
+                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        >
+                          <Printer size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -993,159 +1279,76 @@ const Payroll = () => {
         )}
       </div>
 
-      {/* Payslip Modal */}
-      {showPayslipModal && selectedRowForPayslip && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100">
-            {/* Modal Header */}
-            <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50/50 rounded-t-3xl">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">Payslip Preview</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Review calculated payroll details for {selectedRowForPayslip.employeeName}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowPayslipModal(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+      {/* Pagination Footer */}
+      {filteredRows.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm text-sm">
+          <div className="flex items-center gap-3 text-gray-600">
+            <span>
+              Showing <span className="font-semibold text-gray-900">{filteredRows.length === 0 ? 0 : startIndex + 1}</span> to{" "}
+              <span className="font-semibold text-gray-900">{endIndex}</span> of{" "}
+              <span className="font-semibold text-gray-900">{filteredRows.length}</span> entries
+            </span>
+            <div className="flex items-center gap-1.5 ml-4">
+              <span className="text-xs text-gray-500">Rows per page:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <X size={20} />
-              </button>
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1 transition-colors ${
+                currentPage === 1
+                  ? "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed"
+                  : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              <ChevronLeft size={16} />
+              <span>Previous</span>
+            </button>
+
+            <div className="flex items-center gap-1 px-3 text-xs font-semibold text-gray-700">
+              <span>Page</span>
+              <span className="text-blue-600 font-bold">{currentPage}</span>
+              <span>of</span>
+              <span>{totalPages}</span>
             </div>
 
-            {/* Payslip Content */}
-            <div className="p-6 space-y-6">
-              {/* Slip Layout */}
-              <div className="border border-slate-200 rounded-2xl p-6 bg-white space-y-6">
-                {/* Logo / Company Name */}
-                <div className="text-center pb-4 border-b border-slate-100">
-                  <h4 className="text-xl font-extrabold text-slate-800 tracking-tight">BOTIVATE HR INTERNSHIP</h4>
-                  <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider font-semibold">Salary Slip</p>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">
-                    Period: {selectedRowForPayslip.period} ({selectedRowForPayslip.type})
-                  </p>
-                </div>
-
-                {/* Employee Details Grid */}
-                <div className="grid grid-cols-2 gap-y-3 gap-x-6 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Name:</span>
-                    <span className="font-semibold text-slate-800">{selectedRowForPayslip.employeeName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Employee Code:</span>
-                    <span className="font-semibold font-mono text-slate-800">{selectedRowForPayslip.employeeCode}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Department:</span>
-                    <span className="font-semibold text-slate-800">{selectedRowForPayslip.department}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Days Worked:</span>
-                    <span className="font-semibold text-slate-800">{selectedRowForPayslip.daysWorked}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Status:</span>
-                    <span className="font-semibold text-slate-800">{selectedRowForPayslip.status}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Unpaid Leaves:</span>
-                    <span className="font-semibold text-slate-800">{selectedRowForPayslip.unpaidLeaves}</span>
-                  </div>
-                </div>
-
-                {/* Breakdown Grid */}
-                <div className="grid grid-cols-2 gap-4 border-t border-b border-slate-200 py-4">
-                  {/* Earnings */}
-                  <div className="space-y-2 border-r border-slate-100 pr-4">
-                    <h5 className="font-bold text-xs text-slate-400 uppercase tracking-wider mb-2">Earnings</h5>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">Basic Salary:</span>
-                      <span className="font-mono">₹{selectedRowForPayslip.basicPay.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">Allowances:</span>
-                      <span className="font-mono">₹{selectedRowForPayslip.allowance.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">OT & Special Comp:</span>
-                      <span className="font-mono">₹{selectedRowForPayslip.compensation.toFixed(2)}</span>
-                    </div>
-                  </div>
-
-                  {/* Deductions */}
-                  <div className="space-y-2 pl-4">
-                    <h5 className="font-bold text-xs text-slate-400 uppercase tracking-wider mb-2">Deductions</h5>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">PF Contribution:</span>
-                      <span className="font-mono">₹{selectedRowForPayslip.pfDeduction.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">ESIC Deduction:</span>
-                      <span className="font-mono">₹{selectedRowForPayslip.esicDeduction.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">EMI Loan Repayment:</span>
-                      <span className="font-mono">₹{selectedRowForPayslip.emiDeduction.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-600">Canteen Charges:</span>
-                      <span className="font-mono">₹{selectedRowForPayslip.canteenDeduction.toFixed(2)}</span>
-                    </div>
-                    {selectedRowForPayslip.leaveAdjustment > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-600">LWP Leave Adjust:</span>
-                        <span className="font-mono text-red-500">₹{selectedRowForPayslip.leaveAdjustment.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {selectedRowForPayslip.otherDeductions > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-600">Other Deductions:</span>
-                        <span className="font-mono text-red-500">₹{selectedRowForPayslip.otherDeductions.toFixed(2)}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Summaries */}
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Gross Earnings:</span>
-                    <span className="font-semibold font-mono">₹{selectedRowForPayslip.grossSalary.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Total Deductions:</span>
-                    <span className="font-semibold font-mono text-red-500">₹{selectedRowForPayslip.totalDeductions.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between items-center bg-blue-50/50 border border-blue-100 p-3 rounded-xl mt-3 text-blue-900">
-                    <span className="font-bold">Net Take-Home Salary:</span>
-                    <span className="text-lg font-extrabold font-mono text-blue-600">
-                      ₹{selectedRowForPayslip.netSalary.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="flex justify-end gap-3 p-6 border-t border-slate-100 bg-slate-50/50 rounded-b-3xl">
-              <button
-                onClick={() => setShowPayslipModal(false)}
-                className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl font-medium transition-colors text-sm"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => handleDownloadPayslipPDF(selectedRowForPayslip)}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors text-sm flex items-center gap-1.5 shadow-sm"
-              >
-                <Download size={16} />
-                Download PDF
-              </button>
-            </div>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1 transition-colors ${
+                currentPage === totalPages
+                  ? "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed"
+                  : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              <span>Next</span>
+              <ChevronRight size={16} />
+            </button>
           </div>
         </div>
       )}
+
+      {/* Payslip Preview Modal */}
+      <PayslipPreviewModal
+        isOpen={showPayslipModal}
+        onClose={() => setShowPayslipModal(false)}
+        payslipData={selectedRowForPayslip}
+      />
     </div>
   );
 };

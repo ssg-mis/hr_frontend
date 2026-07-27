@@ -41,6 +41,7 @@ import CanteenScanner from './pages/CanteenScanner';
 import PFManagement from './pages/PFManagement';
 import ESICManagement from './pages/ESICManagement';
 import GatePassManagement from './pages/GatePassManagement';
+import PublicVisitorPassRequest from './pages/PublicVisitorPassRequest';
 import CompensationManagement from './pages/CompensationManagement';
 import Payroll from './pages/Payroll';
 
@@ -53,6 +54,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/apply/:vacancyNumber" element={<PublicApply />} />
           <Route path="/upload-documents/:token" element={<PublicDocumentUpload />} />
+          <Route path="/visitor-pass-request" element={<PublicVisitorPassRequest />} />
           <Route path="/canteen/scan" element={<ProtectedRoute allowedRoles={['CanteenManager', 'Admin', 'HR']}><CanteenScanner /></ProtectedRoute>} />
 
           
@@ -87,7 +89,7 @@ function App() {
             <Route path="payroll" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Payroll /></ProtectedRoute>} />
             <Route path="pf-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><PFManagement /></ProtectedRoute>} />
             <Route path="esic-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><ESICManagement /></ProtectedRoute>} />
-            <Route path="gate-pass" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><GatePassManagement /></ProtectedRoute>} />
+            <Route path="gate-pass" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><GatePassManagement /></ProtectedRoute>} />
             <Route path="compensation" element={<CompensationManagement />} />
             <Route path="attendance-logs" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceLogs /></ProtectedRoute>} />
             <Route path="attendance-dashboard" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceDashboard /></ProtectedRoute>} />

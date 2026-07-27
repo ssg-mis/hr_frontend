@@ -248,9 +248,11 @@ const VacancyApprovalPage = () => {
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                   <div className="flex items-center space-x-2 text-gray-400 mb-1">
                     <MapPin size={14} />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Location</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Branch / Location</span>
                   </div>
-                  <p className="text-sm font-semibold text-gray-800 whitespace-pre-line">{reviewingVacancy.preferredLocation || '—'}</p>
+                  <p className="text-sm font-semibold text-gray-800 whitespace-pre-line">
+                    {reviewingVacancy.branchName ? `${reviewingVacancy.branchName}${reviewingVacancy.branchAddress ? ` (${reviewingVacancy.branchAddress})` : ''}` : (reviewingVacancy.preferredLocation || '—')}
+                  </p>
                 </div>
               </div>
 

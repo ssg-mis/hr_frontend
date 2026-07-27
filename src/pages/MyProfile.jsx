@@ -238,10 +238,10 @@ const MyProfile = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Building size={16} className="inline mr-2" />
-                Company
+                <Building size={16} className="inline mr-2 text-indigo-600" />
+                Company Branch
               </label>
-              <p className="text-gray-800">{profileData.companyName}</p>
+              <p className="text-gray-800 font-semibold">{profileData.companyBranch || profileData.companyName || "N/A"}</p>
             </div>
 
             <div>

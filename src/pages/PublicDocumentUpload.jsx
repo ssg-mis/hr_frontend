@@ -28,6 +28,7 @@ const PublicDocumentUpload = () => {
     experienceLetter: null,
     salarySlip: null,
     relievingLetter: null,
+    bankStatement: null,
   });
 
   useEffect(() => {
@@ -111,6 +112,10 @@ const PublicDocumentUpload = () => {
         toast.error('Relieving Letter is required');
         return;
       }
+      if (!formData.bankStatement) {
+        toast.error('Bank Statement is required');
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -136,11 +141,13 @@ const PublicDocumentUpload = () => {
       let expLetterUrl = null;
       let salarySlipUrl = null;
       let relievingLetterUrl = null;
+      let bankStatementUrl = null;
 
       if (expRequired) {
         expLetterUrl = await uploadField('experienceLetter', formData.experienceLetter);
         salarySlipUrl = await uploadField('salarySlip', formData.salarySlip);
         relievingLetterUrl = await uploadField('relievingLetter', formData.relievingLetter);
+        bankStatementUrl = await uploadField('bankStatement', formData.bankStatement);
       }
 
       // 2. Prepare Checklist & Update Stage
@@ -154,6 +161,7 @@ const PublicDocumentUpload = () => {
         checklist.experienceLetter = true;
         checklist.salarySlip = true;
         checklist.relievingLetter = true;
+        checklist.bankStatement = true;
       }
 
       const patch = {
@@ -168,6 +176,7 @@ const PublicDocumentUpload = () => {
         patch.experienceLetter = expLetterUrl;
         patch.salarySlip = salarySlipUrl;
         patch.relievingLetter = relievingLetterUrl;
+        patch.bankStatement = bankStatementUrl;
       }
 
       await jobApplicationApi.updateStage(appNumber, patch);
@@ -336,7 +345,7 @@ const PublicDocumentUpload = () => {
                   <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-850 border border-amber-200">Required for Experienced Post</span>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1">Experience Letter *</label>
                     <div className="relative border border-dashed border-gray-300 hover:border-indigo-500 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors bg-white min-h-[110px]">
@@ -365,6 +374,16 @@ const PublicDocumentUpload = () => {
                       <span className="text-[11px] font-bold text-gray-700 text-center line-clamp-2">{formData.relievingLetter ? formData.relievingLetter.name : 'Choose file...'}</span>
                     </div>
                     {uploadProgress['relievingLetter'] && <span className="text-[10px] font-bold text-indigo-650 mt-1 block">{uploadProgress['relievingLetter']}</span>}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1">Bank Statement *</label>
+                    <div className="relative border border-dashed border-gray-300 hover:border-indigo-500 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors bg-white min-h-[110px]">
+                      <input type="file" required accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => handleFileChange(e, 'bankStatement')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                      <Upload size={18} className="text-gray-400 mb-1" />
+                      <span className="text-[11px] font-bold text-gray-700 text-center line-clamp-2">{formData.bankStatement ? formData.bankStatement.name : 'Choose file...'}</span>
+                    </div>
+                    {uploadProgress['bankStatement'] && <span className="text-[10px] font-bold text-indigo-650 mt-1 block">{uploadProgress['bankStatement']}</span>}
                   </div>
                 </div>
               </div>
