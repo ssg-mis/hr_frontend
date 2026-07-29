@@ -35,7 +35,7 @@ const AttendanceMonthly = () => {
     setError(null);
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/attendance/monthly?month=${selectedMonth}&year=${selectedYear}&department=${selectedDepartment}&search=${encodeURIComponent(searchTerm)}`
+        `${import.meta.env.VITE_API_URL || "/api/v1"}/attendance/monthly?month=${selectedMonth}&year=${selectedYear}&department=${selectedDepartment}&search=${encodeURIComponent(searchTerm)}`
       );
       if (!response.ok) throw new Error('Failed to fetch monthly attendance');
       const result = await response.json();
