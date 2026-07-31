@@ -256,14 +256,49 @@ const MyProfile = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Father's Name
               </label>
-              <p className="text-gray-800">{profileData.fatherName}</p>
+              <p className="text-gray-800">{profileData.fatherName || "N/A"}</p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Gender
               </label>
-              <p className="text-gray-800">{profileData.gender}</p>
+              <p className="text-gray-800">{profileData.gender || "N/A"}</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Qualification
+              </label>
+              <p className="text-gray-800">{profileData.qualification || "N/A"}</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Blood Group
+              </label>
+              <p className="text-gray-800">{profileData.bloodGroup || "N/A"}</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                PAN No.
+              </label>
+              <p className="text-gray-800">{profileData.panNo || "N/A"}</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Bank Account No.
+              </label>
+              <p className="text-gray-800">{profileData.bankAccountNo || "N/A"}</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                IFSC Code
+              </label>
+              <p className="text-gray-800">{profileData.ifscCode || "N/A"}</p>
             </div>
 
             <div>

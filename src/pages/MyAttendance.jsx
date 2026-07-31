@@ -90,8 +90,8 @@ const MyAttendance = () => {
           if (!isoString) return '';
           const date = new Date(isoString);
           if (isNaN(date.getTime())) return '';
-          let hours = date.getUTCHours();
-          const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+          let hours = date.getHours();
+          const minutes = String(date.getMinutes()).padStart(2, '0');
           const ampm = hours >= 12 ? 'PM' : 'AM';
           hours = hours % 12;
           hours = hours ? hours : 12;
@@ -302,7 +302,7 @@ const MyAttendance = () => {
               Attendance Records - {months[selectedMonth]} {selectedYear}
             </h2>
             <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-              Calculated using assigned shift timings
+              Shift auto-detected from daily punch times
             </span>
           </div>
 

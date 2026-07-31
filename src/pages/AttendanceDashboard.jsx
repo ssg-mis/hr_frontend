@@ -41,28 +41,14 @@ const AttendanceDashboard = () => {
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
   };
 
-  const getEndOfMonth = () => {
+  const getTodayStr = () => {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(lastDay)}`;
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   };
 
-  // Returns yesterday's date string YYYY-MM-DD
-  const getYesterday = () => {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  };
-
-  const [startDate, setStartDate] = useState(getStartOfMonth());
-  // Default end date: end of current month, but cap at yesterday so we never request today from BioTime
-  const [endDate, setEndDate] = useState(() => {
-    const eom = getEndOfMonth();
-    const yesterday = getYesterday();
-    return eom > yesterday ? yesterday : eom;
-  });
+  const [startDate] = useState(getStartOfMonth());
+  const [endDate] = useState(getTodayStr());
 
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [todayRecords, setTodayRecords] = useState([]);
@@ -79,6 +65,10 @@ const AttendanceDashboard = () => {
   const [selectedRecordForInfo, setSelectedRecordForInfo] = useState(null);
   const [employeeInfoLoading, setEmployeeInfoLoading] = useState(false);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   // Record Event modal for HR
   const [recordModalEmp, setRecordModalEmp] = useState(null);
   const [eventForm, setEventForm] = useState({
@@ -87,6 +77,10 @@ const AttendanceDashboard = () => {
   });
   const [submittingEvent, setSubmittingEvent] = useState(false);
   const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
 
@@ -227,7 +221,7 @@ const AttendanceDashboard = () => {
         console.error("Error syncing biometric data:", err);
         if (isCurrent) toast.error("Failed to sync biometric data");
       } finally {
-        if (isCurrent) setSyncing(false);
+        setSyncing(false);
       }
     };
 
@@ -235,6 +229,7 @@ const AttendanceDashboard = () => {
 
     return () => {
       isCurrent = false;
+      setSyncing(false);
     };
   }, [startDate, endDate]);
 
@@ -352,8 +347,8 @@ const AttendanceDashboard = () => {
     if (!dateStr) return "—";
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return "—";
-    let hours = d.getUTCHours();
-    const minutes = String(d.getUTCMinutes()).padStart(2, "0");
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, "0");
     const ampm = hours >= 12 ? "PM" : "AM";
     hours = hours % 12;
     hours = hours ? hours : 12;
@@ -371,6 +366,11 @@ const AttendanceDashboard = () => {
         employeeId: empId,
         employeeCode: record.employeeCode,
         employeeName: record.employeeName,
+        // Assigned shift (from employee_shifts) — constant per employee,
+        // shown here regardless of what shift was auto-detected on any given day.
+        assignedShiftName: record.assignedShiftName,
+        assignedShiftStartTime: record.assignedShiftStartTime,
+        assignedShiftEndTime: record.assignedShiftEndTime,
         presentDays: 0,
         halfDays: 0,
         absentDays: 0,
@@ -441,6 +441,11 @@ const AttendanceDashboard = () => {
     emp.employeeCode.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const totalFilteredCount = filteredSummaryList.length;
+  const totalPages = Math.ceil(totalFilteredCount / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedSummaryList = filteredSummaryList.slice(startIndex, startIndex + pageSize);
+
   const totalEmployees = employeesSummaryList.length;
   const presentCount = todayRecords.filter(
     (r) => (r.status || "").toLowerCase() === "present" || Boolean(r.punchIn)
@@ -470,25 +475,9 @@ const AttendanceDashboard = () => {
             <RefreshCw size={16} className={syncing ? "animate-spin" : ""} />
             <span>{syncing ? "Syncing..." : "Sync Biometric Logs"}</span>
           </button>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500">
-              <span className="text-xs text-gray-500 font-semibold uppercase">From</span>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="text-sm font-medium text-gray-800 focus:outline-none"
-              />
-            </div>
-            <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500">
-              <span className="text-xs text-gray-500 font-semibold uppercase">To</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="text-sm font-medium text-gray-800 focus:outline-none"
-              />
-            </div>
+          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold text-gray-600 shadow-sm">
+            <Calendar size={15} className="text-indigo-600 shrink-0" />
+            <span>{fmtDate(startDate)} – Today ({fmtDate(endDate)})</span>
           </div>
         </div>
       </div>
@@ -604,11 +593,10 @@ const AttendanceDashboard = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-150">
-                {filteredSummaryList.map((emp) => {
-                  const firstDay = emp.days[0];
-                  const sName = firstDay?.shiftName || 'general';
-                  const sStart = firstDay?.startTime || '08:45';
-                  const sEnd = firstDay?.endTime || '17:35';
+                {paginatedSummaryList.map((emp) => {
+                  const sName = emp.assignedShiftName || 'general';
+                  const sStart = emp.assignedShiftStartTime || '08:45';
+                  const sEnd = emp.assignedShiftEndTime || '17:35';
 
                   return (
                     <tr key={emp.employeeId} className="hover:bg-gray-50/50 transition duration-150">
@@ -639,6 +627,57 @@ const AttendanceDashboard = () => {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination Bar */}
+        {!loading && totalFilteredCount > 0 && (
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs md:text-sm text-gray-600">
+            <div className="flex items-center gap-3">
+              <span>
+                Showing <strong className="text-gray-900">{startIndex + 1}</strong> to{" "}
+                <strong className="text-gray-900">{Math.min(startIndex + pageSize, totalFilteredCount)}</strong> of{" "}
+                <strong className="text-gray-900">{totalFilteredCount}</strong> employees
+              </span>
+              <div className="flex items-center gap-1.5 ml-2">
+                <span className="text-gray-500">Per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="px-2 py-1 border border-gray-300 rounded-lg text-xs font-semibold bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-700 font-semibold hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-sm"
+              >
+                Previous
+              </button>
+
+              <span className="px-3 py-1.5 font-bold text-gray-800 bg-white border border-gray-200 rounded-lg shadow-sm">
+                {currentPage} / {totalPages}
+              </span>
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                disabled={currentPage >= totalPages}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-700 font-semibold hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-sm"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -700,10 +739,10 @@ const AttendanceDashboard = () => {
                         <tr key={`${day.workDate}-${day.sessionId || 'none'}`} className="hover:bg-gray-50/50 transition duration-150">
                           <td className="px-4 py-3 text-sm font-semibold text-gray-900">
                             {fmtDate(day.workDate)}
-                            {/* Show shift tag suffix for multi-shift days (shiftTag > 1) */}
-                            {day.shiftTag > 1 && (
+                            {/* Show session suffix for multi-session days (sessionSeq > 1) */}
+                            {day.sessionSeq > 1 && (
                               <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
-                                Shift {day.shiftTag}
+                                Shift {day.sessionSeq}
                               </span>
                             )}
                           </td>
@@ -796,7 +835,7 @@ const AttendanceDashboard = () => {
               {/* Shift & Daily Table Punches Summary Banner */}
               <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 rounded-xl p-4 shadow-sm">
                 <div className="flex items-center justify-between mb-3 border-b border-indigo-100 pb-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">Assigned Shift</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">Shift (detected)</span>
                   <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold capitalize bg-indigo-600 text-white shadow-sm">
                     {selectedSessionTimeline.shiftName === 'general' ? 'General Shift' : `Shift ${selectedSessionTimeline.shiftName?.toUpperCase()}`} ({selectedSessionTimeline.startTime} - {selectedSessionTimeline.endTime})
                   </span>
