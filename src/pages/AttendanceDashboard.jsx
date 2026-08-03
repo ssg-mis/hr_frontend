@@ -55,7 +55,7 @@ const AttendanceDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedEmployeeLogs, setSelectedEmployeeLogs] = useState(null);
-  
+
   // Selected employee session timeline modal
   const [selectedSessionTimeline, setSelectedSessionTimeline] = useState(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
@@ -304,15 +304,20 @@ const AttendanceDashboard = () => {
     setRecordModalEmp(record);
   };
 
-  const handleRecordEventSubmit = async (e) => {
+  // target: "db" logs to our DB only; "biotime" pushes the punch into BioTime
+  // first (real biometric system of record), then mirrors it locally.
+  const handleRecordEventSubmit = async (e, target = "db") => {
     e.preventDefault();
-    if (!recordModalEmp) return;
+    if (!recordModalEmp || !eventForm.eventTime) return;
     setSubmittingEvent(true);
     try {
-      const res = await fetch(`${API_URL}/attendance/events`, {
+      const token = localStorage.getItem("token");
+      const endpoint = target === "biotime" ? "/attendance/events/biotime" : "/attendance/events";
+      const res = await fetch(`${API_URL}${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           employeeId: recordModalEmp.employeeId,
@@ -322,7 +327,7 @@ const AttendanceDashboard = () => {
       });
       const result = await res.json();
       if (result.success) {
-        toast.success("Attendance event logged successfully");
+        toast.success(target === "biotime" ? "Punch pushed to BioTime and logged" : "Attendance event logged successfully");
         setRecordModalEmp(null);
         fetchAttendanceData(startDate, endDate);
       } else {
@@ -779,17 +784,26 @@ const AttendanceDashboard = () => {
                           <td className="px-4 py-3 text-sm text-gray-600 font-medium">{formatPunchTime(day.punchOut)}</td>
                           <td className="px-4 py-3 text-sm text-gray-600 font-semibold">{isPresent ? formatMinutes(mins) : "—"}</td>
                           <td className="px-4 py-3 text-right">
-                            {day.isRecorded ? (
+                            <div className="flex items-center justify-end gap-2">
+                              {day.isRecorded ? (
+                                <button
+                                  onClick={() => handleOpenTimeline(day)}
+                                  className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-900 font-semibold cursor-pointer border border-indigo-100 rounded bg-indigo-50/50 px-2 py-1"
+                                >
+                                  <Clock size={12} />
+                                  <span>Timeline</span>
+                                </button>
+                              ) : (
+                                <span className="text-xs text-gray-400 italic">No Punches</span>
+                              )}
                               <button
-                                onClick={() => handleOpenTimeline(day)}
-                                className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-900 font-semibold cursor-pointer border border-indigo-100 rounded bg-indigo-50/50 px-2 py-1"
+                                onClick={() => handleOpenRecordEventModal(day)}
+                                className="inline-flex items-center gap-1 text-xs text-emerald-700 hover:text-emerald-900 font-semibold cursor-pointer border border-emerald-200 rounded bg-emerald-50/50 px-2 py-1"
                               >
-                                <Clock size={12} />
-                                <span>Timeline</span>
+                                <Plus size={12} />
+                                <span>Record Punch</span>
                               </button>
-                            ) : (
-                              <span className="text-xs text-gray-400 italic">No Punches</span>
-                            )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -866,7 +880,7 @@ const AttendanceDashboard = () => {
               {/* Timeline Events Section */}
               <div>
                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Raw Biometric Punches Timeline</h4>
-                
+
                 {selectedSessionTimeline.events.length === 0 ? (
                   <p className="text-sm text-gray-400 italic text-center py-4 bg-gray-50 rounded-xl border border-dashed border-gray-200">No raw punches recorded for this shift window.</p>
                 ) : (
@@ -877,7 +891,7 @@ const AttendanceDashboard = () => {
                         <span className={`absolute -left-[31px] top-1 h-3.5 w-3.5 rounded-full border-2 border-white flex items-center justify-center shadow-sm
                           ${ev.eventType === "CHECK_IN" ? "bg-emerald-500 ring-4 ring-emerald-50" : "bg-rose-500 ring-4 ring-rose-50"}
                         `}></span>
-                        
+
                         <div className="flex justify-between items-center bg-gray-50 hover:bg-indigo-50/50 p-2.5 rounded-xl border border-gray-150 transition duration-150">
                           <div>
                             <h5 className="font-bold text-gray-900 text-xs">
@@ -960,11 +974,15 @@ const AttendanceDashboard = () => {
                     required
                     className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none font-medium"
                   />
+                  <p className="text-[11px] text-gray-400">
+                    "Log Event" only updates our records. "Push to Biometric Device" also creates a real
+                    punch in BioTime itself, as if scanned at the terminal.
+                  </p>
                 </div>
               </div>
 
               {/* Modal Footer */}
-              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-wrap justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setRecordModalEmp(null)}
@@ -972,6 +990,14 @@ const AttendanceDashboard = () => {
                 >
                   Cancel
                 </button>
+                {/* <button
+                  type="button"
+                  disabled={submittingEvent}
+                  onClick={(e) => handleRecordEventSubmit(e, "biotime")}
+                  className="bg-white border border-amber-300 text-amber-700 font-semibold text-sm px-4 py-2 rounded-xl shadow-sm hover:bg-amber-50 transition duration-200 cursor-pointer disabled:opacity-55"
+                >
+                  {submittingEvent ? "Pushing..." : "Push to Biometric Device"}
+                </button> */}
                 <button
                   type="submit"
                   disabled={submittingEvent}
@@ -1012,7 +1038,7 @@ const AttendanceDashboard = () => {
 
             {/* Modal Body */}
             <div className="p-6 max-h-[70vh] overflow-y-auto space-y-6">
-              
+
               {/* Today's Attendance Highlight Card */}
               {selectedRecordForInfo && (
                 <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4">
