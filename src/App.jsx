@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import Layout from './components/Layout';
@@ -30,27 +30,38 @@ import LeaveManagement from './pages/LeaveManagement';
 import Report from './pages/Report';
 // import MisReport from './pages/MisReport';
 import LeavePolicy from './pages/LeavePolicy';
-import EMIManagement from './pages/EMIManagement';
 import Settings from './pages/Settings';
-import SalaryManagement from './pages/SalaryManagement';
 import AttendanceLogs from './pages/AttendanceLogs';
 import AttendanceDashboard from './pages/AttendanceDashboard';
 import ShiftManagement from './pages/ShiftManagement';
 import CanteenDashboard from './pages/CanteenDashboard';
 import CanteenScanner from './pages/CanteenScanner';
-import PFManagement from './pages/PFManagement';
-import ESICManagement from './pages/ESICManagement';
 import GatePassManagement from './pages/GatePassManagement';
 import PublicVisitorPassRequest from './pages/PublicVisitorPassRequest';
-import CompensationManagement from './pages/CompensationManagement';
-import Payroll from './pages/Payroll';
+
+const SalaryManagement = lazy(() => import('./pages/SalaryManagement'));
+const Payroll = lazy(() => import('./pages/Payroll'));
+const EMIManagement = lazy(() => import('./pages/EMIManagement'));
+const CompensationManagement = lazy(() => import('./pages/CompensationManagement'));
+const PFManagement = lazy(() => import('./pages/PFManagement'));
+const ESICManagement = lazy(() => import('./pages/ESICManagement'));
 
 function App() {
   return (
     <div className="bg-white min-h-screen">
       <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Toaster position="top-right" containerStyle={{ zIndex: 999999 }} />
-        <Routes>
+        <Suspense
+          fallback={
+            <div className="min-h-screen flex items-center justify-center bg-white">
+              <div className="flex flex-col items-center gap-3 text-slate-500">
+                <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600" />
+                <p className="text-sm font-medium">Loading page...</p>
+              </div>
+            </div>
+          }
+        >
+          <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/apply/:vacancyNumber" element={<PublicApply />} />
           <Route path="/upload-documents/:token" element={<PublicDocumentUpload />} />
@@ -105,7 +116,8 @@ function App() {
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+          </Routes>
+        </Suspense>
       </Router>
     </div>
   );

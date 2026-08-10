@@ -29,20 +29,32 @@ const SalaryManagement = () => {
     remarks: '',
   });
   const [advanceTabMode, setAdvanceTabMode] = useState('requests');
-  
+
   const [salaries, setSalaries] = useState([]);
   const [requests, setRequests] = useState([]);
   const [history, setHistory] = useState([]);
   const [departments, setDepartments] = useState([]);
-  
+
   const [loading, setLoading] = useState(false);
+  const [salaryLoading, setSalaryLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(25);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // History pagination state
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyLimit, setHistoryLimit] = useState(25);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyTotalPages, setHistoryTotalPages] = useState(1);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   // Modals state
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [showDeptModal, setShowDeptModal] = useState(false);
   const [selectedEmp, setSelectedEmp] = useState(null);
-  
+
   // Forms state
   const [empForm, setEmpForm] = useState({
     employeeId: '',
@@ -51,7 +63,7 @@ const SalaryManagement = () => {
     proposedBaseSalary: '',
     proposedAllowanceSalary: '',
   });
-  
+
   const [deptForm, setDeptForm] = useState({
     departmentId: '',
     incrementType: 'percent', // 'percent' | 'flat'
@@ -62,21 +74,16 @@ const SalaryManagement = () => {
 
   const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
 
-  // Load initial data
-  const loadData = async () => {
+  // Load initial static configuration
+  const loadStaticData = async () => {
     setLoading(true);
     try {
       await Promise.all([
-        fetchSalaries(),
-        fetchRequests(),
-        fetchHistory(),
         fetchDepartments(),
         fetchCalendarEvents(),
-        fetchAdvanceRequests(),
-        fetchAdvanceRecoveries(),
       ]);
     } catch (error) {
-      console.error("Error loading salary data:", error);
+      console.error("Error loading salary static data:", error);
     } finally {
       setLoading(false);
     }
@@ -119,8 +126,20 @@ const SalaryManagement = () => {
   };
 
   useEffect(() => {
-    loadData();
+    loadStaticData();
   }, []);
+
+  // Lazy-load sub-tab datasets when switching active tab
+  useEffect(() => {
+    if (activeSubTab === 'requests' && requests.length === 0) {
+      fetchRequests();
+    } else if (activeSubTab === 'history') {
+      fetchHistory(historyPage, historyLimit);
+    } else if (activeSubTab === 'advances' && advanceRequests.length === 0) {
+      fetchAdvanceRequests();
+      fetchAdvanceRecoveries();
+    }
+  }, [activeSubTab, historyPage, historyLimit]);
 
   useEffect(() => {
     const activeEmpId = empForm.employeeId || (selectedEmp ? selectedEmp.employeeId : null);
@@ -137,11 +156,34 @@ const SalaryManagement = () => {
     }
   }, [empForm.employeeId, empForm.incrementType, empForm.percent, selectedEmp, salaries]);
 
+  useEffect(() => {
+    const run = async () => {
+      setSalaryLoading(true);
+      try {
+        await fetchSalaries();
+      } finally {
+        setSalaryLoading(false);
+      }
+    };
+    run();
+  }, [page, limit, searchTerm]);
+
   const fetchSalaries = async () => {
-    const res = await fetch(`${API_URL}/salaries`);
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+    });
+    if (searchTerm.trim()) {
+      params.set("search", searchTerm.trim());
+    }
+    const res = await fetch(`${API_URL}/salaries?${params.toString()}`);
     const result = await res.json();
     if (result.success) {
-      setSalaries(result.data);
+      setSalaries(Array.isArray(result.data) ? result.data : []);
+      setTotal(Number(result.total || 0));
+      setTotalPages(Number(result.totalPages || 1));
+      setPage(Number(result.page || page));
+      setLimit(Number(result.limit || limit));
     }
   };
 
@@ -153,11 +195,26 @@ const SalaryManagement = () => {
     }
   };
 
-  const fetchHistory = async () => {
-    const res = await fetch(`${API_URL}/salaries/history`);
-    const result = await res.json();
-    if (result.success) {
-      setHistory(result.data);
+  const fetchHistory = async (p = historyPage, l = historyLimit) => {
+    setHistoryLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(p),
+        limit: String(l),
+      });
+      const res = await fetch(`${API_URL}/salaries/history?${params.toString()}`);
+      const result = await res.json();
+      if (result.success) {
+        setHistory(Array.isArray(result.data) ? result.data : []);
+        setHistoryTotal(Number(result.total || 0));
+        setHistoryTotalPages(Number(result.totalPages || 1));
+        setHistoryPage(Number(result.page || p));
+        setHistoryLimit(Number(result.limit || l));
+      }
+    } catch (err) {
+      console.error("Error fetching salary history:", err);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -315,12 +372,6 @@ const SalaryManagement = () => {
     }
   };
 
-  // Filter salaries by search term
-  const filteredSalaries = salaries.filter(s => 
-    s.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.employeeCode.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   // Filter requests by workflow filter
   const filteredRequests = requests.filter(r => {
     if (requestsFilter === 'all') return true;
@@ -332,7 +383,7 @@ const SalaryManagement = () => {
 
   return (
     <div className="space-y-6 page-content p-6 max-w-7xl mx-auto">
-      
+
       {/* Upper Navigation / Actions Dashboard */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
         <div>
@@ -342,7 +393,7 @@ const SalaryManagement = () => {
           </h1>
           <p className="text-sm text-slate-500 mt-1">Manage active payroll salaries, automate updates, and run approval workflows.</p>
         </div>
-        
+
         <div className="flex flex-wrap gap-3">
           <button
             onClick={() => {
@@ -356,7 +407,7 @@ const SalaryManagement = () => {
             <Plus size={18} />
             <span>Employee-wise Increment</span>
           </button>
-          
+
           <button
             onClick={() => setShowDeptModal(true)}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-medium text-sm transition-all shadow-sm shadow-emerald-100"
@@ -371,22 +422,20 @@ const SalaryManagement = () => {
       <div className="flex border-b border-slate-200">
         <button
           onClick={() => setActiveSubTab('active-salaries')}
-          className={`pb-4 px-6 font-semibold text-sm transition-colors border-b-2 -mb-px ${
-            activeSubTab === 'active-salaries' 
-              ? 'border-indigo-600 text-indigo-600' 
+          className={`pb-4 px-6 font-semibold text-sm transition-colors border-b-2 -mb-px ${activeSubTab === 'active-salaries'
+              ? 'border-indigo-600 text-indigo-600'
               : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
+            }`}
         >
           Active Salaries
         </button>
-        
+
         <button
           onClick={() => setActiveSubTab('requests')}
-          className={`pb-4 px-6 font-semibold text-sm transition-colors border-b-2 -mb-px flex items-center gap-2 ${
-            activeSubTab === 'requests' 
-              ? 'border-indigo-600 text-indigo-600' 
+          className={`pb-4 px-6 font-semibold text-sm transition-colors border-b-2 -mb-px flex items-center gap-2 ${activeSubTab === 'requests'
+              ? 'border-indigo-600 text-indigo-600'
               : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
+            }`}
         >
           <span>Approval Requests</span>
           {requests.filter(r => r.status === 'Pending HR' || r.status === 'Pending HOD').length > 0 && (
@@ -398,11 +447,10 @@ const SalaryManagement = () => {
 
         <button
           onClick={() => setActiveSubTab('history')}
-          className={`pb-4 px-6 font-semibold text-sm transition-colors border-b-2 -mb-px flex items-center gap-2 ${
-            activeSubTab === 'history' 
-              ? 'border-indigo-600 text-indigo-600' 
+          className={`pb-4 px-6 font-semibold text-sm transition-colors border-b-2 -mb-px flex items-center gap-2 ${activeSubTab === 'history'
+              ? 'border-indigo-600 text-indigo-600'
               : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
+            }`}
         >
           <History size={16} />
           <span>Previous Records (Logs)</span>
@@ -410,11 +458,10 @@ const SalaryManagement = () => {
 
         <button
           onClick={() => setActiveSubTab('bonus')}
-          className={`pb-4 px-6 font-semibold text-sm transition-colors border-b-2 -mb-px flex items-center gap-2 ${
-            activeSubTab === 'bonus' 
-              ? 'border-indigo-600 text-indigo-600' 
+          className={`pb-4 px-6 font-semibold text-sm transition-colors border-b-2 -mb-px flex items-center gap-2 ${activeSubTab === 'bonus'
+              ? 'border-indigo-600 text-indigo-600'
               : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
+            }`}
         >
           <Gift size={16} />
           <span>Bonus Calculations</span>
@@ -422,11 +469,10 @@ const SalaryManagement = () => {
 
         <button
           onClick={() => setActiveSubTab('advance-management')}
-          className={`pb-4 px-6 font-semibold text-sm transition-colors border-b-2 -mb-px flex items-center gap-2 ${
-            activeSubTab === 'advance-management' 
-              ? 'border-indigo-600 text-indigo-600' 
+          className={`pb-4 px-6 font-semibold text-sm transition-colors border-b-2 -mb-px flex items-center gap-2 ${activeSubTab === 'advance-management'
+              ? 'border-indigo-600 text-indigo-600'
               : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
+            }`}
         >
           <CreditCard size={16} />
           <span>Advance Management</span>
@@ -444,12 +490,15 @@ const SalaryManagement = () => {
                 type="text"
                 placeholder="Search by Employee Code or Name..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setPage(1);
+                }}
                 className="pl-9 pr-4 py-2 border border-slate-200 rounded-xl w-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
             <div className="text-xs text-slate-500 font-medium">
-              Showing {filteredSalaries.length} of {salaries.length} Active Employees
+              Showing {salaries.length} of {total} Active Employees
             </div>
           </div>
 
@@ -468,7 +517,7 @@ const SalaryManagement = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {loading ? (
+                {loading || salaryLoading ? (
                   <tr>
                     <td colSpan="7" className="px-6 py-12 text-center text-slate-500 text-sm">
                       <div className="flex justify-center flex-col items-center">
@@ -477,14 +526,14 @@ const SalaryManagement = () => {
                       </div>
                     </td>
                   </tr>
-                ) : filteredSalaries.length === 0 ? (
+                ) : salaries.length === 0 ? (
                   <tr>
                     <td colSpan="7" className="px-6 py-12 text-center text-slate-500 text-sm">
                       No active employees found matching the search criteria.
                     </td>
                   </tr>
                 ) : (
-                  filteredSalaries.map((emp) => {
+                  salaries.map((emp) => {
                     const totalSalary = Number(emp.baseSalary) + Number(emp.allowanceSalary);
                     return (
                       <tr key={emp.employeeId} className="hover:bg-slate-50 transition-colors">
@@ -511,6 +560,41 @@ const SalaryManagement = () => {
               </tbody>
             </table>
           </div>
+
+          <div className="p-5 border-t border-slate-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="text-sm text-slate-500">
+              Page <span className="font-semibold text-slate-700">{page}</span> of{" "}
+              <span className="font-semibold text-slate-700">{totalPages}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={limit}
+                onChange={(e) => {
+                  setPage(1);
+                  setLimit(Number(e.target.value));
+                }}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              >
+                {[10, 25, 50, 100].map((n) => (
+                  <option key={n} value={n}>{n} / page</option>
+                ))}
+              </select>
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="px-4 py-2 rounded-lg border border-slate-200 text-sm disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="px-4 py-2 rounded-lg border border-slate-200 text-sm disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -527,11 +611,10 @@ const SalaryManagement = () => {
               <button
                 key={tab.id}
                 onClick={() => setRequestsFilter(tab.id)}
-                className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all ${
-                  requestsFilter === tab.id
+                className={`px-4 py-2 text-xs font-semibold rounded-lg border transition-all ${requestsFilter === tab.id
                     ? 'bg-slate-800 text-white border-slate-800'
                     : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                }`}
+                  }`}
               >
                 {tab.label}
               </button>
@@ -572,7 +655,7 @@ const SalaryManagement = () => {
                       const propTotal = Number(req.proposedBaseSalary) + Number(req.proposedAllowanceSalary);
                       const diff = propTotal - curTotal;
                       const percentDiff = curTotal > 0 ? (diff / curTotal) * 100 : 0;
-                      
+
                       return (
                         <tr key={req.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -582,11 +665,10 @@ const SalaryManagement = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
-                              req.changeType === 'Department' 
-                                ? 'bg-emerald-50 text-emerald-700' 
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${req.changeType === 'Department'
+                                ? 'bg-emerald-50 text-emerald-700'
                                 : 'bg-blue-50 text-blue-700'
-                            }`}>
+                              }`}>
                               {req.changeType}
                             </span>
                           </td>
@@ -602,15 +684,14 @@ const SalaryManagement = () => {
                             <span className="text-[10px] text-emerald-600 font-bold block">+{percentDiff.toFixed(0)}% Increase</span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-                              req.status === 'Pending HR'
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${req.status === 'Pending HR'
                                 ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
                                 : req.status === 'Pending HOD'
-                                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                : req.status === 'Approved'
-                                ? 'bg-green-50 text-green-700 border-green-200'
-                                : 'bg-red-50 text-red-700 border-red-200'
-                            }`}>
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : req.status === 'Approved'
+                                    ? 'bg-green-50 text-green-700 border-green-200'
+                                    : 'bg-red-50 text-red-700 border-red-200'
+                              }`}>
                               {req.status}
                             </span>
                           </td>
@@ -637,7 +718,7 @@ const SalaryManagement = () => {
                                   </button>
                                 </>
                               )}
-                              
+
                               {req.status === 'Pending HOD' && (
                                 <>
                                   <button
@@ -656,7 +737,7 @@ const SalaryManagement = () => {
                                   </button>
                                 </>
                               )}
-                              
+
                               {(req.status === 'Approved' || req.status === 'Rejected') && (
                                 <span className="text-xs text-slate-400 font-medium italic">Workflow Completed</span>
                               )}
@@ -695,7 +776,7 @@ const SalaryManagement = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {loading ? (
+                {historyLoading ? (
                   <tr>
                     <td colSpan="7" className="px-6 py-12 text-center">
                       <div className="w-6 h-6 border-4 border-indigo-500 border-dashed rounded-full animate-spin mx-auto"></div>
@@ -730,6 +811,41 @@ const SalaryManagement = () => {
                 )}
               </tbody>
             </table>
+          </div>
+
+          <div className="p-5 border-t border-slate-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="text-sm text-slate-500">
+              Page <span className="font-semibold text-slate-700">{historyPage}</span> of{" "}
+              <span className="font-semibold text-slate-700">{historyTotalPages}</span> (Total: {historyTotal} records)
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={historyLimit}
+                onChange={(e) => {
+                  setHistoryPage(1);
+                  setHistoryLimit(Number(e.target.value));
+                }}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              >
+                {[10, 25, 50, 100].map((n) => (
+                  <option key={n} value={n}>{n} / page</option>
+                ))}
+              </select>
+              <button
+                onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                disabled={historyPage <= 1}
+                className="px-4 py-2 rounded-lg border border-slate-200 text-sm disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
+                disabled={historyPage >= historyTotalPages}
+                className="px-4 py-2 rounded-lg border border-slate-200 text-sm disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -911,22 +1027,20 @@ const SalaryManagement = () => {
             <div className="flex gap-2">
               <button
                 onClick={() => setAdvanceTabMode('requests')}
-                className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${
-                  advanceTabMode === 'requests'
+                className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${advanceTabMode === 'requests'
                     ? 'bg-slate-800 text-white shadow-sm'
                     : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                }`}
+                  }`}
               >
                 <FileText size={14} />
                 <span>Advance Report (Requests)</span>
               </button>
               <button
                 onClick={() => setAdvanceTabMode('recoveries')}
-                className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${
-                  advanceTabMode === 'recoveries'
+                className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 ${advanceTabMode === 'recoveries'
                     ? 'bg-slate-800 text-white shadow-sm'
                     : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                }`}
+                  }`}
               >
                 <History size={14} />
                 <span>Recovery Report (Logs)</span>
@@ -1011,15 +1125,14 @@ const SalaryManagement = () => {
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-center">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-                                req.status === 'Pending HOD'
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${req.status === 'Pending HOD'
                                   ? 'bg-amber-50 text-amber-700 border-amber-200'
                                   : req.status === 'Pending HR'
-                                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                                  : req.status === 'Approved'
-                                  ? 'bg-green-50 text-green-700 border-green-200'
-                                  : 'bg-red-50 text-red-700 border-red-200'
-                              }`}>
+                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                    : req.status === 'Approved'
+                                      ? 'bg-green-50 text-green-700 border-green-200'
+                                      : 'bg-red-50 text-red-700 border-red-200'
+                                }`}>
                                 {req.status}
                               </span>
                             </td>
@@ -1270,11 +1383,10 @@ const SalaryManagement = () => {
                   <button
                     type="button"
                     onClick={() => setEmpForm(prev => ({ ...prev, incrementType: 'percent' }))}
-                    className={`p-3 border rounded-xl font-medium text-xs transition-all flex items-center justify-center gap-1.5 ${
-                      empForm.incrementType === 'percent'
+                    className={`p-3 border rounded-xl font-medium text-xs transition-all flex items-center justify-center gap-1.5 ${empForm.incrementType === 'percent'
                         ? 'bg-slate-800 text-white border-slate-800'
                         : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     <Percent size={14} />
                     <span>Percentage Increment</span>
@@ -1283,11 +1395,10 @@ const SalaryManagement = () => {
                   <button
                     type="button"
                     onClick={() => setEmpForm(prev => ({ ...prev, incrementType: 'flat' }))}
-                    className={`p-3 border rounded-xl font-medium text-xs transition-all flex items-center justify-center gap-1.5 ${
-                      empForm.incrementType === 'flat'
+                    className={`p-3 border rounded-xl font-medium text-xs transition-all flex items-center justify-center gap-1.5 ${empForm.incrementType === 'flat'
                         ? 'bg-slate-800 text-white border-slate-800'
                         : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     <IndianRupee size={14} />
                     <span>Flat/Manual Entry</span>
@@ -1326,9 +1437,8 @@ const SalaryManagement = () => {
                       placeholder="0.00"
                       value={empForm.proposedBaseSalary}
                       onChange={(e) => setEmpForm(prev => ({ ...prev, proposedBaseSalary: e.target.value }))}
-                      className={`w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                        empForm.incrementType === 'percent' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''
-                      }`}
+                      className={`w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${empForm.incrementType === 'percent' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''
+                        }`}
                     />
                   </div>
                 </div>
@@ -1344,9 +1454,8 @@ const SalaryManagement = () => {
                       placeholder="0.00"
                       value={empForm.proposedAllowanceSalary}
                       onChange={(e) => setEmpForm(prev => ({ ...prev, proposedAllowanceSalary: e.target.value }))}
-                      className={`w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-                        empForm.incrementType === 'percent' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''
-                      }`}
+                      className={`w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${empForm.incrementType === 'percent' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''
+                        }`}
                     />
                   </div>
                 </div>
@@ -1412,11 +1521,10 @@ const SalaryManagement = () => {
                   <button
                     type="button"
                     onClick={() => setDeptForm(prev => ({ ...prev, incrementType: 'percent' }))}
-                    className={`p-3 border rounded-xl font-medium text-xs transition-all flex items-center justify-center gap-1.5 ${
-                      deptForm.incrementType === 'percent'
+                    className={`p-3 border rounded-xl font-medium text-xs transition-all flex items-center justify-center gap-1.5 ${deptForm.incrementType === 'percent'
                         ? 'bg-slate-800 text-white border-slate-800'
                         : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     <Percent size={14} />
                     <span>Percentage Increment</span>
@@ -1425,11 +1533,10 @@ const SalaryManagement = () => {
                   <button
                     type="button"
                     onClick={() => setDeptForm(prev => ({ ...prev, incrementType: 'flat' }))}
-                    className={`p-3 border rounded-xl font-medium text-xs transition-all flex items-center justify-center gap-1.5 ${
-                      deptForm.incrementType === 'flat'
+                    className={`p-3 border rounded-xl font-medium text-xs transition-all flex items-center justify-center gap-1.5 ${deptForm.incrementType === 'flat'
                         ? 'bg-slate-800 text-white border-slate-800'
                         : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     <IndianRupee size={14} />
                     <span>Flat Amount Increment</span>
@@ -1532,9 +1639,8 @@ const SalaryManagement = () => {
                   const isChecked = tempWeekOffs.includes(day) || isSunday;
 
                   return (
-                    <label key={day} className={`flex items-center justify-between p-3 rounded-xl border text-sm transition-all cursor-pointer ${
-                      isSunday ? 'bg-slate-50 border-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}>
+                    <label key={day} className={`flex items-center justify-between p-3 rounded-xl border text-sm transition-all cursor-pointer ${isSunday ? 'bg-slate-50 border-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                      }`}>
                       <span className="font-semibold">{day}</span>
                       <input
                         type="checkbox"

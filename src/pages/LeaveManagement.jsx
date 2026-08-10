@@ -378,10 +378,15 @@ const LeaveManagement = () => {
 
   useEffect(() => {
     fetchLeaveData(1);
-    fetchEmployees();
-    fetchHods();
-    fetchLeaveTypes();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (showModal) {
+      if (employees.length === 0) fetchEmployees();
+      if (hods.length === 0) fetchHods();
+      if (leaveTypes.length === 0) fetchLeaveTypes();
+    }
+  }, [showModal]);
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
