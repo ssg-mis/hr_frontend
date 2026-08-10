@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
-import { 
-  Search, Calendar, Clock, Download, Plus, Check, X, FileText, 
-  BarChart3, CreditCard, Calculator, Filter, Eye, Trash2, Save, 
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  Search, Calendar, Clock, Download, Plus, Check, X, FileText,
+  BarChart3, CreditCard, Calculator, Filter, Eye, Trash2, Save,
   AlertCircle, ChevronLeft, ChevronRight, User, Settings, ShieldAlert, BadgeInfo, Printer
 } from "lucide-react";
 import { jsPDF } from "jspdf";
@@ -29,11 +29,11 @@ const Payroll = () => {
 
   const [activeMode, setActiveMode] = useState("Monthly"); // "Monthly" | "Daily"
   const [selectedMonth, setSelectedMonth] = useState(currentMonthStr); // "YYYY-MM"
-  
+
   // Daily date range
   const [startDate, setStartDate] = useState(new Date(new Date().setDate(1)).toISOString().slice(0, 10)); // 1st of current month
   const [endDate, setEndDate] = useState(todayStr); // Today
-  
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -41,13 +41,24 @@ const Payroll = () => {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(25);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [totalServerPages, setTotalServerPages] = useState(1);
+
+  // Debounced search term for server API calls
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   // Reset page to 1 when filters or search change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, departmentFilter, selectedMonth, activeMode, startDate, endDate]);
-  
+  }, [debouncedSearch, departmentFilter, selectedMonth, activeMode, startDate, endDate]);
+
   // Raw data from APIs
   const [employees, setEmployees] = useState([]);
   const [salariesList, setSalariesList] = useState([]);
@@ -58,11 +69,11 @@ const Payroll = () => {
   const [canteenData, setCanteenData] = useState([]); // Monthly array or Daily logs
   const [leavesList, setLeavesList] = useState([]);
   const [attendanceData, setAttendanceData] = useState([]);
-  
+
   // Calculated & Edited payroll records
   const [payrollRows, setPayrollRows] = useState([]);
   const [savedPayrollRuns, setSavedPayrollRuns] = useState([]);
-  
+
   // Modals / Details
   const [selectedRowForPayslip, setSelectedRowForPayslip] = useState(null);
   const [showPayslipModal, setShowPayslipModal] = useState(false);
@@ -75,33 +86,119 @@ const Payroll = () => {
     return [];
   };
 
+  const salaryByEmployeeId = useMemo(() => {
+    const map = new Map();
+    for (const record of salariesList) {
+      map.set(Number(record.employeeId), record);
+    }
+    return map;
+  }, [salariesList]);
+
+  const employeeById = useMemo(() => {
+    const map = new Map();
+    for (const emp of employees) {
+      map.set(Number(emp.id), emp);
+    }
+    return map;
+  }, [employees]);
+
+  const pfByEmployeeId = useMemo(() => {
+    const map = new Map();
+    for (const record of pfDetailsList) {
+      map.set(Number(record.employeeId), record);
+    }
+    return map;
+  }, [pfDetailsList]);
+
+  const esicByEmployeeId = useMemo(() => {
+    const map = new Map();
+    for (const record of esicDetailsList) {
+      map.set(Number(record.employeeId), record);
+    }
+    return map;
+  }, [esicDetailsList]);
+
+  const activeEmiByEmployeeId = useMemo(() => {
+    const map = new Map();
+    for (const record of emisList) {
+      const employeeId = Number(record.employeeId);
+      if (!map.has(employeeId)) {
+        map.set(employeeId, []);
+      }
+      map.get(employeeId).push(record);
+    }
+    return map;
+  }, [emisList]);
+
+  const leavesByEmployeeId = useMemo(() => {
+    const map = new Map();
+    for (const record of leavesList) {
+      const employeeId = Number(record.employeeId);
+      if (!map.has(employeeId)) {
+        map.set(employeeId, []);
+      }
+      map.get(employeeId).push(record);
+    }
+    return map;
+  }, [leavesList]);
+
+  const attendanceByEmployeeId = useMemo(() => {
+    const map = new Map();
+    for (const record of attendanceData) {
+      const employeeId = Number(record.employeeId);
+      if (!map.has(employeeId)) {
+        map.set(employeeId, []);
+      }
+      map.get(employeeId).push(record);
+    }
+    return map;
+  }, [attendanceData]);
+
+  const compensationByEmployeeId = useMemo(() => {
+    const map = new Map();
+    for (const record of compensationList) {
+      const employeeId = Number(record.employeeId);
+      if (!map.has(employeeId)) {
+        map.set(employeeId, []);
+      }
+      map.get(employeeId).push(record);
+    }
+    return map;
+  }, [compensationList]);
+
+  const canteenByEmployeeId = useMemo(() => {
+    const map = new Map();
+    for (const record of canteenData) {
+      const employeeId = Number(record.employeeId);
+      if (!map.has(employeeId)) {
+        map.set(employeeId, []);
+      }
+      map.get(employeeId).push(record);
+    }
+    return map;
+  }, [canteenData]);
+
   // Load basic configurations
   const loadBaseData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch active employees
-      const empRes = await api.get("/employees");
+      const [empRes, salRes, pfRes, esicRes, emiRes, compRes, leavesRes] = await Promise.all([
+        api.get("/employees"),
+        api.get("/salaries"),
+        api.get("/pf/payroll"),
+        api.get("/esic/payroll"),
+        api.get("/emis"),
+        api.get("/compensation"),
+        api.get("/leaves?limit=10000"),
+      ]);
+
       const activeEmps = getArrayData(empRes).filter(e => e.status === "Active");
       setEmployees(activeEmps);
-
-      // 2. Fetch salaries
-      const salRes = await api.get("/salaries");
       setSalariesList(getArrayData(salRes));
-
-      // 3. Fetch PF preferences
-      const pfRes = await api.get("/pf");
       setPfDetailsList(getArrayData(pfRes));
-
-      // 4. Fetch ESIC preferences
-      const esicRes = await api.get("/esic");
       setEsicDetailsList(getArrayData(esicRes));
-
-      // 5. Fetch EMIs
-      const emiRes = await api.get("/emis");
       setEmisList(getArrayData(emiRes).filter(e => e.status === "Active"));
 
-      // 6. Fetch approved compensations
-      const compRes = await api.get("/compensation");
       const allComps = getArrayData(compRes);
       const approvedComps = allComps.filter(c => {
         const statusLower = (c.status || "").toLowerCase();
@@ -114,9 +211,6 @@ const Payroll = () => {
         );
       });
       setCompensationList(approvedComps);
-
-      // 7. Fetch approved leaves for LWP calculations
-      const leavesRes = await api.get("/leaves?limit=10000");
       setLeavesList(getArrayData(leavesRes).filter(l => l.status === "Approved"));
 
     } catch (err) {
@@ -131,26 +225,9 @@ const Payroll = () => {
     loadBaseData();
   }, []);
 
-  // Fetch canteen deductions, attendance logs and saved runs when month or date range changes
-  const loadPeriodSpecificData = async () => {
-    setLoading(true);
+  // Fetch canteen deductions and attendance logs when month or date range changes
+  const loadMonthLogsData = async () => {
     try {
-      // Fetch saved payrolls for this period and mode
-      const periodStr = activeMode === "Monthly" ? selectedMonth : `${startDate}:${endDate}`;
-      const savedRes = await api.get(`/salaries/payroll?period=${periodStr}&type=${activeMode}`);
-      const savedList = savedRes.data || [];
-      setSavedPayrollRuns(savedList);
-
-      // Fetch canteen records
-      if (activeMode === "Monthly") {
-        const cantRes = await api.get(`/canteen/deductions?month=${selectedMonth}`);
-        setCanteenData(cantRes.data || []);
-      } else {
-        const cantRes = await api.get(`/canteen/logs?startDate=${startDate}&endDate=${endDate}`);
-        setCanteenData(cantRes.data || []);
-      }
-
-      // Fetch attendance sessions for present days & absent calculation
       let startD = startDate;
       let endD = endDate;
       if (activeMode === "Monthly") {
@@ -160,28 +237,76 @@ const Payroll = () => {
         endD = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`;
         if (endD > todayStr) endD = todayStr;
       }
-      try {
-        const attRes = await api.get(`/attendance/sessions?startDate=${startD}&endDate=${endD}`);
-        setAttendanceData(attRes.data || []);
-      } catch (attErr) {
+
+      const canteenPromise = activeMode === "Monthly"
+        ? api.get(`/canteen/deductions?month=${selectedMonth}`)
+        : api.get(`/canteen/logs?startDate=${startDate}&endDate=${endDate}`);
+
+      const attendancePromise = api.get(`/attendance/sessions?startDate=${startD}&endDate=${endD}`).catch(attErr => {
         console.error("Attendance API query error:", attErr);
-        setAttendanceData([]);
+        return { data: [] };
+      });
+
+      const [cantRes, attRes] = await Promise.all([
+        canteenPromise,
+        attendancePromise,
+      ]);
+
+      setCanteenData(cantRes.data || []);
+      setAttendanceData(attRes.data || []);
+    } catch (err) {
+      console.error("Error loading month logs data:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadMonthLogsData();
+  }, [activeMode, selectedMonth, startDate, endDate]);
+
+  // Fetch paginated saved payroll runs when period, page, search, or filter changes
+  const loadPayrollPageData = async () => {
+    setLoading(true);
+    try {
+      const periodStr = activeMode === "Monthly" ? selectedMonth : `${startDate}:${endDate}`;
+
+      const params = new URLSearchParams({
+        period: periodStr,
+        type: activeMode,
+        page: currentPage.toString(),
+        limit: pageSize.toString(),
+      });
+      if (debouncedSearch) params.append("search", debouncedSearch);
+      if (departmentFilter) params.append("department", departmentFilter);
+
+      const savedRes = await api.get(`/salaries/payroll?${params.toString()}`);
+      const savedData = savedRes.data;
+
+      if (savedData && typeof savedData === "object" && !Array.isArray(savedData)) {
+        const savedList = savedData.data || [];
+        setSavedPayrollRuns(savedList);
+        setTotalRecords(savedData.total ?? savedList.length);
+        setTotalServerPages(savedData.totalPages ?? 1);
+      } else {
+        const savedList = Array.isArray(savedData) ? savedData : [];
+        setSavedPayrollRuns(savedList);
+        setTotalRecords(savedList.length);
+        setTotalServerPages(Math.max(1, Math.ceil(savedList.length / pageSize)));
       }
     } catch (err) {
-      console.error("Error loading period-specific data:", err);
+      console.error("Error loading payroll page data:", err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadPeriodSpecificData();
-  }, [activeMode, selectedMonth, startDate, endDate]);
+    loadPayrollPageData();
+  }, [activeMode, selectedMonth, startDate, endDate, currentPage, pageSize, debouncedSearch, departmentFilter]);
 
   // Helper to compute approved live compensation for an employee in current period
   const getApprovedCompensationAmount = (empId, monthlyBase) => {
     let compSum = 0;
-    const empComps = compensationList.filter(c => Number(c.employeeId) === Number(empId));
+    const empComps = compensationByEmployeeId.get(Number(empId)) || [];
     if (activeMode === "Monthly") {
       const [yearStr, monthStr] = selectedMonth.split("-").map(Number);
       empComps.forEach(c => {
@@ -191,7 +316,7 @@ const Payroll = () => {
           const wDate = new Date(rawDate);
           if (!isNaN(wDate.getTime())) {
             const rawStr = String(rawDate);
-            dateMatch = 
+            dateMatch =
               rawStr.includes(selectedMonth) ||
               (wDate.getFullYear() === yearStr && (wDate.getMonth() + 1) === monthStr) ||
               (wDate.getUTCFullYear() === yearStr && (wDate.getUTCMonth() + 1) === monthStr);
@@ -240,10 +365,10 @@ const Payroll = () => {
   // Helper to compute live canteen deduction for an employee in current period
   const getLiveCanteenDeductionForEmployee = (empId) => {
     if (!canteenData || !Array.isArray(canteenData) || canteenData.length === 0) return 0;
-    
+
     if (activeMode === "Monthly") {
       // canteenData comes from GET /canteen/deductions?month=YYYY-MM
-      const canteenItems = canteenData.filter(c => Number(c.employeeId) === Number(empId));
+      const canteenItems = canteenByEmployeeId.get(Number(empId)) || [];
       const total = canteenItems.reduce((sum, item) => {
         const val = item.totalDeduction !== undefined && item.totalDeduction !== null
           ? item.totalDeduction
@@ -253,7 +378,7 @@ const Payroll = () => {
       return parseFloat(total.toFixed(2));
     } else {
       // canteenData comes from GET /canteen/logs?startDate=...&endDate=...
-      const empLogs = canteenData.filter(log => Number(log.employeeId) === Number(empId));
+      const empLogs = canteenByEmployeeId.get(Number(empId)) || [];
       const total = empLogs.reduce((sum, item) => {
         const val = item.price !== undefined && item.price !== null
           ? item.price
@@ -271,11 +396,11 @@ const Payroll = () => {
     // If we have saved payroll records in the DB for this period, load them directly.
     if (savedPayrollRuns.length > 0) {
       const rows = savedPayrollRuns.map(run => {
-        const empRecord = employees.find(e => e.id === run.employeeId);
-        const salRecord = salariesList.find(s => s.employeeId === run.employeeId);
+        const empRecord = employeeById.get(Number(run.employeeId));
+        const salRecord = salaryByEmployeeId.get(Number(run.employeeId));
         const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : parseFloat(run.basicPay || 0);
         const liveComp = getApprovedCompensationAmount(run.employeeId, monthlyBase);
-        
+
         // Merge live compensation if saved compensation is less than live approved compensation, or if status is Draft
         const finalComp = (run.status === "Draft" || parseFloat(run.compensation || 0) < liveComp)
           ? liveComp
@@ -290,7 +415,7 @@ const Payroll = () => {
         const basicPay = parseFloat(run.basicPay || 0);
         const allowance = parseFloat(run.allowance || 0);
         const grossSalary = parseFloat((basicPay + allowance + finalComp).toFixed(2));
-        
+
         const pfDeduction = parseFloat(run.pfDeduction || 0);
         const esicDeduction = parseFloat(run.esicDeduction || 0);
         const emiDeduction = parseFloat(run.emiDeduction || 0);
@@ -332,26 +457,27 @@ const Payroll = () => {
     // Otherwise, dynamically generate/calculate the payroll rows
     const generated = employees.map(emp => {
       // Find salary details
-      const salRecord = salariesList.find(s => s.employeeId === emp.id);
+      const salRecord = salaryByEmployeeId.get(Number(emp.id));
       const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : 0;
       const monthlyAllowance = salRecord ? parseFloat(salRecord.allowanceSalary) : 0;
 
       // Find PF Settings
-      const pfRecord = pfDetailsList.find(p => p.employeeId === emp.id);
+      const pfRecord = pfByEmployeeId.get(Number(emp.id));
       const isPfOptedIn = pfRecord ? pfRecord.isOptedIn : (monthlyBase <= 15000);
 
       // Find ESIC Settings
-      const esicRecord = esicDetailsList.find(e => e.employeeId === emp.id);
+      const esicRecord = esicByEmployeeId.get(Number(emp.id));
       const isEsicOptedIn = esicRecord ? esicRecord.isOptedIn : ((monthlyBase + monthlyAllowance) <= 21000);
 
       // Find active EMIs
-      const activeEmis = emisList.filter(e => e.employeeId === emp.id && e.status === "Active");
+      const employeeEmis = activeEmiByEmployeeId.get(Number(emp.id)) || [];
+      const activeEmis = employeeEmis.filter(e => e.status === "Active");
       const monthlyEmi = activeEmis.reduce((sum, item) => sum + parseFloat(item.emiAmount), 0);
 
       // Calculate days in period
       let daysInPeriod = 30;
       let workedDays = 30;
-      
+
       if (activeMode === "Daily") {
         const start = new Date(startDate);
         const end = new Date(endDate);
@@ -361,7 +487,7 @@ const Payroll = () => {
       }
 
       // Calculate leaves (Paid vs LWP Unpaid)
-      const empLeaves = leavesList.filter(l => l.employeeId === emp.id);
+      const empLeaves = leavesByEmployeeId.get(Number(emp.id)) || [];
       let lwpDays = 0;
       let paidLeaveDays = 0;
 
@@ -413,7 +539,7 @@ const Payroll = () => {
       }
 
       // Attendance integration: Present Days & Unexcused Absences from actual DB records
-      const empAttRecords = attendanceData.filter(a => a.employeeId === emp.id);
+      const empAttRecords = attendanceByEmployeeId.get(Number(emp.id)) || [];
       const presentLogs = empAttRecords.filter(a => a.status === "Present" || a.punchIn || a.firstCheckIn);
       let presentDaysCount = presentLogs.length;
 
@@ -526,7 +652,7 @@ const Payroll = () => {
 
   // Recalculates calculated columns on input overrides
   const handleCellChange = (empId, field, val) => {
-    setPayrollRows(prevRows => 
+    setPayrollRows(prevRows =>
       prevRows.map(row => {
         if (row.employeeId !== empId) return row;
 
@@ -534,15 +660,15 @@ const Payroll = () => {
 
         // If days worked changed, re-calculate basic, allowance, etc.
         if (field === "daysWorked" && activeMode === "Daily") {
-          const salRecord = salariesList.find(s => s.employeeId === empId);
+          const salRecord = salaryByEmployeeId.get(Number(empId));
           const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : 0;
           const monthlyAllowance = salRecord ? parseFloat(salRecord.allowanceSalary) : 0;
-          
+
           updatedRow.basicPay = parseFloat(((monthlyBase / 30) * updatedRow.daysWorked).toFixed(2));
           updatedRow.allowance = parseFloat(((monthlyAllowance / 30) * updatedRow.daysWorked).toFixed(2));
-          
+
           // Re-calculate PF daily
-          const pfRecord = pfDetailsList.find(p => p.employeeId === empId);
+          const pfRecord = pfByEmployeeId.get(Number(empId));
           const isPfOptedIn = pfRecord ? pfRecord.isOptedIn : (monthlyBase <= 15000);
           if (isPfOptedIn) {
             const capDaily = Math.min(updatedRow.basicPay, 500 * updatedRow.daysWorked);
@@ -550,21 +676,22 @@ const Payroll = () => {
           }
 
           // Re-calculate ESIC daily
-          const esicRecord = esicDetailsList.find(e => e.employeeId === empId);
+          const esicRecord = esicByEmployeeId.get(Number(empId));
           const isEsicOptedIn = esicRecord ? esicRecord.isOptedIn : ((monthlyBase + monthlyAllowance) <= 21000);
           if (isEsicOptedIn && (monthlyBase + monthlyAllowance) <= 21000) {
             updatedRow.esicDeduction = parseFloat(((updatedRow.basicPay + updatedRow.allowance) * 0.0075).toFixed(2));
           }
 
           // Re-calculate EMI daily
-          const activeEmis = emisList.filter(e => e.employeeId === empId && e.status === "Active");
+          const employeeEmis = activeEmiByEmployeeId.get(Number(empId)) || [];
+          const activeEmis = employeeEmis.filter(e => e.status === "Active");
           const monthlyEmi = activeEmis.reduce((sum, item) => sum + parseFloat(item.emiAmount), 0);
           updatedRow.emiDeduction = parseFloat(((monthlyEmi / 30) * updatedRow.daysWorked).toFixed(2));
         }
 
         // Recalculate Leave adjustment if unpaid leaves override is made
         if (field === "unpaidLeaves" && activeMode === "Monthly") {
-          const salRecord = salariesList.find(s => s.employeeId === empId);
+          const salRecord = salaryByEmployeeId.get(Number(empId));
           const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : 0;
           updatedRow.leaveAdjustment = parseFloat(((monthlyBase / 30) * updatedRow.unpaidLeaves).toFixed(2));
           updatedRow.daysWorked = Math.max(0, 30 - updatedRow.unpaidLeaves);
@@ -576,11 +703,11 @@ const Payroll = () => {
         );
         updatedRow.totalDeductions = parseFloat(
           (
-            updatedRow.pfDeduction + 
-            updatedRow.esicDeduction + 
-            updatedRow.emiDeduction + 
-            updatedRow.canteenDeduction + 
-            updatedRow.leaveAdjustment + 
+            updatedRow.pfDeduction +
+            updatedRow.esicDeduction +
+            updatedRow.emiDeduction +
+            updatedRow.canteenDeduction +
+            updatedRow.leaveAdjustment +
             updatedRow.otherDeductions
           ).toFixed(2)
         );
@@ -635,7 +762,7 @@ const Payroll = () => {
       const res = await api.post("/salaries/payroll", recordsToSubmit);
       if (res.success) {
         toast.success("Payroll records saved successfully to database!");
-        loadPeriodSpecificData(); // Reload from DB
+        loadPayrollPageData(); // Reload from DB
       }
     } catch (err) {
       console.error("Failed to save payroll batch:", err);
@@ -645,17 +772,45 @@ const Payroll = () => {
     }
   };
 
+  // Helper to fetch full unpaginated period dataset for exports if currently on paginated view
+  const getExportRows = async () => {
+    if (isSavedRun && totalRecords > payrollRows.length) {
+      const toastId = toast.loading("Fetching complete dataset for export...");
+      try {
+        const periodStr = activeMode === "Monthly" ? selectedMonth : `${startDate}:${endDate}`;
+        const params = new URLSearchParams({
+          period: periodStr,
+          type: activeMode,
+          limit: "10000",
+        });
+        if (debouncedSearch) params.append("search", debouncedSearch);
+        if (departmentFilter) params.append("department", departmentFilter);
+
+        const res = await api.get(`/salaries/payroll?${params.toString()}`);
+        const exportList = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+        toast.dismiss(toastId);
+        return exportList;
+      } catch (err) {
+        toast.dismiss(toastId);
+        console.error("Export fetch error:", err);
+        toast.error("Failed to fetch full dataset for export, using current page.");
+      }
+    }
+    return filteredRows;
+  };
+
   // Export to CSV
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
+    const rowsToExport = await getExportRows();
     const headers = [
       "Employee Code", "Employee Name", "Department", "Payable Days", "Paid Leaves", "Unpaid Leaves",
-      "Basic Pay", "Allowance", "Compensation", "Leave Adjustment", "Gross Salary", 
-      "PF Deduction", "ESIC Deduction", "EMI Deduction", "Canteen Deduction", 
+      "Basic Pay", "Allowance", "Compensation", "Leave Adjustment", "Gross Salary",
+      "PF Deduction", "ESIC Deduction", "EMI Deduction", "Canteen Deduction",
       "Other Deductions", "Total Deductions", "Net Salary", "Status", "Payment Mode", "Remarks"
     ];
 
     const csvRows = [headers.join(",")];
-    filteredRows.forEach(row => {
+    rowsToExport.forEach(row => {
       csvRows.push([
         `"${row.employeeCode}"`,
         `"${row.employeeName}"`,
@@ -693,16 +848,17 @@ const Payroll = () => {
   };
 
   // Export Summary PDF with statutory compliance columns
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     try {
-      if (!filteredRows || filteredRows.length === 0) {
+      const rowsToExport = await getExportRows();
+      if (!rowsToExport || rowsToExport.length === 0) {
         toast.error("No payroll data available to export.");
         return;
       }
 
       // Use landscape A3 for 32 compliance columns
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
-      
+
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
       doc.text("SHRI SHYAM WAREHOUSING AND POWER PVT. LTD.", 14, 12);
@@ -714,11 +870,11 @@ const Payroll = () => {
 
       const tableHeaders = [
         [
-          "Sr. No.", "EMPCODE", "NAME", "UAN NO.", "IP No.", "TOTAL_DAYS", 
-          "PAID_DAYS", "ABSENT_DAYS", "OT HRS", "BASIC+DA", "EARN BASIC+DA", 
-          "ALLOW_RATE(TA,MOB,HRA,CON.)", "EARN ALLOW (TA,MOB,HRA,CON.)", "TOTAL", 
-          "WASHING ALL.", "OT", "GROSS", "EPF WAGES", "PF", "LABOUR WELFARE FUND", 
-          "ESIC", "ADV", "Penalty", "Canteen", "TOTAL DEDUCTION.", "NET SALARY", 
+          "Sr. No.", "EMPCODE", "NAME", "UAN NO.", "IP No.", "TOTAL_DAYS",
+          "PAID_DAYS", "ABSENT_DAYS", "OT HRS", "BASIC+DA", "EARN BASIC+DA",
+          "ALLOW_RATE(TA,MOB,HRA,CON.)", "EARN ALLOW (TA,MOB,HRA,CON.)", "TOTAL",
+          "WASHING ALL.", "OT", "GROSS", "EPF WAGES", "PF", "LABOUR WELFARE FUND",
+          "ESIC", "ADV", "Penalty", "Canteen", "TOTAL DEDUCTION.", "NET SALARY",
           "Diwali Bonus", "NET PAY AMOUNT", "PAY-MODE", "BANK A/C NO.", "IFSC", "REMARK"
         ]
       ];
@@ -730,10 +886,10 @@ const Payroll = () => {
         return num.toFixed(2);
       };
 
-      const tableData = filteredRows.map((row, index) => {
-        const pfRec = pfDetailsList.find(p => p.employeeId === row.employeeId);
-        const esicRec = esicDetailsList.find(e => e.employeeId === row.employeeId);
-        const salRec = salariesList.find(s => s.employeeId === row.employeeId);
+      const tableData = rowsToExport.map((row, index) => {
+        const pfRec = pfByEmployeeId.get(Number(row.employeeId));
+        const esicRec = esicByEmployeeId.get(Number(row.employeeId));
+        const salRec = salaryByEmployeeId.get(Number(row.employeeId));
 
         const monthlyBase = salRec ? parseFloat(salRec.baseSalary) : 0;
         const monthlyAllowance = salRec ? parseFloat(salRec.allowanceSalary) : 0;
@@ -823,32 +979,50 @@ const Payroll = () => {
   };
 
   // Bulk download all visible payslips as a single PDF
-  const handleBulkDownload = () => {
-    if (filteredRows.length === 0) {
+  const handleBulkDownload = async () => {
+    const rowsToExport = await getExportRows();
+    if (rowsToExport.length === 0) {
       toast.error("No payroll data to download");
       return;
     }
     const periodStr = activeMode === "Monthly" ? selectedMonth : `${startDate}_to_${endDate}`;
-    generateBulkPayslipsPDF(filteredRows, periodStr);
-    toast.success(`Downloading ${filteredRows.length} payslips...`);
+    generateBulkPayslipsPDF(rowsToExport, periodStr);
+    toast.success(`Downloading ${rowsToExport.length} payslips...`);
   };
 
+  const isSavedRun = savedPayrollRuns && savedPayrollRuns.length > 0;
+
   // Filter rows based on search term and department
-  const filteredRows = payrollRows.filter(row => {
-    const matchesSearch = 
-      row.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      row.employeeCode.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesDept = 
-      !departmentFilter || row.department === departmentFilter;
+  const filteredRows = useMemo(() => {
+    if (isSavedRun) {
+      return payrollRows; // Already filtered & paginated by server
+    }
+    return payrollRows.filter(row => {
+      const matchesSearch =
+        !searchTerm ||
+        row.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        row.employeeCode.toLowerCase().includes(searchTerm.toLowerCase());
 
-    return matchesSearch && matchesDept;
-  });
+      const matchesDept =
+        !departmentFilter || row.department === departmentFilter;
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+      return matchesSearch && matchesDept;
+    });
+  }, [isSavedRun, payrollRows, searchTerm, departmentFilter]);
+
+  const displayTotalRecords = isSavedRun ? totalRecords : filteredRows.length;
+  const totalPages = isSavedRun
+    ? totalServerPages
+    : Math.max(1, Math.ceil(filteredRows.length / pageSize));
+
   const startIndex = (currentPage - 1) * pageSize;
-  const endIndex = Math.min(startIndex + pageSize, filteredRows.length);
-  const paginatedRows = filteredRows.slice(startIndex, endIndex);
+  const endIndex = isSavedRun
+    ? Math.min(startIndex + payrollRows.length, displayTotalRecords)
+    : Math.min(startIndex + pageSize, filteredRows.length);
+
+  const paginatedRows = isSavedRun
+    ? payrollRows
+    : filteredRows.slice(startIndex, endIndex);
 
   const uniqueDepartments = Array.from(new Set(employees.map(e => e.departmentName).filter(Boolean)));
 
@@ -884,11 +1058,10 @@ const Payroll = () => {
           <button
             onClick={handleBulkDownload}
             disabled={payrollRows.length === 0}
-            className={`px-4 py-2 border text-sm rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm ${
-              payrollRows.length === 0
+            className={`px-4 py-2 border text-sm rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm ${payrollRows.length === 0
                 ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
                 : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-            }`}
+              }`}
           >
             <Download size={16} />
             Bulk Payslips PDF
@@ -896,11 +1069,10 @@ const Payroll = () => {
           <button
             onClick={handleSavePayroll}
             disabled={saving || payrollRows.length === 0}
-            className={`px-5 py-2 text-white rounded-xl font-medium transition-all flex items-center gap-1.5 shadow-sm text-sm ${
-              saving || payrollRows.length === 0
-                ? "bg-blue-300 cursor-not-allowed" 
+            className={`px-5 py-2 text-white rounded-xl font-medium transition-all flex items-center gap-1.5 shadow-sm text-sm ${saving || payrollRows.length === 0
+                ? "bg-blue-300 cursor-not-allowed"
                 : "bg-blue-600 hover:bg-blue-700"
-            }`}
+              }`}
           >
             <Save size={16} />
             {saving ? "Saving run..." : "Save Payroll Run"}
@@ -915,21 +1087,19 @@ const Payroll = () => {
           <div className="flex bg-gray-100 p-1 rounded-xl w-fit">
             <button
               onClick={() => setActiveMode("Monthly")}
-              className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                activeMode === "Monthly" 
-                  ? "bg-white text-blue-600 shadow-sm" 
+              className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeMode === "Monthly"
+                  ? "bg-white text-blue-600 shadow-sm"
                   : "text-gray-500 hover:text-gray-900"
-              }`}
+                }`}
             >
               Monthly Form
             </button>
             <button
               onClick={() => setActiveMode("Daily")}
-              className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-                activeMode === "Daily" 
-                  ? "bg-white text-blue-600 shadow-sm" 
+              className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeMode === "Daily"
+                  ? "bg-white text-blue-600 shadow-sm"
                   : "text-gray-500 hover:text-gray-900"
-              }`}
+                }`}
             >
               Daily Form
             </button>
@@ -1024,8 +1194,8 @@ const Payroll = () => {
           <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50/50 border border-blue-100 rounded-xl px-3 py-2">
             <BadgeInfo className="w-5 h-5 flex-shrink-0 text-blue-500" />
             <span>
-              {savedPayrollRuns.length > 0 
-                ? "Showing SAVED payroll run from database." 
+              {savedPayrollRuns.length > 0
+                ? "Showing SAVED payroll run from database."
                 : "Showing DRAFT calculation. Click 'Save Payroll Run' to save."}
             </span>
           </div>
@@ -1101,9 +1271,8 @@ const Payroll = () => {
                         disabled={activeMode === "Monthly"}
                         value={row.daysWorked}
                         onChange={(e) => handleCellChange(row.employeeId, "daysWorked", e.target.value)}
-                        className={`w-16 border rounded px-2 py-1 text-center text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                          activeMode === "Monthly" ? "bg-gray-100/60 text-gray-500 border-gray-100" : "border-gray-200"
-                        }`}
+                        className={`w-16 border rounded px-2 py-1 text-center text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none ${activeMode === "Monthly" ? "bg-gray-100/60 text-gray-500 border-gray-100" : "border-gray-200"
+                          }`}
                       />
                     </td>
 
@@ -1217,13 +1386,12 @@ const Payroll = () => {
                       <select
                         value={row.status}
                         onChange={(e) => handleStatusChange(row.employeeId, e.target.value)}
-                        className={`text-xs font-semibold px-2 py-1 rounded-full border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                          row.status === "Paid" 
-                            ? "bg-green-50 text-green-700 border-green-200" 
+                        className={`text-xs font-semibold px-2 py-1 rounded-full border focus:outline-none focus:ring-1 focus:ring-blue-500 ${row.status === "Paid"
+                            ? "bg-green-50 text-green-700 border-green-200"
                             : row.status === "Processed"
                               ? "bg-indigo-50 text-indigo-700 border-indigo-200"
                               : "bg-amber-50 text-amber-700 border-amber-200"
-                        }`}
+                          }`}
                       >
                         <option value="Draft">Draft</option>
                         <option value="Processed">Processed</option>
@@ -1280,13 +1448,13 @@ const Payroll = () => {
       </div>
 
       {/* Pagination Footer */}
-      {filteredRows.length > 0 && (
+      {(isSavedRun ? displayTotalRecords > 0 : filteredRows.length > 0) && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm text-sm">
           <div className="flex items-center gap-3 text-gray-600">
             <span>
-              Showing <span className="font-semibold text-gray-900">{filteredRows.length === 0 ? 0 : startIndex + 1}</span> to{" "}
+              Showing <span className="font-semibold text-gray-900">{displayTotalRecords === 0 ? 0 : startIndex + 1}</span> to{" "}
               <span className="font-semibold text-gray-900">{endIndex}</span> of{" "}
-              <span className="font-semibold text-gray-900">{filteredRows.length}</span> entries
+              <span className="font-semibold text-gray-900">{displayTotalRecords}</span> entries
             </span>
             <div className="flex items-center gap-1.5 ml-4">
               <span className="text-xs text-gray-500">Rows per page:</span>
@@ -1298,7 +1466,6 @@ const Payroll = () => {
                 }}
                 className="bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
-                <option value={10}>10</option>
                 <option value={25}>25</option>
                 <option value={50}>50</option>
                 <option value={100}>100</option>
@@ -1310,11 +1477,10 @@ const Payroll = () => {
             <button
               onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
-              className={`px-3 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1 transition-colors ${
-                currentPage === 1
+              className={`px-3 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1 transition-colors ${currentPage === 1
                   ? "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed"
                   : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-              }`}
+                }`}
             >
               <ChevronLeft size={16} />
               <span>Previous</span>
@@ -1330,11 +1496,10 @@ const Payroll = () => {
             <button
               onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
-              className={`px-3 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1 transition-colors ${
-                currentPage === totalPages
+              className={`px-3 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1 transition-colors ${currentPage === totalPages
                   ? "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed"
                   : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
-              }`}
+                }`}
             >
               <span>Next</span>
               <ChevronRight size={16} />

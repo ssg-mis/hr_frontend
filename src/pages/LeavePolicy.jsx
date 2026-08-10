@@ -14,9 +14,9 @@ const LeavePolicy = () => {
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     
     const [holidays, setHolidays] = useState([]);
+    const [leaveRecordSummary, setLeaveRecordSummary] = useState([]);
     const [leaveStats, setLeaveStats] = useState([]);
     const [employeeLeaves, setEmployeeLeaves] = useState([]);
-    const [leaveRecordSummary, setLeaveRecordSummary] = useState([]);
     const [leavePolicies, setLeavePolicies] = useState([]);
     const [activeEmployees, setActiveEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -25,6 +25,34 @@ const LeavePolicy = () => {
 
     const [holidayFormData, setHolidayFormData] = useState({ date: '', day: '', name: '' });
     const [overtimeFormData, setOvertimeFormData] = useState({ employeeCode: '', date: '', overtimeHours: '' });
+
+    const [summaryPage, setSummaryPage] = useState(1);
+    const [summaryLimit, setSummaryLimit] = useState(25);
+    const [summaryPagination, setSummaryPagination] = useState({
+        page: 1,
+        limit: 25,
+        total: 0,
+        totalPages: 1
+    });
+
+    const isFirstRunSearch = React.useRef(true);
+
+    const fetchLeaveSummary = async (page = summaryPage, limit = summaryLimit, year = selectedYear, search = searchTerm) => {
+        try {
+            const summaryData = await api.get(`/leaves/summary?year=${year}&page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`);
+            if (summaryData.success) {
+                setLeaveRecordSummary(summaryData.data || []);
+                setSummaryPagination(summaryData.pagination || {
+                    page: 1,
+                    limit: 25,
+                    total: summaryData.data ? summaryData.data.length : 0,
+                    totalPages: 1
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching leave summary:', error);
+        }
+    };
 
     const fetchData = async () => {
         setLoading(true);
@@ -54,11 +82,9 @@ const LeavePolicy = () => {
                 overtime: emp.otHrs || 0
             })));
 
-            // 4. Fetch Leave Record Summary (yearly)
-            const summaryData = await api.get(`/leaves/summary?year=${selectedYear}`);
-            if (summaryData.success) {
-                setLeaveRecordSummary(summaryData.data);
-            }
+            // 4. Fetch Leave Record Summary (yearly, server-side paginated)
+            await fetchLeaveSummary(1, summaryLimit, selectedYear, searchTerm);
+            setSummaryPage(1);
 
             // 5. Fetch Active Employees
             const activeData = await api.get('/employees/active');
@@ -96,16 +122,32 @@ const LeavePolicy = () => {
         fetchData();
     }, [selectedMonth, selectedYear]);
 
+    useEffect(() => {
+        if (isFirstRunSearch.current) {
+            isFirstRunSearch.current = false;
+            return;
+        }
+        const delayDebounceFn = setTimeout(() => {
+            setSummaryPage(1);
+            fetchLeaveSummary(1, summaryLimit, selectedYear, searchTerm);
+        }, 500);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [searchTerm]);
+
+    const handleSummaryPageChange = (newPage) => {
+        if (newPage >= 1 && newPage <= summaryPagination.totalPages) {
+            setSummaryPage(newPage);
+            fetchLeaveSummary(newPage, summaryLimit, selectedYear, searchTerm);
+        }
+    };
+
     const filteredHolidays = holidays.filter(h =>
         h.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         h.date.includes(searchTerm)
     );
 
-    const filteredEmployeesSummary = leaveRecordSummary.filter(emp =>
-        emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        emp.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        emp.designation.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredEmployeesSummary = leaveRecordSummary;
 
     const filteredOvertime = employeeLeaves.filter(emp =>
         emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -426,6 +468,35 @@ const LeavePolicy = () => {
                             </tbody>
                         </table>
                     </div>
+                    {summaryPagination && summaryPagination.totalPages > 1 && (
+                        <div className="flex items-center justify-between mt-4 px-4 py-3 bg-white border border-gray-100 rounded-lg shadow-sm">
+                            <div>
+                                <p className="text-sm text-gray-700">
+                                    Showing <span className="font-medium">{(summaryPagination.page - 1) * summaryPagination.limit + 1}</span> to <span className="font-medium">{Math.min(summaryPagination.page * summaryPagination.limit, summaryPagination.total)}</span> of{' '}
+                                    <span className="font-medium">{summaryPagination.total}</span> entries
+                                </p>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <button
+                                    onClick={() => handleSummaryPageChange(summaryPagination.page - 1)}
+                                    disabled={summaryPagination.page === 1}
+                                    className="px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Previous
+                                </button>
+                                <span className="text-sm text-gray-600 font-medium px-2">
+                                    Page {summaryPagination.page} of {summaryPagination.totalPages}
+                                </span>
+                                <button
+                                    onClick={() => handleSummaryPageChange(summaryPagination.page + 1)}
+                                    disabled={summaryPagination.page === summaryPagination.totalPages}
+                                    className="px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         );
