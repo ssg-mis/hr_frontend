@@ -184,7 +184,7 @@ const Payroll = () => {
     try {
       const [empRes, salRes, pfRes, esicRes, emiRes, compRes, leavesRes] = await Promise.all([
         api.get("/employees"),
-        api.get("/salaries"),
+        api.get("/salaries?limit=1000"),
         api.get("/pf/payroll"),
         api.get("/esic/payroll"),
         api.get("/emis"),

@@ -34,6 +34,7 @@ import {
   ShieldCheck,
   Ticket,
   Award,
+  Database,
 } from "lucide-react";
 
 
@@ -100,6 +101,7 @@ const Sidebar = ({ onClose }) => {
       ],
     },
     { path: "/employee", icon: Users, label: "Employee" },
+    { path: "/master-data", icon: Database, label: "Master Data Management" },
     {
       type: "dropdown",
       icon: CalendarClock,
