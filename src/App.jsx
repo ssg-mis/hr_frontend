@@ -28,7 +28,6 @@ import LeaveRequest from './pages/LeaveRequest';
 import CompanyCalendar from './pages/CompanyCalendar';
 import LeaveManagement from './pages/LeaveManagement';
 import Report from './pages/Report';
-// import MisReport from './pages/MisReport';
 import LeavePolicy from './pages/LeavePolicy';
 import Settings from './pages/Settings';
 import AttendanceLogs from './pages/AttendanceLogs';
@@ -45,6 +44,7 @@ const EMIManagement = lazy(() => import('./pages/EMIManagement'));
 const CompensationManagement = lazy(() => import('./pages/CompensationManagement'));
 const PFManagement = lazy(() => import('./pages/PFManagement'));
 const ESICManagement = lazy(() => import('./pages/ESICManagement'));
+const MasterData = lazy(() => import('./pages/MasterData'));
 
 function App() {
   return (
@@ -62,60 +62,58 @@ function App() {
           }
         >
           <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/apply/:vacancyNumber" element={<PublicApply />} />
-          <Route path="/upload-documents/:token" element={<PublicDocumentUpload />} />
-          <Route path="/visitor-pass-request" element={<PublicVisitorPassRequest />} />
-          <Route path="/canteen/scan" element={<ProtectedRoute allowedRoles={['CanteenManager', 'Admin', 'HR']}><CanteenScanner /></ProtectedRoute>} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/apply/:vacancyNumber" element={<PublicApply />} />
+            <Route path="/upload-documents/:token" element={<PublicDocumentUpload />} />
+            <Route path="/visitor-pass-request" element={<PublicVisitorPassRequest />} />
+            <Route
+              path="/canteen/scan"
+              element={
+                <ProtectedRoute allowedRoles={['CanteenManager', 'Admin', 'HR']}>
+                  <CanteenScanner />
+                </ProtectedRoute>
+              }
+            />
 
-          
-          <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-            <Route index element={<Dashboard />} />
-            <Route path="vacancy" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Vacancy /></ProtectedRoute>} />
-            <Route path="vacancy-approval" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><VacancyApproval /></ProtectedRoute>} />
-            {/* <Route path="social-site" element={<SocialSite />} /> */}
-            <Route path="job-application" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><JobApplication /></ProtectedRoute>} />
-            <Route path="call-tracker" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><CallTracker /></ProtectedRoute>} />
-            <Route path="interview-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><InterviewManagement /></ProtectedRoute>} />
-            <Route path="selection-process" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><SelectionProcess /></ProtectedRoute>} />
-            <Route path="offer-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><OfferManagement /></ProtectedRoute>} />
-            <Route path="document-verification" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><DocumentVerification /></ProtectedRoute>} />
-            <Route path="resignation-module" element={<ResignationModule />} />
-            <Route path="leaving" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><Leaving /></ProtectedRoute>} />
-            <Route path="after-leaving-work" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><AfterLeavingWork /></ProtectedRoute>} />
-            <Route path="employee" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><Employee /></ProtectedRoute>} />
-            <Route path="joining" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Joining /></ProtectedRoute>} />
-            <Route path="my-profile" element={<MyProfile />} />
-            <Route path="my-attendance" element={<MyAttendance />} />
-            <Route path="my-salary" element={<MySalary />} />
-            <Route path="leave-policy" element={<LeavePolicy />} />
-            <Route path="leave-request" element={<LeaveRequest />} />
-            <Route path="company-calendar" element={<CompanyCalendar />} />
-            <Route path="leave-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><LeaveManagement /></ProtectedRoute>} />
-            <Route path="report" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Report /></ProtectedRoute>} />
-            {/* <Route path="misreport" element={<MisReport />} /> */}
-            <Route path="emi-management" element={<EMIManagement />} />
-            <Route path="settings" element={<ProtectedRoute allowedRoles={['Admin']}><Settings /></ProtectedRoute>} />
-            <Route path="salary" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><SalaryManagement /></ProtectedRoute>} />
-            <Route path="payroll" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Payroll /></ProtectedRoute>} />
-            <Route path="pf-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><PFManagement /></ProtectedRoute>} />
-            <Route path="esic-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><ESICManagement /></ProtectedRoute>} />
-            <Route path="gate-pass" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><GatePassManagement /></ProtectedRoute>} />
-            <Route path="compensation" element={<CompensationManagement />} />
-            <Route path="attendance-logs" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceLogs /></ProtectedRoute>} />
-            <Route path="attendance-dashboard" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceDashboard /></ProtectedRoute>} />
-            <Route path="shift-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><ShiftManagement /></ProtectedRoute>} />
-            <Route path="canteen" element={<CanteenDashboard />} />
+            <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+              <Route index element={<Dashboard />} />
+              <Route path="vacancy" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Vacancy /></ProtectedRoute>} />
+              <Route path="vacancy-approval" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><VacancyApproval /></ProtectedRoute>} />
+              <Route path="job-application" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><JobApplication /></ProtectedRoute>} />
+              <Route path="call-tracker" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><CallTracker /></ProtectedRoute>} />
+              <Route path="interview-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><InterviewManagement /></ProtectedRoute>} />
+              <Route path="selection-process" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><SelectionProcess /></ProtectedRoute>} />
+              <Route path="offer-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><OfferManagement /></ProtectedRoute>} />
+              <Route path="document-verification" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><DocumentVerification /></ProtectedRoute>} />
+              <Route path="resignation-module" element={<ResignationModule />} />
+              <Route path="leaving" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><Leaving /></ProtectedRoute>} />
+              <Route path="after-leaving-work" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><AfterLeavingWork /></ProtectedRoute>} />
+              <Route path="employee" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><Employee /></ProtectedRoute>} />
+              <Route path="joining" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Joining /></ProtectedRoute>} />
+              <Route path="master-data" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><MasterData /></ProtectedRoute>} />
+              <Route path="my-profile" element={<MyProfile />} />
+              <Route path="my-attendance" element={<MyAttendance />} />
+              <Route path="my-salary" element={<MySalary />} />
+              <Route path="leave-policy" element={<LeavePolicy />} />
+              <Route path="leave-request" element={<LeaveRequest />} />
+              <Route path="company-calendar" element={<CompanyCalendar />} />
+              <Route path="leave-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><LeaveManagement /></ProtectedRoute>} />
+              <Route path="report" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Report /></ProtectedRoute>} />
+              <Route path="emi-management" element={<EMIManagement />} />
+              <Route path="settings" element={<ProtectedRoute allowedRoles={['Admin']}><Settings /></ProtectedRoute>} />
+              <Route path="salary" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><SalaryManagement /></ProtectedRoute>} />
+              <Route path="payroll" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Payroll /></ProtectedRoute>} />
+              <Route path="pf-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><PFManagement /></ProtectedRoute>} />
+              <Route path="esic-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><ESICManagement /></ProtectedRoute>} />
+              <Route path="gate-pass" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><GatePassManagement /></ProtectedRoute>} />
+              <Route path="compensation" element={<CompensationManagement />} />
+              <Route path="attendance-logs" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceLogs /></ProtectedRoute>} />
+              <Route path="attendance-dashboard" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceDashboard /></ProtectedRoute>} />
+              <Route path="shift-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><ShiftManagement /></ProtectedRoute>} />
+              <Route path="canteen" element={<CanteenDashboard />} />
+            </Route>
 
-
-            <Route path="attendance-logs" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceLogs /></ProtectedRoute>} />
-            <Route path="attendance-dashboard" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceDashboard /></ProtectedRoute>} />
-            <Route path="shift-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><ShiftManagement /></ProtectedRoute>} />
-            <Route path="canteen" element={<CanteenDashboard />} />
-
-          </Route>
-
-          <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
       </Router>

@@ -10,6 +10,81 @@ import { api } from '../lib/api';
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
+const fmtGender = (g) => {
+  if (!g) return '—';
+  const trimmed = String(g).trim().toUpperCase();
+  if (trimmed === 'M' || trimmed === 'MALE') return 'Male';
+  if (trimmed === 'F' || trimmed === 'FEMALE') return 'Female';
+  return String(g).trim();
+};
+
+const fmtBloodGroup = (bg) => {
+  if (!bg) return '—';
+  const val = String(bg).trim().toUpperCase();
+  // 'UK' means Unknown in source HRMS
+  if (val === 'UK' || val === 'UNKNOWN' || val === 'U') return '—';
+  // Numeric noise from bad CSV offsets
+  if (!isNaN(Number(val))) return '—';
+  // Long numbers are likely mislinked data (e.g. Aadhar number in wrong column)
+  if (val.length > 10) return '—';
+  return bg.trim();
+};
+
+const CAT_MAP = {
+  EM: 'Employee (EM)',
+  WOR: 'Worker (WOR)',
+  ST: 'Staff (ST)',
+  SO: 'Security Officer (SO)',
+  OH: 'Office Helper (OH)',
+  SF: 'Staff (SF)',
+  SA: 'Staff Admin (SA)',
+  SG: 'Security Guard (SG)',
+  WC: 'Worker Contract (WC)',
+  GARD: 'Gardener (GARD)',
+};
+
+const getNameDisplay = (emp) => {
+  if (!emp) return '—';
+  const name = String(emp.candidateName || '').trim();
+  const code = String(emp.employeeCode || emp.biometricEmployeeCode || '').trim();
+  const isInvalid = !name || name === code || name.toLowerCase() === 'name' || !isNaN(Number(name));
+
+  if (isInvalid) {
+    const constructed = [emp.firstName, emp.middleName, emp.lastName]
+      .filter((s) => Boolean(s && String(s).trim()))
+      .join(' ')
+      .trim();
+    if (constructed && constructed !== code && constructed.toLowerCase() !== 'name') {
+      return constructed;
+    }
+  }
+  return name || code || '—';
+};
+
+const getDeptDisplay = (emp) => {
+  if (!emp) return '—';
+  if (emp.departmentName) return emp.departmentName;
+  if (emp.deptCodeFromCsv) return `Dept ${emp.deptCodeFromCsv}`;
+  return '—';
+};
+
+const getDesgDisplay = (emp) => {
+  if (!emp) return '—';
+  if (emp.applyingForPost) return emp.applyingForPost;
+  if (emp.desgCodeFromCsv) return `Desg ${emp.desgCodeFromCsv}`;
+  return '—';
+};
+
+const getSalaryDisplay = (emp) => {
+  if (!emp) return '₹0.00';
+  const basicVal = emp.basicSalary ? parseFloat(emp.basicSalary) : 0;
+  const baseVal = emp.baseSalary ? parseFloat(emp.baseSalary) : 0;
+  const finalVal = basicVal > 0 ? basicVal : (baseVal > 0 ? baseVal : 0);
+  return finalVal > 0
+    ? `₹${finalVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '₹0.00';
+};
+
 const statusBadge = (status) => {
   const map = {
     Active: { cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200', label: 'Working' },
@@ -68,19 +143,23 @@ const StatCard = ({ icon: Icon, label, value, color, sub }) => (
 const DetailModal = ({ employee, onClose }) => {
   if (!employee) return null;
 
+  const empCode = employee.employeeCode || employee.biometricEmployeeCode || '—';
+
   const fields = [
-    { label: 'Employee Code', value: employee.employeeCode, icon: Hash },
-    { label: 'Full Name', value: employee.candidateName, icon: Users },
+    { label: 'Employee Code', value: empCode, icon: Hash },
+    { label: 'Full Name', value: getNameDisplay(employee), icon: Users },
     { label: 'Father\'s Name', value: employee.fatherName, icon: Users },
-    { label: 'Gender', value: employee.gender, icon: null },
-    { label: 'Blood Group', value: employee.bloodGroup, icon: null },
+    { label: 'Gender', value: fmtGender(employee.gender), icon: null },
+    { label: 'Blood Group', value: fmtBloodGroup(employee.bloodGroup), icon: null },
+    { label: 'Date of Birth', value: fmtDate(employee.dob), icon: Calendar },
+    { label: 'Marital Status', value: employee.maritalStatus || '—', icon: null },
     { label: 'Qualification', value: employee.qualification, icon: Briefcase },
     { label: 'Company Branch', value: employee.branchName ? `${employee.branchName}${employee.branchAddress ? ` (${employee.branchAddress})` : ''}` : '—', icon: Building2 },
-    { label: 'Department', value: employee.departmentName, icon: Building2 },
+    { label: 'Department', value: getDeptDisplay(employee), icon: Building2 },
     { label: 'Dept Code (CSV)', value: employee.deptCodeFromCsv, icon: Hash },
-    { label: 'Designation', value: employee.applyingForPost, icon: Briefcase },
+    { label: 'Designation', value: getDesgDisplay(employee), icon: Briefcase },
     { label: 'Desg Code (CSV)', value: employee.desgCodeFromCsv, icon: Hash },
-    { label: 'Category Code (CSV)', value: employee.catCodeFromCsv, icon: Hash },
+    { label: 'Category', value: employee.catCodeFromCsv ? (CAT_MAP[employee.catCodeFromCsv] || employee.catCodeFromCsv) : '—', icon: Hash },
     { label: 'Grade Code (CSV)', value: employee.gradeCodeFromCsv, icon: Hash },
     { label: 'Site Code (CSV)', value: employee.siteCodeFromCsv, icon: Hash },
     { label: 'Division Code (CSV)', value: employee.divisionCodeFromCsv, icon: Hash },
@@ -88,17 +167,18 @@ const DetailModal = ({ employee, onClose }) => {
     { label: 'Bank Code (CSV)', value: employee.bankCodeFromCsv, icon: Hash },
     { label: 'Phone', value: employee.candidatePhone, icon: Phone },
     { label: 'Email', value: employee.candidateEmail, icon: Mail },
-    { label: 'Date of Birth', value: fmtDate(employee.dob), icon: Calendar },
     { label: 'Present Address', value: employee.presentAddress, icon: null },
     { label: 'Correspondence Address', value: employee.corrAddress, icon: null },
     { label: 'Aadhar No.', value: employee.aadharNo, icon: Hash },
     { label: 'PAN No.', value: employee.panNo, icon: Hash },
     { label: 'Voter ID No.', value: employee.voterIdNo, icon: Hash },
+    { label: 'Ration Card No.', value: employee.rashanCardNo, icon: Hash },
     { label: 'Driving License No.', value: employee.drivingLicenseNo, icon: Hash },
     { label: 'Enrolment No.', value: employee.enrolmentNumber, icon: Hash },
     { label: 'Date of Joining', value: fmtDate(employee.joiningDate), icon: Calendar },
     { label: 'Confirmation Date', value: fmtDate(employee.confirmDate), icon: Calendar },
-    { label: 'Basic Salary', value: employee.basicSalary ? `₹${Number(employee.basicSalary).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : (employee.baseSalary ? `₹${Number(employee.baseSalary).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹0.00'), icon: null },
+    { label: 'Left Date', value: fmtDate(employee.leftDate), icon: Calendar },
+    { label: 'Basic Salary', value: getSalaryDisplay(employee), icon: null },
     { label: 'Pay Mode', value: employee.payMode, icon: null },
     { label: 'Bank Account No.', value: employee.bankAccountNo, icon: Hash },
     { label: 'IFSC Code', value: employee.ifscCode, icon: Hash },
@@ -117,10 +197,10 @@ const DetailModal = ({ employee, onClose }) => {
         {/* Modal header */}
         <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Avatar name={employee.candidateName} src={employee.candidatePhoto} size="lg" />
+            <Avatar name={getNameDisplay(employee)} src={employee.candidatePhoto} size="lg" />
             <div>
-              <h3 className="text-white font-bold text-base leading-tight">{employee.candidateName}</h3>
-              <p className="text-indigo-200 text-xs mt-0.5">{employee.employeeCode}</p>
+              <h3 className="text-white font-bold text-base leading-tight">{getNameDisplay(employee)}</h3>
+              <p className="text-indigo-200 text-xs mt-0.5">{empCode}</p>
               <div className="mt-1">{statusBadge(employee.status)}</div>
             </div>
           </div>
@@ -308,12 +388,18 @@ const Employee = () => {
         const q = search.toLowerCase();
         list = list.filter(e =>
           (e.candidateName || '').toLowerCase().includes(q) ||
-          (e.employeeCode || '').toLowerCase().includes(q) ||
+          (e.employeeCode || e.biometricEmployeeCode || '').toLowerCase().includes(q) ||
           (e.candidatePhone || '').toLowerCase().includes(q) ||
           (e.candidateEmail || '').toLowerCase().includes(q) ||
           (e.applyingForPost || '').toLowerCase().includes(q) ||
           (e.departmentName || '').toLowerCase().includes(q) ||
-          (e.branchName || '').toLowerCase().includes(q)
+          (e.branchName || '').toLowerCase().includes(q) ||
+          (e.deptCodeFromCsv || '').toLowerCase().includes(q) ||
+          (e.desgCodeFromCsv || '').toLowerCase().includes(q) ||
+          (e.fatherName || '').toLowerCase().includes(q) ||
+          (e.panNo || '').toLowerCase().includes(q) ||
+          (e.aadharNo || '').toLowerCase().includes(q) ||
+          (e.pfNo || '').toLowerCase().includes(q)
         );
       }
 
@@ -473,17 +559,17 @@ const Employee = () => {
                   <tr key={emp.id} className="hover:bg-indigo-50/30 transition-colors group">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
-                        <Avatar name={emp.candidateName} src={emp.candidatePhoto} />
-                        <span className="font-semibold text-gray-900">{emp.candidateName}</span>
+                        <Avatar name={getNameDisplay(emp)} src={emp.candidatePhoto} />
+                        <span className="font-semibold text-gray-900">{getNameDisplay(emp)}</span>
                       </div>
                     </td>
                     <td className="px-1 py-1">
                       <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
-                        {emp.employeeCode}
+                        {emp.employeeCode || emp.biometricEmployeeCode}
                       </span>
                     </td>
-                    <td className="px-5 py-3.5 text-gray-600">{emp.departmentName || '—'}</td>
-                    <td className="px-5 py-3.5 text-gray-600">{emp.applyingForPost || '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-600">{getDeptDisplay(emp)}</td>
+                    <td className="px-5 py-3.5 text-gray-600">{getDesgDisplay(emp)}</td>
                     <td className="px-5 py-3.5 text-gray-600 font-mono text-xs">{emp.candidatePhone}</td>
                     <td className="px-5 py-3.5 text-gray-500 text-xs max-w-[160px] truncate" title={emp.candidateEmail}>
                       {emp.candidateEmail || '—'}
