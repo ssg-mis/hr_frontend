@@ -1264,13 +1264,15 @@ const Payroll = () => {
                     {/* Payable Days */}
                     <td className="py-3.5 px-3 text-center font-medium">
                       <input
-                        type="number"
-                        min="0"
-                        max={activeMode === "Monthly" ? 31 : 90}
-                        step="0.5"
+                        type="text"
+                        inputMode="decimal"
                         disabled={activeMode === "Monthly"}
-                        value={row.daysWorked}
-                        onChange={(e) => handleCellChange(row.employeeId, "daysWorked", e.target.value)}
+                        value={row.daysWorked ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9.]/g, "");
+                          handleCellChange(row.employeeId, "daysWorked", val);
+                        }}
+                        onWheel={(e) => e.target.blur()}
                         className={`w-16 border rounded px-2 py-1 text-center text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none ${activeMode === "Monthly" ? "bg-gray-100/60 text-gray-500 border-gray-100" : "border-gray-200"
                           }`}
                       />
@@ -1284,12 +1286,14 @@ const Payroll = () => {
                     {/* Unpaid Leaves (LWP) */}
                     <td className="py-3.5 px-3 text-center">
                       <input
-                        type="number"
-                        min="0"
-                        max="31"
-                        step="1"
-                        value={row.unpaidLeaves}
-                        onChange={(e) => handleCellChange(row.employeeId, "unpaidLeaves", e.target.value)}
+                        type="text"
+                        inputMode="numeric"
+                        value={row.unpaidLeaves ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9]/g, "");
+                          handleCellChange(row.employeeId, "unpaidLeaves", val);
+                        }}
+                        onWheel={(e) => e.target.blur()}
                         className="w-16 border border-gray-200 rounded px-2 py-1 text-center text-sm font-mono text-rose-600 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                       />
                     </td>
@@ -1307,10 +1311,14 @@ const Payroll = () => {
                     {/* Compensation */}
                     <td className="py-3.5 px-3 text-right">
                       <input
-                        type="number"
-                        min="0"
-                        value={row.compensation}
-                        onChange={(e) => handleCellChange(row.employeeId, "compensation", e.target.value)}
+                        type="text"
+                        inputMode="decimal"
+                        value={row.compensation ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9.]/g, "");
+                          handleCellChange(row.employeeId, "compensation", val);
+                        }}
+                        onWheel={(e) => e.target.blur()}
                         className="w-24 border border-gray-200 rounded px-2 py-1 text-right text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono"
                       />
                     </td>
@@ -1350,10 +1358,14 @@ const Payroll = () => {
                     {/* Other Deductions */}
                     <td className="py-3.5 px-3 text-right">
                       <input
-                        type="number"
-                        min="0"
-                        value={row.otherDeductions}
-                        onChange={(e) => handleCellChange(row.employeeId, "otherDeductions", e.target.value)}
+                        type="text"
+                        inputMode="decimal"
+                        value={row.otherDeductions ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9.]/g, "");
+                          handleCellChange(row.employeeId, "otherDeductions", val);
+                        }}
+                        onWheel={(e) => e.target.blur()}
                         className="w-20 border border-gray-200 rounded px-2 py-1 text-right text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono"
                       />
                     </td>
