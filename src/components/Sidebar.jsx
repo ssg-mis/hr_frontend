@@ -101,7 +101,6 @@ const Sidebar = ({ onClose }) => {
       ],
     },
     { path: "/employee", icon: Users, label: "Employee" },
-    { path: "/master-data", icon: Database, label: "Master Data Management" },
     {
       type: "dropdown",
       icon: CalendarClock,
@@ -130,6 +129,7 @@ const Sidebar = ({ onClose }) => {
     },
     { path: "/gate-pass", icon: Ticket, label: "Gate Pass Management" },
     { path: "/canteen", icon: Utensils, label: "Canteen Management" },
+    { path: "/master-data", icon: Database, label: "Master Data Management" },
     { path: "/settings", icon: Settings, label: "Settings" },
   ];
 

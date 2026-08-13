@@ -68,36 +68,43 @@ const DEPARTMENT_COLORS = [
 
 /* ─── Stat Card ───────────────────────────────────────────────── */
 const StatCard = ({ icon: Icon, label, value, trend, trendLabel, color, bgColor }) => (
-  <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-start gap-4 shadow-sm hover:shadow-lg transition-all duration-300 group cursor-default">
-    <div
-      className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${bgColor} group-hover:scale-110 transition-transform duration-300`}
-    >
-      <Icon size={22} className={color} />
+  <div className="relative overflow-hidden bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 group cursor-default">
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+          {label}
+        </p>
+        <h3 className="text-3xl font-extrabold text-gray-900 mt-1 tracking-tight">
+          {value ?? '0'}
+        </h3>
+      </div>
+      <div
+        className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${bgColor} group-hover:scale-110 transition-transform duration-300 shadow-sm`}
+      >
+        <Icon size={22} className={color} />
+      </div>
     </div>
-    <div className="min-w-0">
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide truncate">
-        {label}
-      </p>
-      <p className="text-2xl font-bold text-gray-900 mt-0.5">{value ?? '—'}</p>
-      {trend !== undefined && trend !== null && (
-        <div className="flex items-center gap-1 mt-1">
-          {trend >= 0 ? (
-            <ArrowUpRight size={14} className="text-emerald-500" />
-          ) : (
-            <ArrowDownRight size={14} className="text-red-500" />
-          )}
+
+    <div className="mt-3 pt-3 border-t border-gray-100/80 flex items-center justify-between">
+      {trend !== undefined && trend !== null ? (
+        <div className="flex items-center gap-1.5 flex-wrap">
           <span
-            className={`text-xs font-medium ${
-              trend >= 0 ? 'text-emerald-600' : 'text-red-600'
+            className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[11px] font-bold ${
+              trend >= 0
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                : 'bg-rose-50 text-rose-700 border border-rose-100'
             }`}
           >
+            {trend >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
             {trend >= 0 ? '+' : ''}
             {trend}
           </span>
           {trendLabel && (
-            <span className="text-xs text-gray-400 ml-0.5">{trendLabel}</span>
+            <span className="text-xs font-medium text-gray-400">{trendLabel}</span>
           )}
         </div>
+      ) : (
+        <span className="text-[11px] font-medium text-gray-400">Live Status</span>
       )}
     </div>
   </div>
@@ -305,56 +312,39 @@ const Dashboard = () => {
     return null;
   }
 
-  /* greeting */
-  const greeting = useMemo(() => {
-    const h = new Date().getHours();
-    if (h < 12) return 'Good Morning';
-    if (h < 17) return 'Good Afternoon';
+  const greeting = (() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
     return 'Good Evening';
-  }, []);
+  })();
 
-  const todayStr = useMemo(
-    () =>
-      new Date().toLocaleDateString('en-IN', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      }),
-    [],
-  );
+  const todayStr = new Date().toLocaleDateString('en-IN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 
-  /* ─── loading state ──────────────────────────────────────────── */
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-[70vh]">
-        <div className="text-center">
-          <Loader2
-            size={44}
-            className="animate-spin text-indigo-500 mx-auto mb-4"
-          />
-          <p className="text-gray-500 text-sm">Loading dashboard…</p>
-        </div>
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-3">
+        <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
+        <p className="text-sm font-medium text-gray-500">Loading Dashboard...</p>
       </div>
     );
   }
 
-  /* ─── error state ────────────────────────────────────────────── */
   if (error) {
     return (
-      <div className="flex justify-center items-center h-[70vh]">
-        <div className="text-center bg-red-50 border border-red-200 rounded-2xl p-10 max-w-md">
-          <AlertTriangle
-            size={44}
-            className="text-red-400 mx-auto mb-4"
-          />
-          <p className="text-red-700 font-medium mb-1">
-            Unable to load dashboard
-          </p>
-          <p className="text-red-500 text-sm mb-5">{error}</p>
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center max-w-md mx-auto">
+          <AlertTriangle className="w-10 h-10 text-red-500 mx-auto mb-2" />
+          <h3 className="text-base font-bold text-red-800">Failed to load Dashboard</h3>
+          <p className="text-xs text-red-600 mt-1">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+            className="mt-4 px-4 py-2 bg-red-600 text-white text-xs font-semibold rounded-xl hover:bg-red-700 transition"
           >
             Retry
           </button>
@@ -363,32 +353,48 @@ const Dashboard = () => {
     );
   }
 
-  /* ─── main render ────────────────────────────────────────────── */
   return (
-    <div className="space-y-6 page-content p-6">
-      {/* ── Welcome Banner ─────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 p-6 md:p-8 text-white">
-        {/* Decorative circles */}
-        <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-white/5" />
-        <div className="absolute -bottom-12 -left-8 w-56 h-56 rounded-full bg-white/5" />
-        <div className="relative z-10">
-          <p className="text-indigo-200 text-sm font-medium">{todayStr}</p>
-          <h2 className="text-2xl md:text-3xl font-bold mt-1">
-            {greeting},{' '}
-            <span className="text-indigo-100">
-              {user?.name || user?.Name || 'Admin'}
-            </span>{' '}
-            👋
-          </h2>
-          <p className="text-indigo-200 text-sm mt-2 max-w-lg">
-            Here's a quick overview of your HR operations. Track workforce metrics,
-            recruitment pipeline, and upcoming events — all in one place.
-          </p>
+    <div className="space-y-6 pb-10">
+      {/* ── Welcome Banner ──────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-800 p-6 md:p-8 text-white shadow-xl">
+        {/* Decorative ambient background glows */}
+        <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-white/10 blur-xl" />
+        <div className="absolute -bottom-16 -left-12 w-64 h-64 rounded-full bg-purple-500/20 blur-2xl" />
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 text-indigo-100 text-xs font-medium mb-3">
+              <CalendarDays size={14} className="text-indigo-200" />
+              <span>{todayStr}</span>
+            </div>
+            <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight">
+              {greeting},{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-100 via-purple-100 to-white">
+                {user?.name || user?.Name || 'Admin'}
+              </span>{' '}
+              👋
+            </h2>
+            <p className="text-indigo-100/90 text-xs md:text-sm mt-2 max-w-xl leading-relaxed">
+              Here's a quick overview of your HR operations. Track workforce metrics,
+              recruitment pipeline, and upcoming events — all in one place.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
+            <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-4 py-3 text-center min-w-[100px]">
+              <span className="block text-2xl font-black text-white">{stats.totalEmployees ?? 0}</span>
+              <span className="text-[10px] font-semibold text-indigo-200 uppercase tracking-wider">Total Staff</span>
+            </div>
+            <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-4 py-3 text-center min-w-[100px]">
+              <span className="block text-2xl font-black text-emerald-300">{stats.activeEmployees ?? 0}</span>
+              <span className="text-[10px] font-semibold text-indigo-200 uppercase tracking-wider">Active</span>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* ── KPI Stat Cards ─────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-5">
         <StatCard
           icon={Users}
           label="Total Employees"
@@ -400,7 +406,7 @@ const Dashboard = () => {
         />
         <StatCard
           icon={UserCheck}
-          label="Active"
+          label="Active Staff"
           value={stats.activeEmployees}
           color="text-emerald-600"
           bgColor="bg-emerald-50"
