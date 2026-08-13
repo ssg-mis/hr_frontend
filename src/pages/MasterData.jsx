@@ -15,10 +15,14 @@ import {
   Filter,
   RefreshCw,
   MapPin,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../lib/api';
+
+const ITEMS_PER_PAGE = 25;
 
 const MasterData = () => {
   const [activeTab, setActiveTab] = useState('employees'); // 'employees' | 'departments' | 'designations' | 'branches'
@@ -30,9 +34,16 @@ const MasterData = () => {
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+
   // Filters & Search
   const [searchTerm, setSearchTerm] = useState('');
   const [missingFilter, setMissingFilter] = useState('all'); // 'all' | 'missingBank' | 'missingSalary' | 'missingDesg' | 'missingPan' | 'missingDob'
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, missingFilter, activeTab]);
 
   // Edit Modal State
   const [selectedItem, setSelectedItem] = useState(null);
@@ -108,6 +119,13 @@ const MasterData = () => {
       return true;
     });
   }, [employees, searchTerm, missingFilter]);
+
+  // Calculate pagination
+  const totalPages = Math.max(1, Math.ceil(filteredEmployees.length / ITEMS_PER_PAGE));
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const paginatedEmployees = useMemo(() => {
+    return filteredEmployees.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredEmployees, startIndex]);
 
   const handleEditClick = (item) => {
     setSelectedItem(item);
@@ -313,7 +331,7 @@ const MasterData = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-                  {filteredEmployees.map((emp) => {
+                  {paginatedEmployees.map((emp) => {
                     const base = Number(emp.baseSalary || 0);
                     const allow = Number(emp.allowanceSalary || 0);
                     const gross = base + allow;
@@ -378,6 +396,65 @@ const MasterData = () => {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Pagination Footer (25 items per page) */}
+          {!loading && filteredEmployees.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+              <div>
+                Showing <span className="font-bold text-slate-900">{startIndex + 1}–{Math.min(startIndex + ITEMS_PER_PAGE, filteredEmployees.length)}</span> of <span className="font-bold text-slate-900">{filteredEmployees.length}</span> employees
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold flex items-center gap-1 transition-colors"
+                >
+                  <ChevronLeft className="h-4 w-4" /> Previous
+                </button>
+
+                <div className="flex items-center gap-1 px-1">
+                  {Array.from({ length: totalPages }).map((_, idx) => {
+                    const pageNum = idx + 1;
+                    if (
+                      pageNum === 1 ||
+                      pageNum === totalPages ||
+                      Math.abs(pageNum - currentPage) <= 1
+                    ) {
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
+                            currentPage === pageNum
+                              ? 'bg-indigo-600 text-white shadow-xs'
+                              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    }
+                    if (pageNum === 2 && currentPage > 3) {
+                      return <span key="dots1" className="text-slate-400 text-xs px-0.5">...</span>;
+                    }
+                    if (pageNum === totalPages - 1 && currentPage < totalPages - 2) {
+                      return <span key="dots2" className="text-slate-400 text-xs px-0.5">...</span>;
+                    }
+                    return null;
+                  })}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold flex items-center gap-1 transition-colors"
+                >
+                  Next <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           )}
         </div>
