@@ -930,6 +930,9 @@ const Payroll = () => {
       try { ws.mergeCells("A2:AF2"); } catch (e) {}
       try { ws.mergeCells("S3:Y3"); } catch (e) {}
 
+      // Unmerge any old hardcoded template summary row (e.g. A123:E123)
+      try { ws.unMergeCells("A123:E123"); } catch (e) {}
+
       // 5. Calculate total days in period
       let periodDays = 30;
       if (activeMode === "Monthly" && selectedMonth) {
@@ -937,79 +940,139 @@ const Payroll = () => {
         if (yStr && mStr) periodDays = new Date(parseInt(yStr, 10), parseInt(mStr, 10), 0).getDate();
       }
 
-      // 6. Clear dummy rows beyond the actual data count
-      const startRowIdx = 5; // Row 5 (1-indexed in ExcelJS)
-      const totalNewRows = rows.length;
-      for (let r = startRowIdx + totalNewRows; r <= 200; r++) {
+      // 6. Clear dummy/old rows from row 5 to 500
+      for (let r = 5; r <= 500; r++) {
         const row = ws.getRow(r);
         for (let c = 1; c <= 32; c++) {
           row.getCell(c).value = null;
         }
       }
 
+      const normalBorder = {
+        top: { style: "thin", color: { indexed: 64 } },
+        left: { style: "thin", color: { indexed: 64 } },
+        bottom: { style: "thin", color: { indexed: 64 } },
+        right: { style: "thin", color: { indexed: 64 } },
+      };
+
+      const startRowIdx = 5; // Row 5 (1-indexed in ExcelJS)
+      const columnSums = {}; // For calculating totals across all numeric columns (6 to 28)
+
       // 7. Populate employee records starting at Row 5 into the provided template
       rows.forEach((row, idx) => {
         const rIdx = idx + startRowIdx;
-        const daysWorked = Number(row.daysWorked) || 0;
-        const unpaidLeaves = Number(row.unpaidLeaves) != null ? Number(row.unpaidLeaves) : Math.max(0, periodDays - daysWorked);
-        const basicPay = Number(row.basicPay) || 0;
-        const allowance = Number(row.allowance) || 0;
-        const totalEarn = basicPay + allowance;
+        const empId = Number(row.employeeId || row.id);
+        const empRecord = employeeById.get(empId) || {};
+        const salRecord = salaryByEmployeeId.get(empId) || {};
+
+        // Base salary and allowance monthly rates
+        const basicRate = Number(salRecord.baseSalary || row.basicSalary || row.baseSalary || empRecord.basicSalary || row.basicPay) || 0;
+        const allowanceRate = Number(salRecord.allowanceSalary || row.allowanceSalary || row.allowance) || 0;
+
+        // Days
+        const paidDays = Number(row.daysWorked) != null ? Number(row.daysWorked) : (periodDays - (Number(row.unpaidLeaves) || 0));
+        const absentDays = Number(row.unpaidLeaves) != null ? Number(row.unpaidLeaves) : Math.max(0, periodDays - paidDays);
+
+        // Pro-rated earned basic and allowances based on paid days
+        let earnBasic = basicRate;
+        let earnAllowance = allowanceRate;
+        if (periodDays > 0 && paidDays < periodDays) {
+          earnBasic = Number(((basicRate / periodDays) * paidDays).toFixed(2));
+          earnAllowance = Number(((allowanceRate / periodDays) * paidDays).toFixed(2));
+        } else if (Number(row.basicPay) > 0 && Number(row.basicPay) !== basicRate) {
+          earnBasic = Number(row.basicPay);
+        }
+
+        const totalEarn = Number((earnBasic + earnAllowance).toFixed(2));
         const washingAll = Number(row.compensation) || 0;
-        const grossSalary = Number(row.grossSalary) || (totalEarn + washingAll);
-        const epfWages = Math.min(15000, basicPay);
+        const otAmount = Number(row.otAmount) || 0;
+        const grossSalary = Number((totalEarn + washingAll + otAmount).toFixed(2));
+        const epfWages = Math.min(15000, earnBasic);
+
         const pfDeduction = Number(row.pfDeduction) || 0;
         const esicDeduction = Number(row.esicDeduction) || 0;
         const emiDeduction = Number(row.emiDeduction) || 0;
         const penalty = Number(row.otherDeductions) || 0;
         const canteen = Number(row.canteenDeduction) || 0;
-        const totalDeductions = Number(row.totalDeductions) || (pfDeduction + esicDeduction + emiDeduction + penalty + canteen);
-        const netSalary = Number(row.netSalary) || Math.max(0, grossSalary - totalDeductions);
-        const basicRate = Number(row.basicSalary || row.baseSalary) || 0;
+        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + canteen).toFixed(2));
+        const netSalary = Number(row.netSalary) || Math.max(0, Number((grossSalary - totalDeductions).toFixed(2)));
 
         const rowValues = [
-          idx + 1,                                                   // 1: Sr. No.
-          row.employeeCode || row.biometricEmployeeCode || "",       // 2: EMPCODE
-          row.employeeName || row.candidateName || "",               // 3: NAME
-          row.pfNo || row.uanNo || "",                               // 4: UAN NO.
-          row.esicNo || row.ipNo || "",                              // 5: IP No.
-          periodDays,                                                // 6: TOTAL_DAYS
-          daysWorked,                                                // 7: PAID_DAYS
-          unpaidLeaves,                                              // 8: ABSENT_DAYS
-          0,                                                        // 9: OT HRS
-          basicRate,                                                 // 10: BASIC+DA
-          basicPay,                                                  // 11: EARN BASIC+DA
-          Number(row.allowanceSalary) || 0,                         // 12: ALLOW_RATE(TA,MOB,HRA,CON.)
-          allowance,                                                 // 13: EARN ALLOW (TA,MOB,HRA,CON.)
-          totalEarn,                                                 // 14: TOTAL
-          washingAll,                                                // 15: WASHING ALL.
-          0,                                                        // 16: OT
-          grossSalary,                                               // 17: GROSS
-          epfWages,                                                  // 18: EPF WAGES
-          pfDeduction,                                               // 19: PF
-          0,                                                        // 20: LABOUR WELFARE FUND
-          esicDeduction,                                             // 21: ESIC
-          emiDeduction,                                              // 22: ADV
-          penalty,                                                   // 23: Penalty
-          canteen,                                                   // 24: Canteen
-          totalDeductions,                                           // 25: TOTAL DEDUCTION
-          netSalary,                                                 // 26: NET SALARY
-          0,                                                        // 27: Diwali Bonus
-          netSalary,                                                 // 28: NET PAY AMOUNT
-          row.paymentMode || row.payMode || "Bank",                  // 29: PAY-MODE
-          row.bankAccountNo || "",                                   // 30: BANK A/C NO.
-          row.ifscCode || "",                                       // 31: IFSC
-          row.remarks || "",                                        // 32: REMARK
+          idx + 1,                                                                     // 1: Sr. No.
+          row.employeeCode || row.biometricEmployeeCode || empRecord.biometricEmployeeCode || "", // 2: EMPCODE
+          row.employeeName || row.candidateName || empRecord.candidateName || "",                 // 3: NAME
+          row.pfNo || row.uanNo || empRecord.pfNo || "",                                         // 4: UAN NO.
+          row.esicNo || row.ipNo || empRecord.esicNo || "",                                       // 5: IP No.
+          periodDays,                                                                  // 6: TOTAL_DAYS
+          paidDays,                                                                    // 7: PAID_DAYS
+          absentDays,                                                                  // 8: ABSENT_DAYS
+          0,                                                                          // 9: OT HRS
+          basicRate,                                                                   // 10: BASIC+DA
+          earnBasic,                                                                   // 11: EARN BASIC+DA
+          allowanceRate,                                                               // 12: ALLOW_RATE(TA,MOB,HRA,CON.)
+          earnAllowance,                                                               // 13: EARN ALLOW (TA,MOB,HRA,CON.)
+          totalEarn,                                                                   // 14: TOTAL
+          washingAll,                                                                  // 15: WASHING ALL.
+          otAmount,                                                                    // 16: OT
+          grossSalary,                                                                 // 17: GROSS
+          epfWages,                                                                    // 18: EPF WAGES
+          pfDeduction,                                                                 // 19: PF
+          0,                                                                          // 20: LABOUR WELFARE FUND
+          esicDeduction,                                                               // 21: ESIC
+          emiDeduction,                                                                // 22: ADV
+          penalty,                                                                     // 23: Penalty
+          canteen,                                                                     // 24: Canteen
+          totalDeductions,                                                             // 25: TOTAL DEDUCTION
+          netSalary,                                                                   // 26: NET SALARY
+          0,                                                                          // 27: Diwali Bonus
+          netSalary,                                                                   // 28: NET PAY AMOUNT
+          row.paymentMode || row.payMode || empRecord.payMode || "Cash",               // 29: PAY-MODE
+          row.bankAccountNo || empRecord.bankAccountNo || "",                            // 30: BANK A/C NO.
+          row.ifscCode || empRecord.ifscCode || "",                                    // AE: IFSC
+          row.remarks || "",                                                           // AF: REMARK
         ];
 
         const excelRow = ws.getRow(rIdx);
         rowValues.forEach((val, cIdx) => {
-          excelRow.getCell(cIdx + 1).value = val;
+          const colNum = cIdx + 1;
+          const cell = excelRow.getCell(colNum);
+          cell.value = val;
+          cell.font = { name: "Calibri", size: 9, bold: false };
+          cell.alignment = { horizontal: "left", vertical: "middle" };
+          cell.border = normalBorder;
+          if (typeof val === "number" && colNum >= 6 && colNum <= 28) {
+            columnSums[colNum] = (columnSums[colNum] || 0) + val;
+          }
         });
         excelRow.commit();
       });
 
-      // 8. Download the exact populated Excel spreadsheet with full preserved styles & centered titles
+      // 8. Place the dynamic TOTAL row at the very bottom of the data
+      const totalRowIdx = startRowIdx + rows.length;
+      try { ws.mergeCells(`A${totalRowIdx}:E${totalRowIdx}`); } catch (e) {}
+
+      const totalRow = ws.getRow(totalRowIdx);
+      for (let c = 1; c <= 32; c++) {
+        const cell = totalRow.getCell(c);
+        cell.border = normalBorder;
+        cell.alignment = { horizontal: "left", vertical: "middle" };
+      }
+      const cellTotalLabel = totalRow.getCell(1);
+      cellTotalLabel.value = "TOTAL";
+      cellTotalLabel.alignment = { horizontal: "center", vertical: "middle" };
+      cellTotalLabel.font = { bold: true };
+
+      // Set numeric sum totals in bold
+      for (let c = 6; c <= 28; c++) {
+        const sumVal = columnSums[c] !== undefined ? columnSums[c] : null;
+        const cell = totalRow.getCell(c);
+        cell.value = sumVal !== null ? (Number.isInteger(sumVal) ? sumVal : Number(sumVal.toFixed(2))) : null;
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: "left", vertical: "middle" };
+      }
+      totalRow.commit();
+
+      // 9. Download the exact populated Excel spreadsheet with full preserved styles & centered titles
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
@@ -1022,7 +1085,7 @@ const Payroll = () => {
       URL.revokeObjectURL(url);
 
       toast.dismiss(toastId);
-      toast.success(`Exported ${rows.length} rows into Payroll Formate template!`);
+      toast.success(`Exported ${rows.length} rows with bottom TOTAL row!`);
     } catch (err) {
       toast.dismiss(toastId);
       console.error("Export error:", err);
