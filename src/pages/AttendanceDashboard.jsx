@@ -420,7 +420,9 @@ const AttendanceDashboard = () => {
     if (isPresent) {
       emp.presentDays++;
       emp.workingMinutes += calcMinutes;
-      emp.overtimeMinutes += Math.max(0, calcMinutes - expShiftMins);
+      // Overtime calculation disabled as per requirement (set to 0)
+      // emp.overtimeMinutes += Math.max(0, calcMinutes - expShiftMins);
+      emp.overtimeMinutes = 0;
       if (calcMinutes > 0 && calcMinutes < halfShiftThreshold) {
         emp.halfDays++;
         emp.payableDays += 0.5;
@@ -616,7 +618,7 @@ const AttendanceDashboard = () => {
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">{emp.halfDays}</td>
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold text-red-600">{emp.absentDays}</td>
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold text-blue-600">{emp.leaveDays}</td>
-                      <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">{(emp.overtimeMinutes / 60).toFixed(1)}</td>
+                      <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">0</td>
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-bold text-indigo-600 bg-indigo-50/30">{emp.payableDays.toFixed(1)}</td>
                       <td className="px-6 py-4 text-right">
                         <button

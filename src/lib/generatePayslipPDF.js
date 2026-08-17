@@ -98,7 +98,7 @@ const drawPayslip = (doc, data, startY = 10) => {
       ['Company Branch:', data.branchName || 'N/A', 'Department:', data.department || 'N/A'],
       ['Designation:', data.designation || 'N/A', 'Payment Mode:', data.paymentMode || 'Cash'],
       ['Pay Period:', periodLabel || 'N/A', 'Payable Days:', (data.daysWorked || 0).toString()],
-      ['Paid Leave Days:', (data.paidLeaves || 0).toString(), 'Unpaid Leaves (LWP):', (data.unpaidLeaves || 0).toString()]
+      ['Paid Leave Days:', (data.paidLeaves || 0).toString(), 'Absent:', (data.unpaidLeaves || 0).toString()]
     ],
   });
 

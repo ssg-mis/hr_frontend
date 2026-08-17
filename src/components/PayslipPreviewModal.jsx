@@ -170,7 +170,7 @@ const PayslipPreviewModal = ({ isOpen, onClose, payslipData }) => {
                 <span className="text-slate-900 col-span-2 font-medium">: {data.paidLeaves}</span>
               </div>
               <div className="grid grid-cols-3">
-                <span className="text-slate-500 font-medium col-span-1">Unpaid Leaves (LWP)</span>
+                <span className="text-slate-500 font-medium col-span-1">Absent</span>
                 <span className="text-slate-900 col-span-2 font-medium">: {data.unpaidLeaves}</span>
               </div>
             </div>

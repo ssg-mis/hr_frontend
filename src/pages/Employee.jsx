@@ -2,8 +2,9 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Search, Users, UserCheck, UserMinus, Briefcase, Phone, Mail,
-  Calendar, Building2, Hash, Eye, X, RefreshCw, ChevronLeft, ChevronRight,
+  Calendar, Building2, Hash, Eye, X, RefreshCw, ChevronLeft, ChevronRight, Download, FileSpreadsheet,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { api } from '../lib/api';
 
 /* ─── helpers ─────────────────────────────────────────────────────── */
@@ -362,7 +363,129 @@ const Employee = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [selected, setSelected] = useState(null);
+  const [exporting, setExporting] = useState(false);
   const isFirstRun = React.useRef(true);
+
+  const handleExportExcel = async () => {
+    setExporting(true);
+    try {
+      const res = await api.get(`/employees?status=${activeTab}`);
+      let list = res.data || [];
+
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase();
+        list = list.filter(e =>
+          (e.candidateName || '').toLowerCase().includes(q) ||
+          (e.employeeCode || e.biometricEmployeeCode || '').toLowerCase().includes(q) ||
+          (e.candidatePhone || '').toLowerCase().includes(q) ||
+          (e.candidateEmail || '').toLowerCase().includes(q) ||
+          (e.applyingForPost || '').toLowerCase().includes(q) ||
+          (e.departmentName || '').toLowerCase().includes(q) ||
+          (e.branchName || '').toLowerCase().includes(q) ||
+          (e.deptCodeFromCsv || '').toLowerCase().includes(q) ||
+          (e.desgCodeFromCsv || '').toLowerCase().includes(q) ||
+          (e.fatherName || '').toLowerCase().includes(q) ||
+          (e.panNo || '').toLowerCase().includes(q) ||
+          (e.aadharNo || '').toLowerCase().includes(q) ||
+          (e.pfNo || '').toLowerCase().includes(q)
+        );
+      }
+
+      if (list.length === 0) {
+        toast.error('No employee records available to export.');
+        return;
+      }
+
+      const headers = [
+        'Employee Code', 'Full Name', "Father's Name", 'Gender', 'Blood Group', 'Date of Birth',
+        'Marital Status', 'Qualification', 'Branch Name', 'Branch Address', 'Department', 'Dept Code (CSV)',
+        'Designation', 'Desg Code (CSV)', 'Category', 'Grade Code', 'Site Code', 'Division Code',
+        'Shift Code', 'Bank Code', 'Phone', 'Email', 'Present Address', 'Correspondence Address',
+        'Aadhar No', 'PAN No', 'Voter ID No', 'Ration Card No', 'Driving License No', 'Enrolment No',
+        'Date of Joining', 'Confirmation Date', 'Left Date', 'Basic Salary', 'Pay Mode',
+        'Bank Account No', 'IFSC Code', 'PF No / UAN', 'ESIC No', 'Status', 'Joining Remark'
+      ];
+
+      const escapeCell = (val) => {
+        if (val === null || val === undefined) return '""';
+        const str = String(val).replace(/"/g, '""');
+        return `"${str}"`;
+      };
+
+      const rowsCsv = [headers.map(escapeCell).join(',')];
+
+      list.forEach(emp => {
+        const code = emp.employeeCode || emp.biometricEmployeeCode || '—';
+        const name = getNameDisplay(emp);
+        const fName = emp.fatherName || '—';
+        const gender = fmtGender(emp.gender);
+        const blood = fmtBloodGroup(emp.bloodGroup);
+        const dob = fmtDate(emp.dob);
+        const marital = emp.maritalStatus || '—';
+        const qual = emp.qualification || '—';
+        const branch = emp.branchName || '—';
+        const branchAddr = emp.branchAddress || '—';
+        const dept = getDeptDisplay(emp);
+        const deptCsv = emp.deptCodeFromCsv || '—';
+        const desg = getDesgDisplay(emp);
+        const desgCsv = emp.desgCodeFromCsv || '—';
+        const cat = emp.catCodeFromCsv ? (CAT_MAP[emp.catCodeFromCsv] || emp.catCodeFromCsv) : '—';
+        const grade = emp.gradeCodeFromCsv || '—';
+        const site = emp.siteCodeFromCsv || '—';
+        const div = emp.divisionCodeFromCsv || '—';
+        const shift = emp.shiftCodeFromCsv || '—';
+        const bankCode = emp.bankCodeFromCsv || '—';
+        const phone = emp.candidatePhone || '—';
+        const email = emp.candidateEmail || '—';
+        const pAddr = emp.presentAddress || '—';
+        const cAddr = emp.corrAddress || '—';
+        const aadhar = emp.aadharNo || '—';
+        const pan = emp.panNo || '—';
+        const voter = emp.voterIdNo || '—';
+        const ration = emp.rashanCardNo || '—';
+        const dl = emp.drivingLicenseNo || '—';
+        const enrolment = emp.enrolmentNumber || '—';
+        const doj = fmtDate(emp.joiningDate);
+        const doc = fmtDate(emp.confirmDate);
+        const dol = fmtDate(emp.leftDate);
+        const sal = getSalaryDisplay(emp);
+        const payMode = emp.payMode || '—';
+        const bankAcc = emp.bankAccountNo || '—';
+        const ifsc = emp.ifscCode || '—';
+        const pf = emp.pfNo || '—';
+        const esic = emp.esicNo || '—';
+        const status = emp.status || '—';
+        const remark = emp.joiningRemark || '—';
+
+        rowsCsv.push([
+          code, name, fName, gender, blood, dob,
+          marital, qual, branch, branchAddr, dept, deptCsv,
+          desg, desgCsv, cat, grade, site, div,
+          shift, bankCode, phone, email, pAddr, cAddr,
+          aadhar, pan, voter, ration, dl, enrolment,
+          doj, doc, dol, sal, payMode,
+          bankAcc, ifsc, pf, esic, status, remark
+        ].map(escapeCell).join(','));
+      });
+
+      const bom = '\uFEFF';
+      const blob = new Blob([bom + rowsCsv.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Employee_Database_${activeTab}_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${list.length} employee records to Excel!`);
+    } catch (err) {
+      console.error('Export Excel error:', err);
+      toast.error('Failed to export employee data.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   /* fetch counts for all statuses once */
   const fetchStats = useCallback(async () => {
@@ -446,12 +569,22 @@ const Employee = () => {
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">Manage and view all company employees</p>
         </div>
-        <button
-          onClick={() => { fetchList(page); fetchStats(); }}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 shadow-sm transition-colors"
-        >
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={handleExportExcel}
+            disabled={exporting}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download size={15} className={exporting ? 'animate-bounce' : ''} />
+            <span>{exporting ? 'Exporting...' : 'Export Excel'}</span>
+          </button>
+          <button
+            onClick={() => { fetchList(page); fetchStats(); }}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 shadow-sm transition-colors cursor-pointer"
+          >
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* ── Stats — only Working + Resignation Requested ─── */}
