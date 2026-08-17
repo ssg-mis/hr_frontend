@@ -11,6 +11,8 @@ import useAuthStore from "../store/authStore";
 import toast from "react-hot-toast";
 import { generatePayslipPDF, generateBulkPayslipsPDF } from "../lib/generatePayslipPDF";
 import PayslipPreviewModal from "../components/PayslipPreviewModal";
+import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 // Helper to safely invoke autoTable regardless of build bundle structure
 const applyAutoTable = (doc, options) => {
@@ -658,8 +660,19 @@ const Payroll = () => {
 
         const updatedRow = { ...row, [field]: parseFloat(val) || 0 };
 
+        // Calculate period days count for Daily Mode
+        let periodDaysCount = 30;
+        if (activeMode === "Daily") {
+          const start = new Date(startDate);
+          const end = new Date(endDate);
+          const diffTime = Math.abs(end.getTime() - start.getTime());
+          periodDaysCount = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        }
+
         // If days worked changed, re-calculate basic, allowance, etc.
         if (field === "daysWorked" && activeMode === "Daily") {
+          updatedRow.unpaidLeaves = Math.max(0, periodDaysCount - updatedRow.daysWorked);
+
           const salRecord = salaryByEmployeeId.get(Number(empId));
           const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : 0;
           const monthlyAllowance = salRecord ? parseFloat(salRecord.allowanceSalary) : 0;
@@ -689,7 +702,40 @@ const Payroll = () => {
           updatedRow.emiDeduction = parseFloat(((monthlyEmi / 30) * updatedRow.daysWorked).toFixed(2));
         }
 
-        // Recalculate Leave adjustment if unpaid leaves override is made
+        // Recalculate if unpaid leaves override is made in Daily mode
+        if (field === "unpaidLeaves" && activeMode === "Daily") {
+          updatedRow.daysWorked = Math.max(0, periodDaysCount - updatedRow.unpaidLeaves);
+
+          const salRecord = salaryByEmployeeId.get(Number(empId));
+          const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : 0;
+          const monthlyAllowance = salRecord ? parseFloat(salRecord.allowanceSalary) : 0;
+
+          updatedRow.basicPay = parseFloat(((monthlyBase / 30) * updatedRow.daysWorked).toFixed(2));
+          updatedRow.allowance = parseFloat(((monthlyAllowance / 30) * updatedRow.daysWorked).toFixed(2));
+
+          // Re-calculate PF daily
+          const pfRecord = pfByEmployeeId.get(Number(empId));
+          const isPfOptedIn = pfRecord ? pfRecord.isOptedIn : (monthlyBase <= 15000);
+          if (isPfOptedIn) {
+            const capDaily = Math.min(updatedRow.basicPay, 500 * updatedRow.daysWorked);
+            updatedRow.pfDeduction = parseFloat((capDaily * 0.12).toFixed(2));
+          }
+
+          // Re-calculate ESIC daily
+          const esicRecord = esicByEmployeeId.get(Number(empId));
+          const isEsicOptedIn = esicRecord ? esicRecord.isOptedIn : ((monthlyBase + monthlyAllowance) <= 21000);
+          if (isEsicOptedIn && (monthlyBase + monthlyAllowance) <= 21000) {
+            updatedRow.esicDeduction = parseFloat(((updatedRow.basicPay + updatedRow.allowance) * 0.0075).toFixed(2));
+          }
+
+          // Re-calculate EMI daily
+          const employeeEmis = activeEmiByEmployeeId.get(Number(empId)) || [];
+          const activeEmis = employeeEmis.filter(e => e.status === "Active");
+          const monthlyEmi = activeEmis.reduce((sum, item) => sum + parseFloat(item.emiAmount), 0);
+          updatedRow.emiDeduction = parseFloat(((monthlyEmi / 30) * updatedRow.daysWorked).toFixed(2));
+        }
+
+        // Recalculate Leave adjustment if unpaid leaves override is made in Monthly mode
         if (field === "unpaidLeaves" && activeMode === "Monthly") {
           const salRecord = salaryByEmployeeId.get(Number(empId));
           const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : 0;
@@ -799,52 +845,252 @@ const Payroll = () => {
     return filteredRows;
   };
 
-  // Export to CSV
+  // Helper to format dynamic month/period label
+  const getDynamicPeriodLabel = () => {
+    if (activeMode === "Monthly" && selectedMonth) {
+      const [y, m] = selectedMonth.split("-");
+      if (y && m) {
+        const monthNames = [
+          "January", "February", "March", "April", "May", "June",
+          "July", "August", "September", "October", "November", "December"
+        ];
+        const mName = monthNames[parseInt(m, 10) - 1] || m;
+        return `${mName}. -${y}`;
+      }
+      return selectedMonth;
+    }
+    return `${startDate} to ${endDate}`;
+  };
+
+  // Export: Directly loads and fills data into the provided Payroll Formate.xlsx template using ExcelJS
   const handleExportCSV = async () => {
-    const rowsToExport = await getExportRows();
-    const headers = [
-      "Employee Code", "Employee Name", "Department", "Payable Days", "Paid Leaves", "Unpaid Leaves",
-      "Basic Pay", "Allowance", "Compensation", "Leave Adjustment", "Gross Salary",
-      "PF Deduction", "ESIC Deduction", "EMI Deduction", "Canteen Deduction",
-      "Other Deductions", "Total Deductions", "Net Salary", "Status", "Payment Mode", "Remarks"
-    ];
+    const toastId = toast.loading("Generating Excel export from Payroll Formate template...");
+    try {
+      const period = activeMode === "Monthly" ? selectedMonth : `${startDate}:${endDate}`;
 
-    const csvRows = [headers.join(",")];
-    rowsToExport.forEach(row => {
-      csvRows.push([
-        `"${row.employeeCode}"`,
-        `"${row.employeeName}"`,
-        `"${row.department}"`,
-        row.daysWorked,
-        row.paidLeaves || 0,
-        row.unpaidLeaves,
-        row.basicPay,
-        row.allowance,
-        row.compensation,
-        row.leaveAdjustment,
-        row.grossSalary,
-        row.pfDeduction,
-        row.esicDeduction,
-        row.emiDeduction,
-        row.canteenDeduction,
-        row.otherDeductions,
-        row.totalDeductions,
-        row.netSalary,
-        `"${row.status}"`,
-        `"${row.paymentMode || 'Cash'}"`,
-        `"${row.remarks || ''}"`
-      ].join(","));
-    });
+      // 1. Get payroll rows — includes both saved AND draft calculations shown on screen
+      const rows = await getExportRows();
+      if (!rows || !rows.length) {
+        toast.dismiss(toastId);
+        toast.error("No payroll data to export for the selected period.");
+        return;
+      }
 
-    const csvContent = "data:text/csv;charset=utf-8," + csvRows.join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    const periodStr = activeMode === "Monthly" ? selectedMonth : `${startDate}_to_${endDate}`;
-    link.setAttribute("download", `payroll_${activeMode}_${periodStr}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      // 2. Fetch the exact provided template file (first from static public, then API fallback)
+      let templateBuf = null;
+      try {
+        const staticRes = await fetch("/payroll_template.xlsx");
+        if (staticRes.ok) {
+          const ab = await staticRes.arrayBuffer();
+          const u8 = new Uint8Array(ab);
+          if (u8.length > 4 && u8[0] === 0x50 && u8[1] === 0x4b) {
+            templateBuf = ab;
+          }
+        }
+      } catch (e) {
+        console.warn("Public template fetch error:", e);
+      }
+
+      if (!templateBuf) {
+        try {
+          const templateRes = await api.get("/salaries/template", { responseType: "arraybuffer" });
+          if (templateRes.data) {
+            templateBuf = templateRes.data;
+          }
+        } catch (e) {
+          console.warn("API template fetch error:", e);
+        }
+      }
+
+      if (!templateBuf) {
+        toast.dismiss(toastId);
+        toast.error("Failed to load Payroll Formate template.");
+        return;
+      }
+
+      // 3. Load the workbook with ExcelJS (preserves all cell styles, borders, fonts, and full merges)
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(templateBuf);
+      const ws = wb.getWorksheet("POWER") || wb.worksheets[0];
+
+      // 4. Center top 2 title lines across the table width
+      const periodSubtitle = activeMode === "Monthly"
+        ? `Salary Register For Month : ${getDynamicPeriodLabel()}`
+        : `Salary Register For Period : ${getDynamicPeriodLabel()}`;
+
+      const cellA1 = ws.getCell("A1");
+      cellA1.alignment = { horizontal: "center", vertical: "middle" };
+
+      const cellA2 = ws.getCell("A2");
+      cellA2.value = periodSubtitle;
+      cellA2.alignment = { horizontal: "center", vertical: "middle" };
+
+      // Ensure merges exist for A1:AF1, A2:AF2, and S3:Y3
+      try { ws.mergeCells("A1:AF1"); } catch (e) {}
+      try { ws.mergeCells("A2:AF2"); } catch (e) {}
+      try { ws.mergeCells("S3:Y3"); } catch (e) {}
+
+      // Unmerge any old hardcoded template summary row (e.g. A123:E123)
+      try { ws.unMergeCells("A123:E123"); } catch (e) {}
+
+      // 5. Calculate total days in period
+      let periodDays = 30;
+      if (activeMode === "Monthly" && selectedMonth) {
+        const [yStr, mStr] = selectedMonth.split("-");
+        if (yStr && mStr) periodDays = new Date(parseInt(yStr, 10), parseInt(mStr, 10), 0).getDate();
+      }
+
+      // 6. Clear dummy/old rows from row 5 to 500
+      for (let r = 5; r <= 500; r++) {
+        const row = ws.getRow(r);
+        for (let c = 1; c <= 32; c++) {
+          row.getCell(c).value = null;
+        }
+      }
+
+      const normalBorder = {
+        top: { style: "thin", color: { indexed: 64 } },
+        left: { style: "thin", color: { indexed: 64 } },
+        bottom: { style: "thin", color: { indexed: 64 } },
+        right: { style: "thin", color: { indexed: 64 } },
+      };
+
+      const startRowIdx = 5; // Row 5 (1-indexed in ExcelJS)
+      const columnSums = {}; // For calculating totals across all numeric columns (6 to 28)
+
+      // 7. Populate employee records starting at Row 5 into the provided template
+      rows.forEach((row, idx) => {
+        const rIdx = idx + startRowIdx;
+        const empId = Number(row.employeeId || row.id);
+        const empRecord = employeeById.get(empId) || {};
+        const salRecord = salaryByEmployeeId.get(empId) || {};
+
+        // Base salary and allowance monthly rates
+        const basicRate = Number(salRecord.baseSalary || row.basicSalary || row.baseSalary || empRecord.basicSalary || row.basicPay) || 0;
+        const allowanceRate = Number(salRecord.allowanceSalary || row.allowanceSalary || row.allowance) || 0;
+
+        // Days
+        const paidDays = Number(row.daysWorked) != null ? Number(row.daysWorked) : (periodDays - (Number(row.unpaidLeaves) || 0));
+        const absentDays = Number(row.unpaidLeaves) != null ? Number(row.unpaidLeaves) : Math.max(0, periodDays - paidDays);
+
+        // Pro-rated earned basic and allowances based on paid days
+        let earnBasic = basicRate;
+        let earnAllowance = allowanceRate;
+        if (periodDays > 0 && paidDays < periodDays) {
+          earnBasic = Number(((basicRate / periodDays) * paidDays).toFixed(2));
+          earnAllowance = Number(((allowanceRate / periodDays) * paidDays).toFixed(2));
+        } else if (Number(row.basicPay) > 0 && Number(row.basicPay) !== basicRate) {
+          earnBasic = Number(row.basicPay);
+        }
+
+        const totalEarn = Number((earnBasic + earnAllowance).toFixed(2));
+        const washingAll = Number(row.compensation) || 0;
+        const otAmount = Number(row.otAmount) || 0;
+        const grossSalary = Number((totalEarn + washingAll + otAmount).toFixed(2));
+        const epfWages = Math.min(15000, earnBasic);
+
+        const pfDeduction = Number(row.pfDeduction) || 0;
+        const esicDeduction = Number(row.esicDeduction) || 0;
+        const emiDeduction = Number(row.emiDeduction) || 0;
+        const penalty = Number(row.otherDeductions) || 0;
+        const canteen = Number(row.canteenDeduction) || 0;
+        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + canteen).toFixed(2));
+        const netSalary = Number(row.netSalary) || Math.max(0, Number((grossSalary - totalDeductions).toFixed(2)));
+
+        const rowValues = [
+          idx + 1,                                                                     // 1: Sr. No.
+          row.employeeCode || row.biometricEmployeeCode || empRecord.biometricEmployeeCode || "", // 2: EMPCODE
+          row.employeeName || row.candidateName || empRecord.candidateName || "",                 // 3: NAME
+          row.pfNo || row.uanNo || empRecord.pfNo || "",                                         // 4: UAN NO.
+          row.esicNo || row.ipNo || empRecord.esicNo || "",                                       // 5: IP No.
+          periodDays,                                                                  // 6: TOTAL_DAYS
+          paidDays,                                                                    // 7: PAID_DAYS
+          absentDays,                                                                  // 8: ABSENT_DAYS
+          0,                                                                          // 9: OT HRS
+          basicRate,                                                                   // 10: BASIC+DA
+          earnBasic,                                                                   // 11: EARN BASIC+DA
+          allowanceRate,                                                               // 12: ALLOW_RATE(TA,MOB,HRA,CON.)
+          earnAllowance,                                                               // 13: EARN ALLOW (TA,MOB,HRA,CON.)
+          totalEarn,                                                                   // 14: TOTAL
+          washingAll,                                                                  // 15: WASHING ALL.
+          otAmount,                                                                    // 16: OT
+          grossSalary,                                                                 // 17: GROSS
+          epfWages,                                                                    // 18: EPF WAGES
+          pfDeduction,                                                                 // 19: PF
+          0,                                                                          // 20: LABOUR WELFARE FUND
+          esicDeduction,                                                               // 21: ESIC
+          emiDeduction,                                                                // 22: ADV
+          penalty,                                                                     // 23: Penalty
+          canteen,                                                                     // 24: Canteen
+          totalDeductions,                                                             // 25: TOTAL DEDUCTION
+          netSalary,                                                                   // 26: NET SALARY
+          0,                                                                          // 27: Diwali Bonus
+          netSalary,                                                                   // 28: NET PAY AMOUNT
+          row.paymentMode || row.payMode || empRecord.payMode || "Cash",               // 29: PAY-MODE
+          row.bankAccountNo || empRecord.bankAccountNo || "",                            // 30: BANK A/C NO.
+          row.ifscCode || empRecord.ifscCode || "",                                    // AE: IFSC
+          row.remarks || "",                                                           // AF: REMARK
+        ];
+
+        const excelRow = ws.getRow(rIdx);
+        rowValues.forEach((val, cIdx) => {
+          const colNum = cIdx + 1;
+          const cell = excelRow.getCell(colNum);
+          cell.value = val;
+          cell.font = { name: "Calibri", size: 9, bold: false };
+          cell.alignment = { horizontal: "left", vertical: "middle" };
+          cell.border = normalBorder;
+          if (typeof val === "number" && colNum >= 6 && colNum <= 28) {
+            columnSums[colNum] = (columnSums[colNum] || 0) + val;
+          }
+        });
+        excelRow.commit();
+      });
+
+      // 8. Place the dynamic TOTAL row at the very bottom of the data
+      const totalRowIdx = startRowIdx + rows.length;
+      try { ws.mergeCells(`A${totalRowIdx}:E${totalRowIdx}`); } catch (e) {}
+
+      const totalRow = ws.getRow(totalRowIdx);
+      for (let c = 1; c <= 32; c++) {
+        const cell = totalRow.getCell(c);
+        cell.border = normalBorder;
+        cell.alignment = { horizontal: "left", vertical: "middle" };
+      }
+      const cellTotalLabel = totalRow.getCell(1);
+      cellTotalLabel.value = "TOTAL";
+      cellTotalLabel.alignment = { horizontal: "center", vertical: "middle" };
+      cellTotalLabel.font = { bold: true };
+
+      // Set numeric sum totals in bold
+      for (let c = 6; c <= 28; c++) {
+        const sumVal = columnSums[c] !== undefined ? columnSums[c] : null;
+        const cell = totalRow.getCell(c);
+        cell.value = sumVal !== null ? (Number.isInteger(sumVal) ? sumVal : Number(sumVal.toFixed(2))) : null;
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: "left", vertical: "middle" };
+      }
+      totalRow.commit();
+
+      // 9. Download the exact populated Excel spreadsheet with full preserved styles & centered titles
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `Payroll_Register_${activeMode}_${period}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.dismiss(toastId);
+      toast.success(`Exported ${rows.length} rows with bottom TOTAL row!`);
+    } catch (err) {
+      toast.dismiss(toastId);
+      console.error("Export error:", err);
+      toast.error("Export failed: " + (err?.message || "Unknown error"));
+    }
   };
 
   // Export Summary PDF with statutory compliance columns
@@ -1046,7 +1292,7 @@ const Payroll = () => {
             className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm text-sm"
           >
             <Download size={16} />
-            Export CSV
+            Export Excel (Payroll Formate)
           </button>
           <button
             onClick={handleExportPDF}
@@ -1223,7 +1469,7 @@ const Payroll = () => {
                   <th className="py-4 px-4 sticky top-0 left-0 bg-gray-50 z-30 shadow-[2px_2px_5px_-2px_rgba(0,0,0,0.1)]">Emp Details</th>
                   <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Payable Days</th>
                   <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Paid Leaves</th>
-                  <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Unpaid Leaves (LWP)</th>
+                  <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Absent</th>
                   <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">Basic Pay (₹)</th>
                   <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">Allowance (₹)</th>
                   <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">OT & Comp (₹)</th>
