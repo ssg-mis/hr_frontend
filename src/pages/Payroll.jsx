@@ -12,6 +12,7 @@ import toast from "react-hot-toast";
 import { generatePayslipPDF, generateBulkPayslipsPDF } from "../lib/generatePayslipPDF";
 import PayslipPreviewModal from "../components/PayslipPreviewModal";
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 // Helper to safely invoke autoTable regardless of build bundle structure
 const applyAutoTable = (doc, options) => {
@@ -854,26 +855,16 @@ const Payroll = () => {
           "July", "August", "September", "October", "November", "December"
         ];
         const mName = monthNames[parseInt(m, 10) - 1] || m;
-        return `${mName}-${y}`;
+        return `${mName}. -${y}`;
       }
       return selectedMonth;
     }
     return `${startDate} to ${endDate}`;
   };
 
-  // Helper to escape CSV values according to RFC-4180
-  const escapeCSV = (val) => {
-    if (val === null || val === undefined) return "";
-    const str = String(val);
-    if (str.includes(",") || str.includes("\n") || str.includes("\r") || str.includes('"')) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
-  };
-
-  // Export: Generates exact client-formatted CSV with multi-line stacked headers and company titles
+  // Export: Directly loads and fills data into the provided Payroll Formate.xlsx template using ExcelJS
   const handleExportCSV = async () => {
-    const toastId = toast.loading("Generating CSV export...");
+    const toastId = toast.loading("Generating Excel export from Payroll Formate template...");
     try {
       const period = activeMode === "Monthly" ? selectedMonth : `${startDate}:${endDate}`;
 
@@ -885,71 +876,80 @@ const Payroll = () => {
         return;
       }
 
-      // 2. Calculate period days
+      // 2. Fetch the exact provided template file (first from static public, then API fallback)
+      let templateBuf = null;
+      try {
+        const staticRes = await fetch("/payroll_template.xlsx");
+        if (staticRes.ok) {
+          const ab = await staticRes.arrayBuffer();
+          const u8 = new Uint8Array(ab);
+          if (u8.length > 4 && u8[0] === 0x50 && u8[1] === 0x4b) {
+            templateBuf = ab;
+          }
+        }
+      } catch (e) {
+        console.warn("Public template fetch error:", e);
+      }
+
+      if (!templateBuf) {
+        try {
+          const templateRes = await api.get("/salaries/template", { responseType: "arraybuffer" });
+          if (templateRes.data) {
+            templateBuf = templateRes.data;
+          }
+        } catch (e) {
+          console.warn("API template fetch error:", e);
+        }
+      }
+
+      if (!templateBuf) {
+        toast.dismiss(toastId);
+        toast.error("Failed to load Payroll Formate template.");
+        return;
+      }
+
+      // 3. Load the workbook with ExcelJS (preserves all cell styles, borders, fonts, and full merges)
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(templateBuf);
+      const ws = wb.getWorksheet("POWER") || wb.worksheets[0];
+
+      // 4. Center top 2 title lines across the table width
+      const periodSubtitle = activeMode === "Monthly"
+        ? `Salary Register For Month : ${getDynamicPeriodLabel()}`
+        : `Salary Register For Period : ${getDynamicPeriodLabel()}`;
+
+      const cellA1 = ws.getCell("A1");
+      cellA1.alignment = { horizontal: "center", vertical: "middle" };
+
+      const cellA2 = ws.getCell("A2");
+      cellA2.value = periodSubtitle;
+      cellA2.alignment = { horizontal: "center", vertical: "middle" };
+
+      // Ensure merges exist for A1:AF1, A2:AF2, and S3:Y3
+      try { ws.mergeCells("A1:AF1"); } catch (e) {}
+      try { ws.mergeCells("A2:AF2"); } catch (e) {}
+      try { ws.mergeCells("S3:Y3"); } catch (e) {}
+
+      // 5. Calculate total days in period
       let periodDays = 30;
       if (activeMode === "Monthly" && selectedMonth) {
         const [yStr, mStr] = selectedMonth.split("-");
         if (yStr && mStr) periodDays = new Date(parseInt(yStr, 10), parseInt(mStr, 10), 0).getDate();
       }
 
-      const totalCols = 32;
-      const centerColIdx = 12; // Visual center column of 32-column table (Col M/N)
+      // 6. Clear dummy rows beyond the actual data count
+      const startRowIdx = 5; // Row 5 (1-indexed in ExcelJS)
+      const totalNewRows = rows.length;
+      for (let r = startRowIdx + totalNewRows; r <= 200; r++) {
+        const row = ws.getRow(r);
+        for (let c = 1; c <= 32; c++) {
+          row.getCell(c).value = null;
+        }
+      }
 
-      // 3. Top Title Rows (Positioned at table center so they appear centered across all columns)
-      const companyTitle = "SHRI SHYAM WAREHOUSING & POWER PVT. LTD.";
-      const periodTitle = activeMode === "Monthly"
-        ? `Salary Register for Month : ${getDynamicPeriodLabel()}`
-        : `Salary Register for Period : ${getDynamicPeriodLabel()}`;
-
-      const formatCenteredRow = (titleText) => {
-        const row = Array(totalCols).fill("");
-        row[centerColIdx] = titleText;
-        return row.map(escapeCSV).join(",");
-      };
-
-      const titleRow1 = formatCenteredRow(companyTitle);
-      const titleRow2 = formatCenteredRow(periodTitle);
-
-      // 4. Header Row with Client Narrow-Column Stacked/Wrapped Headers
-      const headers = [
-        "Sr.\nNo.",
-        "EMPC\nODE",
-        "NAME",
-        "UAN NO.",
-        "IP No.",
-        "TO\nTAL\n_D\nAY\nS",
-        "PAI\nD_\nDA\nYS",
-        "AB\nSE\nNT\n_D\nAY\nS",
-        "OT\nHR\nS",
-        "BASIC+D\nA",
-        "EARN\nBASIC+DA",
-        "ALLOW_R\nATE(TA,M\nOB,HRA,C\nON.)",
-        "EARN ALLOW\n(TA,MOB,HRA\n,CON.)",
-        "TOTAL",
-        "WASHING\nALL.",
-        "OT",
-        "GROSS",
-        "EPF WAGES",
-        "PF",
-        "LABOUR\nWELFARE\nFUND",
-        "ESIC",
-        "ADV",
-        "Penalty",
-        "Canteen",
-        "TOTAL\nDEDUCTION",
-        "NET SALARY",
-        "Diwali\nBonus",
-        "NET PAY\nAMOUNT",
-        "PAY-\nMODE",
-        "BANK A/C NO.",
-        "IFSC",
-        "REMARK",
-      ];
-
-      const headerRow = headers.map(escapeCSV).join(",");
-
-      // 5. Data Rows (preserving existing calculations and field mappings)
-      const dataRows = rows.map((row, idx) => {
+      // 7. Populate employee records starting at Row 5 into the provided template
+      rows.forEach((row, idx) => {
+        const rIdx = idx + startRowIdx;
         const daysWorked = Number(row.daysWorked) || 0;
         const unpaidLeaves = Number(row.unpaidLeaves) != null ? Number(row.unpaidLeaves) : Math.max(0, periodDays - daysWorked);
         const basicPay = Number(row.basicPay) || 0;
@@ -967,7 +967,7 @@ const Payroll = () => {
         const netSalary = Number(row.netSalary) || Math.max(0, grossSalary - totalDeductions);
         const basicRate = Number(row.basicSalary || row.baseSalary) || 0;
 
-        const cells = [
+        const rowValues = [
           idx + 1,                                                   // 1: Sr. No.
           row.employeeCode || row.biometricEmployeeCode || "",       // 2: EMPCODE
           row.employeeName || row.candidateName || "",               // 3: NAME
@@ -1002,25 +1002,27 @@ const Payroll = () => {
           row.remarks || "",                                        // 32: REMARK
         ];
 
-        return cells.map(escapeCSV).join(",");
+        const excelRow = ws.getRow(rIdx);
+        rowValues.forEach((val, cIdx) => {
+          excelRow.getCell(cIdx + 1).value = val;
+        });
+        excelRow.commit();
       });
 
-      // 6. Build Final CSV with UTF-8 BOM
-      const csvString = "\uFEFF" + [titleRow1, titleRow2, headerRow, ...dataRows].join("\r\n");
-
-      // 7. Trigger CSV Download
-      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+      // 8. Download the exact populated Excel spreadsheet with full preserved styles & centered titles
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `Payroll_Export_${activeMode}_${period}.csv`);
+      link.setAttribute("download", `Payroll_Register_${activeMode}_${period}.xlsx`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
       toast.dismiss(toastId);
-      toast.success(`Exported ${rows.length} records to CSV successfully!`);
+      toast.success(`Exported ${rows.length} rows into Payroll Formate template!`);
     } catch (err) {
       toast.dismiss(toastId);
       console.error("Export error:", err);
@@ -1227,7 +1229,7 @@ const Payroll = () => {
             className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm text-sm"
           >
             <Download size={16} />
-            Export CSV
+            Export Excel (Payroll Formate)
           </button>
           <button
             onClick={handleExportPDF}
