@@ -431,6 +431,7 @@ const Payroll = () => {
         const esicRecord = esicByEmployeeId.get(Number(run.employeeId)) || {};
 
         const monthlyBase = Number(salRecord.baseSalary || run.basicPay || 0);
+        const monthlyAllowance = Number(salRecord.allowanceSalary || run.allowance || 0);
         const { compSum: liveComp, otHours: liveOtHrs } = getApprovedCompensationDetails(run.employeeId, monthlyBase);
 
         // Merge live compensation if saved compensation is less than live approved compensation, or if status is Draft
@@ -1103,7 +1104,7 @@ const Payroll = () => {
           periodDays,                                                                  // 6: TOTAL_DAYS
           paidDays,                                                                    // 7: PAID_DAYS
           absentDays,                                                                  // 8: ABSENT_DAYS
-          0,                                                                          // 9: OT HRS
+          Number(row.otHrs) || 0,                                                      // 9: OT HRS
           basicRate,                                                                   // 10: BASIC+DA
           earnBasic,                                                                   // 11: EARN BASIC+DA
           allowanceRate,                                                               // 12: ALLOW_RATE(TA,MOB,HRA,CON.)
