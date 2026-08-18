@@ -45,6 +45,7 @@ const CompensationManagement = lazy(() => import('./pages/CompensationManagement
 const PFManagement = lazy(() => import('./pages/PFManagement'));
 const ESICManagement = lazy(() => import('./pages/ESICManagement'));
 const MasterData = lazy(() => import('./pages/MasterData'));
+const OvertimeManagement = lazy(() => import('./pages/OvertimeManagement'));
 
 function App() {
   return (
@@ -110,6 +111,7 @@ function App() {
               <Route path="attendance-logs" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceLogs /></ProtectedRoute>} />
               <Route path="attendance-dashboard" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><AttendanceDashboard /></ProtectedRoute>} />
               <Route path="shift-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><ShiftManagement /></ProtectedRoute>} />
+              <Route path="overtime-management" element={<OvertimeManagement />} />
               <Route path="canteen" element={<CanteenDashboard />} />
             </Route>
 

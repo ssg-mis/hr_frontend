@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Search, Calendar, Clock, Download, Plus, Check, X, FileText,
   BarChart3, CreditCard, Calculator, Filter, Eye, Trash2, Save,
-  AlertCircle, ChevronLeft, ChevronRight, User, Settings, ShieldAlert, BadgeInfo, Printer
+  AlertCircle, ChevronLeft, ChevronRight, User, Settings, ShieldAlert, BadgeInfo, Printer,
+  Building2, Info
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -39,7 +40,10 @@ const Payroll = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("All");
+  const [companyFilter, setCompanyFilter] = useState("All");
+  const [payModeFilter, setPayModeFilter] = useState("All");
+  const [companies, setCompanies] = useState([]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -59,7 +63,7 @@ const Payroll = () => {
   // Reset page to 1 when filters or search change
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, departmentFilter, selectedMonth, activeMode, startDate, endDate]);
+  }, [debouncedSearch, departmentFilter, companyFilter, payModeFilter, selectedMonth, activeMode, startDate, endDate]);
 
   // Raw data from APIs
   const [employees, setEmployees] = useState([]);
@@ -184,7 +188,7 @@ const Payroll = () => {
   const loadBaseData = async () => {
     setLoading(true);
     try {
-      const [empRes, salRes, pfRes, esicRes, emiRes, compRes, leavesRes] = await Promise.all([
+      const [empRes, salRes, pfRes, esicRes, emiRes, compRes, leavesRes, branchRes] = await Promise.all([
         api.get("/employees"),
         api.get("/salaries?limit=1000"),
         api.get("/pf/payroll"),
@@ -192,6 +196,7 @@ const Payroll = () => {
         api.get("/emis"),
         api.get("/compensation"),
         api.get("/leaves?limit=10000"),
+        api.get("/company-branches").catch(() => ({ data: [] })),
       ]);
 
       const activeEmps = getArrayData(empRes).filter(e => e.status === "Active");
@@ -200,6 +205,7 @@ const Payroll = () => {
       setPfDetailsList(getArrayData(pfRes));
       setEsicDetailsList(getArrayData(esicRes));
       setEmisList(getArrayData(emiRes).filter(e => e.status === "Active"));
+      setCompanies(getArrayData(branchRes));
 
       const allComps = getArrayData(compRes);
       const approvedComps = allComps.filter(c => {
@@ -278,22 +284,18 @@ const Payroll = () => {
         limit: pageSize.toString(),
       });
       if (debouncedSearch) params.append("search", debouncedSearch);
-      if (departmentFilter) params.append("department", departmentFilter);
+      if (departmentFilter && departmentFilter !== "All") params.append("department", departmentFilter);
+      if (companyFilter && companyFilter !== "All") params.append("branchId", companyFilter);
+      if (payModeFilter && payModeFilter !== "All") params.append("payMode", payModeFilter);
 
       const savedRes = await api.get(`/salaries/payroll?${params.toString()}`);
-      const savedData = savedRes.data;
+      const savedList = Array.isArray(savedRes?.data) ? savedRes.data : (Array.isArray(savedRes) ? savedRes : []);
+      const totalCount = Number(savedRes?.total ?? (savedRes?.data?.total ?? savedList.length));
+      const totalPagesCount = Number(savedRes?.totalPages ?? Math.max(1, Math.ceil(totalCount / pageSize)));
 
-      if (savedData && typeof savedData === "object" && !Array.isArray(savedData)) {
-        const savedList = savedData.data || [];
-        setSavedPayrollRuns(savedList);
-        setTotalRecords(savedData.total ?? savedList.length);
-        setTotalServerPages(savedData.totalPages ?? 1);
-      } else {
-        const savedList = Array.isArray(savedData) ? savedData : [];
-        setSavedPayrollRuns(savedList);
-        setTotalRecords(savedList.length);
-        setTotalServerPages(Math.max(1, Math.ceil(savedList.length / pageSize)));
-      }
+      setSavedPayrollRuns(savedList);
+      setTotalRecords(totalCount);
+      setTotalServerPages(totalPagesCount);
     } catch (err) {
       console.error("Error loading payroll page data:", err);
     } finally {
@@ -303,11 +305,12 @@ const Payroll = () => {
 
   useEffect(() => {
     loadPayrollPageData();
-  }, [activeMode, selectedMonth, startDate, endDate, currentPage, pageSize, debouncedSearch, departmentFilter]);
+  }, [activeMode, selectedMonth, startDate, endDate, currentPage, pageSize, debouncedSearch, departmentFilter, companyFilter, payModeFilter]);
 
-  // Helper to compute approved live compensation for an employee in current period
-  const getApprovedCompensationAmount = (empId, monthlyBase) => {
+  // Helper to compute approved live compensation & OT hours for an employee in current period
+  const getApprovedCompensationDetails = (empId, monthlyBase) => {
     let compSum = 0;
+    let otHoursSum = 0;
     const empComps = compensationByEmployeeId.get(Number(empId)) || [];
     if (activeMode === "Monthly") {
       const [yearStr, monthStr] = selectedMonth.split("-").map(Number);
@@ -326,10 +329,11 @@ const Payroll = () => {
         }
         if (dateMatch) {
           let compAmt = 0;
+          const hours = (c.hours !== undefined && c.hours !== null) ? parseFloat(c.hours) : 0;
+          otHoursSum += hours;
           if (c.amount !== undefined && c.amount !== null && parseFloat(c.amount) > 0) {
             compAmt = parseFloat(c.amount);
-          } else if (c.hours !== undefined && c.hours !== null && parseFloat(c.hours) > 0) {
-            const hours = parseFloat(c.hours);
+          } else if (hours > 0) {
             const hourlyRate = monthlyBase > 0 ? (monthlyBase / 240) * 1.5 : 0;
             compAmt = parseFloat((hours * hourlyRate).toFixed(2));
           }
@@ -350,10 +354,11 @@ const Payroll = () => {
         }
         if (dateMatch) {
           let compAmt = 0;
+          const hours = (c.hours !== undefined && c.hours !== null) ? parseFloat(c.hours) : 0;
+          otHoursSum += hours;
           if (c.amount !== undefined && c.amount !== null && parseFloat(c.amount) > 0) {
             compAmt = parseFloat(c.amount);
-          } else if (c.hours !== undefined && c.hours !== null && parseFloat(c.hours) > 0) {
-            const hours = parseFloat(c.hours);
+          } else if (hours > 0) {
             const hourlyRate = monthlyBase > 0 ? (monthlyBase / 240) * 1.5 : 0;
             compAmt = parseFloat((hours * hourlyRate).toFixed(2));
           }
@@ -361,7 +366,14 @@ const Payroll = () => {
         }
       });
     }
-    return parseFloat(compSum.toFixed(2));
+    return {
+      compSum: parseFloat(compSum.toFixed(2)),
+      otHours: parseFloat(otHoursSum.toFixed(1))
+    };
+  };
+
+  const getApprovedCompensationAmount = (empId, monthlyBase) => {
+    return getApprovedCompensationDetails(empId, monthlyBase).compSum;
   };
 
   // Helper to compute live canteen deduction for an employee in current period
@@ -391,6 +403,21 @@ const Payroll = () => {
     }
   };
 
+  // Helper to compute current period days
+  const currentPeriodDays = useMemo(() => {
+    let days = 30;
+    if (activeMode === "Monthly" && selectedMonth) {
+      const [yStr, mStr] = selectedMonth.split("-");
+      if (yStr && mStr) days = new Date(parseInt(yStr, 10), parseInt(mStr, 10), 0).getDate();
+    } else if (activeMode === "Daily" && startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const diffTime = Math.abs(end.getTime() - start.getTime());
+      days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    }
+    return days;
+  }, [activeMode, selectedMonth, startDate, endDate]);
+
   // Trigger recalculations when base data or period data updates
   useEffect(() => {
     if (employees.length === 0) return;
@@ -398,10 +425,13 @@ const Payroll = () => {
     // If we have saved payroll records in the DB for this period, load them directly.
     if (savedPayrollRuns.length > 0) {
       const rows = savedPayrollRuns.map(run => {
-        const empRecord = employeeById.get(Number(run.employeeId));
-        const salRecord = salaryByEmployeeId.get(Number(run.employeeId));
-        const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : parseFloat(run.basicPay || 0);
-        const liveComp = getApprovedCompensationAmount(run.employeeId, monthlyBase);
+        const empRecord = employeeById.get(Number(run.employeeId)) || {};
+        const salRecord = salaryByEmployeeId.get(Number(run.employeeId)) || {};
+        const pfRecord = pfByEmployeeId.get(Number(run.employeeId)) || {};
+        const esicRecord = esicByEmployeeId.get(Number(run.employeeId)) || {};
+
+        const monthlyBase = Number(salRecord.baseSalary || run.basicPay || 0);
+        const { compSum: liveComp, otHours: liveOtHrs } = getApprovedCompensationDetails(run.employeeId, monthlyBase);
 
         // Merge live compensation if saved compensation is less than live approved compensation, or if status is Draft
         const finalComp = (run.status === "Draft" || parseFloat(run.compensation || 0) < liveComp)
@@ -416,39 +446,96 @@ const Payroll = () => {
 
         const basicPay = parseFloat(run.basicPay || 0);
         const allowance = parseFloat(run.allowance || 0);
-        const grossSalary = parseFloat((basicPay + allowance + finalComp).toFixed(2));
+        const earnBasic = basicPay;
+        const earnAllowance = allowance;
+        const totalEarn = parseFloat((earnBasic + earnAllowance).toFixed(2));
+        const otAmount = (run.status === "Draft" || parseFloat(run.otAmount || 0) < finalComp)
+          ? finalComp
+          : parseFloat(run.otAmount || 0);
+        const finalOtHrs = (run.status === "Draft" || parseFloat(run.otHrs || 0) < liveOtHrs)
+          ? liveOtHrs
+          : parseFloat(run.otHrs || 0);
+        const grossSalary = parseFloat((totalEarn + otAmount).toFixed(2));
+        const epfWages = Math.min(15000, earnBasic);
 
         const pfDeduction = parseFloat(run.pfDeduction || 0);
+        const lwfDeduction = parseFloat(run.lwfDeduction || 0);
         const esicDeduction = parseFloat(run.esicDeduction || 0);
         const emiDeduction = parseFloat(run.emiDeduction || 0);
         const leaveAdjustment = parseFloat(run.leaveAdjustment || 0);
         const otherDeductions = parseFloat(run.otherDeductions || 0);
 
         const totalDeductions = parseFloat(
-          (pfDeduction + esicDeduction + emiDeduction + finalCanteen + leaveAdjustment + otherDeductions).toFixed(2)
+          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + leaveAdjustment + otherDeductions).toFixed(2)
         );
         const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
+        const diwaliBonus = parseFloat(run.diwaliBonus || 0);
+        const netPayAmount = parseFloat((netSalary + diwaliBonus).toFixed(2));
+
+        const paidDays = parseFloat(run.daysWorked != null ? run.daysWorked : 30);
+        
+        // Compute absentDays from attendance records or fallback
+        const empAtt = attendanceByEmployeeId.get(Number(run.employeeId)) || [];
+        let absentDays = 0;
+        if (empAtt.length > 0) {
+          const presentLogs = empAtt.filter(a => a.status === "Present" || a.punchIn || a.firstCheckIn);
+          const presentDates = new Set(
+            presentLogs.map(a => {
+              const d = a.workDate || a.date || a.attendanceDate || '';
+              return typeof d === 'string' ? d.slice(0, 10) : (d ? new Date(d).toISOString().slice(0, 10) : '');
+            })
+          );
+          presentDates.delete('');
+          const absentLogs = empAtt.filter(a => a.status === "Absent");
+          const absentDates = new Set(
+            absentLogs.map(a => {
+              const d = a.workDate || a.date || a.attendanceDate || '';
+              return typeof d === 'string' ? d.slice(0, 10) : (d ? new Date(d).toISOString().slice(0, 10) : '');
+            })
+          );
+          absentDates.delete('');
+          for (const p of presentDates) absentDates.delete(p);
+          absentDays = absentDates.size;
+        } else {
+          absentDays = Math.max(0, currentPeriodDays - paidDays);
+        }
 
         return {
           ...run,
           branchName: run.branchName || empRecord?.branchName || "—",
           branchAddress: run.branchAddress || empRecord?.branchAddress || "",
-          paymentMode: run.paymentMode || "Cash",
-          daysWorked: parseFloat(run.daysWorked),
+          paymentMode: (run.paymentMode || empRecord?.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH",
+          bankAccountNo: empRecord?.bankAccountNo || "—",
+          ifscCode: empRecord?.ifscCode || "—",
+          uanNo: pfRecord.uanNo || empRecord.pfNo || empRecord.uanNo || "—",
+          ipNo: esicRecord.esicNumber || esicRecord.ipNo || empRecord.esicNo || empRecord.ipNo || "—",
+          periodDays: currentPeriodDays,
+          daysWorked: paidDays,
           paidLeaves: 0,
-          unpaidLeaves: parseFloat(run.leaveAdjustment ? (parseFloat(run.leaveAdjustment) / (parseFloat(run.basicPay || 1) / 30)).toFixed(0) : 0),
+          unpaidLeaves: absentDays,
+          basicRate: monthlyBase,
+          earnBasic,
+          allowanceRate: monthlyAllowance,
+          earnAllowance,
+          totalEarn,
           basicPay,
           allowance,
           compensation: finalComp,
+          otAmount,
+          otHrs: finalOtHrs,
           leaveAdjustment,
           grossSalary,
+          epfWages,
           pfDeduction,
+          lwfDeduction,
           esicDeduction,
           emiDeduction,
           canteenDeduction: finalCanteen,
           otherDeductions,
           totalDeductions,
           netSalary,
+          diwaliBonus,
+          netPayAmount,
           isSaved: true
         };
       });
@@ -477,16 +564,8 @@ const Payroll = () => {
       const monthlyEmi = activeEmis.reduce((sum, item) => sum + parseFloat(item.emiAmount), 0);
 
       // Calculate days in period
-      let daysInPeriod = 30;
-      let workedDays = 30;
-
-      if (activeMode === "Daily") {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        const diffTime = Math.abs(end.getTime() - start.getTime());
-        daysInPeriod = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        workedDays = daysInPeriod;
-      }
+      const daysInPeriod = currentPeriodDays;
+      let workedDays = daysInPeriod;
 
       // Calculate leaves (Paid vs LWP Unpaid)
       const empLeaves = leavesByEmployeeId.get(Number(emp.id)) || [];
@@ -540,80 +619,103 @@ const Payroll = () => {
         });
       }
 
-      // Attendance integration: Present Days & Unexcused Absences from actual DB records
+      // Attendance integration: Present Days & Unexcused Absences from actual DB records (distinct dates)
       const empAttRecords = attendanceByEmployeeId.get(Number(emp.id)) || [];
       const presentLogs = empAttRecords.filter(a => a.status === "Present" || a.punchIn || a.firstCheckIn);
-      let presentDaysCount = presentLogs.length;
+      const presentDates = new Set(
+        presentLogs.map(a => {
+          const d = a.workDate || a.date || a.attendanceDate || '';
+          return typeof d === 'string' ? d.slice(0, 10) : (d ? new Date(d).toISOString().slice(0, 10) : '');
+        })
+      );
+      presentDates.delete('');
+      const presentDaysCount = presentDates.size;
 
-      // Count unexcused absent days from attendance logs (status === "Absent")
-      const unexcusedAbsents = empAttRecords.filter(a => a.status === "Absent").length;
+      // Count unexcused absent days from attendance logs (status === "Absent", excluding any date marked present)
+      const absentLogs = empAttRecords.filter(a => a.status === "Absent");
+      const absentDates = new Set(
+        absentLogs.map(a => {
+          const d = a.workDate || a.date || a.attendanceDate || '';
+          return typeof d === 'string' ? d.slice(0, 10) : (d ? new Date(d).toISOString().slice(0, 10) : '');
+        })
+      );
+      absentDates.delete('');
+      for (const pDate of presentDates) {
+        absentDates.delete(pDate);
+      }
+      const unexcusedAbsents = absentDates.size;
 
       // Total Unpaid Leaves = Approved LWP + Unexcused Absents
       let totalUnpaidLeaves = lwpDays + unexcusedAbsents;
 
-      // Fallback for present days if attendance logs haven't been recorded for this period:
-      if (empAttRecords.length === 0) {
-        presentDaysCount = Math.max(0, workedDays - lwpDays - paidLeaveDays);
+      // If attendance logs exist, payableDays is the actual present days + paid leaves:
+      let payableDays = 0;
+      let absentDays = 0;
+
+      if (empAttRecords.length > 0) {
+        payableDays = presentDaysCount + paidLeaveDays;
+        absentDays = totalUnpaidLeaves;
+      } else {
+        // Fallback if attendance logs haven't been recorded for this period:
         totalUnpaidLeaves = lwpDays;
+        payableDays = Math.max(0, workedDays - totalUnpaidLeaves);
+        absentDays = totalUnpaidLeaves;
       }
 
-      // Payable Days = Total Period Days - Total Unpaid Leaves
-      let payableDays = Math.max(0, workedDays - totalUnpaidLeaves);
-
       // Calculate base and allowance for period
-      let basicPay = monthlyBase;
-      let allowance = monthlyAllowance;
-      let leaveAdjustment = 0;
+      let earnBasic = monthlyBase;
+      let earnAllowance = monthlyAllowance;
 
-      if (activeMode === "Monthly") {
-        leaveAdjustment = totalUnpaidLeaves > 0 ? parseFloat(((monthlyBase / 30) * totalUnpaidLeaves).toFixed(2)) : 0;
-      } else {
-        basicPay = parseFloat(((monthlyBase / 30) * payableDays).toFixed(2));
-        allowance = parseFloat(((monthlyAllowance / 30) * payableDays).toFixed(2));
-        leaveAdjustment = 0;
+      if (activeMode === "Daily") {
+        earnBasic = parseFloat(((monthlyBase / 30) * payableDays).toFixed(2));
+        earnAllowance = parseFloat(((monthlyAllowance / 30) * payableDays).toFixed(2));
+      } else if (daysInPeriod > 0 && payableDays < daysInPeriod) {
+        earnBasic = parseFloat(((monthlyBase / daysInPeriod) * payableDays).toFixed(2));
+        earnAllowance = parseFloat(((monthlyAllowance / daysInPeriod) * payableDays).toFixed(2));
+      }
+
+      const totalEarn = parseFloat((earnBasic + earnAllowance).toFixed(2));
+      let leaveAdjustment = 0;
+      if (activeMode === "Monthly" && totalUnpaidLeaves > 0) {
+        leaveAdjustment = parseFloat(((monthlyBase / 30) * totalUnpaidLeaves).toFixed(2));
       }
 
       // Fetch canteen deductions
       const canteenDeduction = getLiveCanteenDeductionForEmployee(emp.id);
 
       // Fetch approved overtime and special compensation
-      const compensation = getApprovedCompensationAmount(emp.id, monthlyBase);
+      const { compSum: compensation, otHours: otHrs } = getApprovedCompensationDetails(emp.id, monthlyBase);
+      const otAmount = compensation;
+
+      const grossSalary = parseFloat((totalEarn + compensation + otAmount).toFixed(2));
+      const epfWages = Math.min(15000, earnBasic);
 
       // PF Calculation
       let pfDeduction = 0;
       if (isPfOptedIn) {
-        if (activeMode === "Monthly") {
-          // Cap at 15000 base -> max 1800
-          const capSalary = Math.min(monthlyBase, 15000);
-          pfDeduction = parseFloat((capSalary * 0.12).toFixed(2));
-        } else {
-          // Daily: pro-rated capped basic (15000/30 = 500 per day limit)
-          const dailyBasic = basicPay;
-          const capDaily = Math.min(dailyBasic, 500 * workedDays);
-          pfDeduction = parseFloat((capDaily * 0.12).toFixed(2));
-        }
+        pfDeduction = parseFloat((epfWages * 0.12).toFixed(2));
       }
 
       // ESIC Calculation
       let esicDeduction = 0;
-      const grossForEsic = basicPay + allowance;
-      if (isEsicOptedIn) {
-        // statutory limit <= 21k (checked on overall monthly gross salary)
-        if ((monthlyBase + monthlyAllowance) <= 21000) {
-          esicDeduction = parseFloat((grossForEsic * 0.0075).toFixed(2));
-        }
+      if (isEsicOptedIn && (monthlyBase + monthlyAllowance) <= 21000) {
+        esicDeduction = parseFloat((grossSalary * 0.0075).toFixed(2));
       }
 
       // EMI Deduction
       let emiDeduction = monthlyEmi;
       if (activeMode === "Daily") {
-        // Daily Mode: pro-rate EMI
         emiDeduction = parseFloat(((monthlyEmi / 30) * workedDays).toFixed(2));
       }
 
-      const grossSalary = parseFloat((basicPay + allowance + compensation).toFixed(2));
-      const totalDeductions = parseFloat((pfDeduction + esicDeduction + emiDeduction + canteenDeduction + leaveAdjustment).toFixed(2));
+      const lwfDeduction = 0;
+      const otherDeductions = 0;
+      const totalDeductions = parseFloat(
+        (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + canteenDeduction + otherDeductions).toFixed(2)
+      );
       const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
+      const diwaliBonus = 0;
+      const netPayAmount = parseFloat((netSalary + diwaliBonus).toFixed(2));
 
       return {
         id: null, // DB id, null means unsaved
@@ -625,24 +727,40 @@ const Payroll = () => {
         branchAddress: emp.branchAddress || "",
         period: activeMode === "Monthly" ? selectedMonth : `${startDate}:${endDate}`,
         type: activeMode,
+        periodDays: daysInPeriod,
         daysWorked: payableDays,
         presentDays: presentDaysCount,
         paidLeaves: paidLeaveDays,
-        unpaidLeaves: totalUnpaidLeaves,
-        basicPay,
-        allowance,
+        unpaidLeaves: absentDays,
+        basicRate: monthlyBase,
+        earnBasic,
+        allowanceRate: monthlyAllowance,
+        earnAllowance,
+        totalEarn,
+        basicPay: earnBasic,
+        allowance: earnAllowance,
         compensation,
+        otAmount,
+        otHrs,
         leaveAdjustment,
         grossSalary,
+        epfWages,
         pfDeduction,
+        lwfDeduction,
         esicDeduction,
         emiDeduction,
         canteenDeduction,
-        otherDeductions: 0,
+        otherDeductions,
         totalDeductions,
         netSalary,
+        diwaliBonus,
+        netPayAmount,
         status: "Draft",
-        paymentMode: "Cash",
+        paymentMode: (emp.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH",
+        bankAccountNo: emp.bankAccountNo || "—",
+        ifscCode: emp.ifscCode || "—",
+        uanNo: pfRecord ? (pfRecord.uanNo || emp.pfNo || "—") : (emp.pfNo || "—"),
+        ipNo: esicRecord ? (esicRecord.esicNumber || esicRecord.ipNo || emp.esicNo || "—") : (emp.esicNo || "—"),
         payDate: todayStr,
         remarks: "",
         isSaved: false
@@ -650,7 +768,7 @@ const Payroll = () => {
     });
 
     setPayrollRows(generated);
-  }, [employees, salariesList, pfDetailsList, esicDetailsList, emisList, compensationList, canteenData, leavesList, attendanceData, savedPayrollRuns, activeMode, selectedMonth, startDate, endDate]);
+  }, [employees, salariesList, pfDetailsList, esicDetailsList, emisList, compensationList, canteenData, leavesList, attendanceData, savedPayrollRuns, activeMode, selectedMonth, startDate, endDate, currentPeriodDays]);
 
   // Recalculates calculated columns on input overrides
   const handleCellChange = (empId, field, val) => {
@@ -658,108 +776,85 @@ const Payroll = () => {
       prevRows.map(row => {
         if (row.employeeId !== empId) return row;
 
-        const updatedRow = { ...row, [field]: parseFloat(val) || 0 };
+        const numVal = parseFloat(val) || 0;
+        const updatedRow = { ...row, [field]: numVal };
 
-        // Calculate period days count for Daily Mode
-        let periodDaysCount = 30;
+        const periodDays = row.periodDays || currentPeriodDays || 30;
+        const basicRate = Number(row.basicRate || row.basicPay || 0);
+        const allowanceRate = Number(row.allowanceRate || row.allowance || 0);
+
+        if (field === "daysWorked") {
+          updatedRow.daysWorked = numVal;
+          updatedRow.unpaidLeaves = Math.max(0, periodDays - numVal);
+        } else if (field === "unpaidLeaves") {
+          updatedRow.unpaidLeaves = numVal;
+          updatedRow.daysWorked = Math.max(0, periodDays - numVal);
+        }
+
+        const pDays = updatedRow.daysWorked != null ? updatedRow.daysWorked : (periodDays - (updatedRow.unpaidLeaves || 0));
+        let earnBasic = basicRate;
+        let earnAllowance = allowanceRate;
         if (activeMode === "Daily") {
-          const start = new Date(startDate);
-          const end = new Date(endDate);
-          const diffTime = Math.abs(end.getTime() - start.getTime());
-          periodDaysCount = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+          earnBasic = parseFloat(((basicRate / 30) * pDays).toFixed(2));
+          earnAllowance = parseFloat(((allowanceRate / 30) * pDays).toFixed(2));
+        } else if (periodDays > 0 && pDays < periodDays) {
+          earnBasic = parseFloat(((basicRate / periodDays) * pDays).toFixed(2));
+          earnAllowance = parseFloat(((allowanceRate / periodDays) * pDays).toFixed(2));
         }
 
-        // If days worked changed, re-calculate basic, allowance, etc.
-        if (field === "daysWorked" && activeMode === "Daily") {
-          updatedRow.unpaidLeaves = Math.max(0, periodDaysCount - updatedRow.daysWorked);
+        updatedRow.earnBasic = earnBasic;
+        updatedRow.basicPay = earnBasic;
+        updatedRow.earnAllowance = earnAllowance;
+        updatedRow.allowance = earnAllowance;
+        updatedRow.totalEarn = parseFloat((earnBasic + earnAllowance).toFixed(2));
 
-          const salRecord = salaryByEmployeeId.get(Number(empId));
-          const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : 0;
-          const monthlyAllowance = salRecord ? parseFloat(salRecord.allowanceSalary) : 0;
+        const washingAll = updatedRow.compensation !== undefined ? updatedRow.compensation : (row.compensation || 0);
+        const otAmount = updatedRow.otAmount !== undefined ? updatedRow.otAmount : (row.otAmount || 0);
+        const grossSalary = parseFloat((updatedRow.totalEarn + washingAll + otAmount).toFixed(2));
+        updatedRow.grossSalary = grossSalary;
 
-          updatedRow.basicPay = parseFloat(((monthlyBase / 30) * updatedRow.daysWorked).toFixed(2));
-          updatedRow.allowance = parseFloat(((monthlyAllowance / 30) * updatedRow.daysWorked).toFixed(2));
+        const epfWages = Math.min(15000, earnBasic);
+        updatedRow.epfWages = epfWages;
 
-          // Re-calculate PF daily
-          const pfRecord = pfByEmployeeId.get(Number(empId));
-          const isPfOptedIn = pfRecord ? pfRecord.isOptedIn : (monthlyBase <= 15000);
-          if (isPfOptedIn) {
-            const capDaily = Math.min(updatedRow.basicPay, 500 * updatedRow.daysWorked);
-            updatedRow.pfDeduction = parseFloat((capDaily * 0.12).toFixed(2));
-          }
+        // PF Deduction
+        const pfRecord = pfByEmployeeId.get(Number(empId));
+        const isPfOptedIn = pfRecord ? pfRecord.isOptedIn : (basicRate <= 15000);
+        if (isPfOptedIn) {
+          updatedRow.pfDeduction = parseFloat((epfWages * 0.12).toFixed(2));
+        }
 
-          // Re-calculate ESIC daily
-          const esicRecord = esicByEmployeeId.get(Number(empId));
-          const isEsicOptedIn = esicRecord ? esicRecord.isOptedIn : ((monthlyBase + monthlyAllowance) <= 21000);
-          if (isEsicOptedIn && (monthlyBase + monthlyAllowance) <= 21000) {
-            updatedRow.esicDeduction = parseFloat(((updatedRow.basicPay + updatedRow.allowance) * 0.0075).toFixed(2));
-          }
+        // ESIC Deduction
+        const esicRecord = esicByEmployeeId.get(Number(empId));
+        const isEsicOptedIn = esicRecord ? esicRecord.isOptedIn : ((basicRate + allowanceRate) <= 21000);
+        if (isEsicOptedIn && (basicRate + allowanceRate) <= 21000) {
+          updatedRow.esicDeduction = parseFloat((grossSalary * 0.0075).toFixed(2));
+        }
 
-          // Re-calculate EMI daily
+        // Daily EMI Pro-rate
+        if (activeMode === "Daily") {
           const employeeEmis = activeEmiByEmployeeId.get(Number(empId)) || [];
           const activeEmis = employeeEmis.filter(e => e.status === "Active");
           const monthlyEmi = activeEmis.reduce((sum, item) => sum + parseFloat(item.emiAmount), 0);
-          updatedRow.emiDeduction = parseFloat(((monthlyEmi / 30) * updatedRow.daysWorked).toFixed(2));
+          updatedRow.emiDeduction = parseFloat(((monthlyEmi / 30) * pDays).toFixed(2));
         }
 
-        // Recalculate if unpaid leaves override is made in Daily mode
-        if (field === "unpaidLeaves" && activeMode === "Daily") {
-          updatedRow.daysWorked = Math.max(0, periodDaysCount - updatedRow.unpaidLeaves);
+        const pfDeduction = updatedRow.pfDeduction || 0;
+        const lwfDeduction = updatedRow.lwfDeduction || 0;
+        const esicDeduction = updatedRow.esicDeduction || 0;
+        const emiDeduction = updatedRow.emiDeduction || 0;
+        const penalty = updatedRow.otherDeductions !== undefined ? updatedRow.otherDeductions : (row.otherDeductions || 0);
+        const canteen = updatedRow.canteenDeduction || 0;
 
-          const salRecord = salaryByEmployeeId.get(Number(empId));
-          const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : 0;
-          const monthlyAllowance = salRecord ? parseFloat(salRecord.allowanceSalary) : 0;
-
-          updatedRow.basicPay = parseFloat(((monthlyBase / 30) * updatedRow.daysWorked).toFixed(2));
-          updatedRow.allowance = parseFloat(((monthlyAllowance / 30) * updatedRow.daysWorked).toFixed(2));
-
-          // Re-calculate PF daily
-          const pfRecord = pfByEmployeeId.get(Number(empId));
-          const isPfOptedIn = pfRecord ? pfRecord.isOptedIn : (monthlyBase <= 15000);
-          if (isPfOptedIn) {
-            const capDaily = Math.min(updatedRow.basicPay, 500 * updatedRow.daysWorked);
-            updatedRow.pfDeduction = parseFloat((capDaily * 0.12).toFixed(2));
-          }
-
-          // Re-calculate ESIC daily
-          const esicRecord = esicByEmployeeId.get(Number(empId));
-          const isEsicOptedIn = esicRecord ? esicRecord.isOptedIn : ((monthlyBase + monthlyAllowance) <= 21000);
-          if (isEsicOptedIn && (monthlyBase + monthlyAllowance) <= 21000) {
-            updatedRow.esicDeduction = parseFloat(((updatedRow.basicPay + updatedRow.allowance) * 0.0075).toFixed(2));
-          }
-
-          // Re-calculate EMI daily
-          const employeeEmis = activeEmiByEmployeeId.get(Number(empId)) || [];
-          const activeEmis = employeeEmis.filter(e => e.status === "Active");
-          const monthlyEmi = activeEmis.reduce((sum, item) => sum + parseFloat(item.emiAmount), 0);
-          updatedRow.emiDeduction = parseFloat(((monthlyEmi / 30) * updatedRow.daysWorked).toFixed(2));
-        }
-
-        // Recalculate Leave adjustment if unpaid leaves override is made in Monthly mode
-        if (field === "unpaidLeaves" && activeMode === "Monthly") {
-          const salRecord = salaryByEmployeeId.get(Number(empId));
-          const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : 0;
-          updatedRow.leaveAdjustment = parseFloat(((monthlyBase / 30) * updatedRow.unpaidLeaves).toFixed(2));
-          updatedRow.daysWorked = Math.max(0, 30 - updatedRow.unpaidLeaves);
-        }
-
-        // Totals recalculations
-        updatedRow.grossSalary = parseFloat(
-          (updatedRow.basicPay + updatedRow.allowance + updatedRow.compensation).toFixed(2)
+        const totalDeductions = parseFloat(
+          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + penalty + canteen).toFixed(2)
         );
-        updatedRow.totalDeductions = parseFloat(
-          (
-            updatedRow.pfDeduction +
-            updatedRow.esicDeduction +
-            updatedRow.emiDeduction +
-            updatedRow.canteenDeduction +
-            updatedRow.leaveAdjustment +
-            updatedRow.otherDeductions
-          ).toFixed(2)
-        );
-        updatedRow.netSalary = parseFloat(
-          Math.max(0, updatedRow.grossSalary - updatedRow.totalDeductions).toFixed(2)
-        );
+        updatedRow.totalDeductions = totalDeductions;
+
+        const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
+        updatedRow.netSalary = netSalary;
+
+        const diwaliBonus = updatedRow.diwaliBonus !== undefined ? updatedRow.diwaliBonus : (row.diwaliBonus || 0);
+        updatedRow.netPayAmount = parseFloat((netSalary + diwaliBonus).toFixed(2));
 
         return updatedRow;
       })
@@ -830,7 +925,9 @@ const Payroll = () => {
           limit: "10000",
         });
         if (debouncedSearch) params.append("search", debouncedSearch);
-        if (departmentFilter) params.append("department", departmentFilter);
+        if (departmentFilter && departmentFilter !== "All") params.append("department", departmentFilter);
+        if (companyFilter && companyFilter !== "All") params.append("branchId", companyFilter);
+        if (payModeFilter && payModeFilter !== "All") params.append("payMode", payModeFilter);
 
         const res = await api.get(`/salaries/payroll?${params.toString()}`);
         const exportList = res.data?.data || (Array.isArray(res.data) ? res.data : []);
@@ -1026,7 +1123,7 @@ const Payroll = () => {
           netSalary,                                                                   // 26: NET SALARY
           0,                                                                          // 27: Diwali Bonus
           netSalary,                                                                   // 28: NET PAY AMOUNT
-          row.paymentMode || row.payMode || empRecord.payMode || "Cash",               // 29: PAY-MODE
+          (row.paymentMode || row.payMode || empRecord.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH",               // 29: PAY-MODE
           row.bankAccountNo || empRecord.bankAccountNo || "",                            // 30: BANK A/C NO.
           row.ifscCode || empRecord.ifscCode || "",                                    // AE: IFSC
           row.remarks || "",                                                           // AF: REMARK
@@ -1238,7 +1335,7 @@ const Payroll = () => {
 
   const isSavedRun = savedPayrollRuns && savedPayrollRuns.length > 0;
 
-  // Filter rows based on search term and department
+  // Filter rows based on search term, department, company, and payMode
   const filteredRows = useMemo(() => {
     if (isSavedRun) {
       return payrollRows; // Already filtered & paginated by server
@@ -1246,15 +1343,25 @@ const Payroll = () => {
     return payrollRows.filter(row => {
       const matchesSearch =
         !searchTerm ||
-        row.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        row.employeeCode.toLowerCase().includes(searchTerm.toLowerCase());
+        (row.employeeName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (row.employeeCode || "").toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchesDept =
-        !departmentFilter || row.department === departmentFilter;
+        !departmentFilter || departmentFilter === "All" || row.department === departmentFilter;
 
-      return matchesSearch && matchesDept;
+      const matchesCompany =
+        !companyFilter || companyFilter === "All" ||
+        String(row.branchId) === String(companyFilter) ||
+        row.branchName === companyFilter;
+
+      const matchesPayMode =
+        !payModeFilter || payModeFilter === "All" ||
+        (row.paymentMode || "").toUpperCase() === payModeFilter.toUpperCase() ||
+        (row.payMode || "").toUpperCase() === payModeFilter.toUpperCase();
+
+      return matchesSearch && matchesDept && matchesCompany && matchesPayMode;
     });
-  }, [isSavedRun, payrollRows, searchTerm, departmentFilter]);
+  }, [isSavedRun, payrollRows, searchTerm, departmentFilter, companyFilter, payModeFilter]);
 
   const displayTotalRecords = isSavedRun ? totalRecords : filteredRows.length;
   const totalPages = isSavedRun
@@ -1272,6 +1379,62 @@ const Payroll = () => {
 
   const uniqueDepartments = Array.from(new Set(employees.map(e => e.departmentName).filter(Boolean)));
 
+  // Summary Totals calculated across paginatedRows (current visible page) or filteredRows
+  const summaryTotals = useMemo(() => {
+    const list = paginatedRows;
+    const totals = {
+      paidDays: 0,
+      absentDays: 0,
+      otHrs: 0,
+      basicRate: 0,
+      earnBasic: 0,
+      allowanceRate: 0,
+      earnAllowance: 0,
+      totalEarn: 0,
+      washingAll: 0,
+      otAmount: 0,
+      grossSalary: 0,
+      epfWages: 0,
+      pfDeduction: 0,
+      lwfDeduction: 0,
+      esicDeduction: 0,
+      emiDeduction: 0,
+      otherDeductions: 0,
+      canteenDeduction: 0,
+      totalDeductions: 0,
+      netSalary: 0,
+      diwaliBonus: 0,
+      netPayAmount: 0,
+    };
+
+    list.forEach(r => {
+      totals.paidDays += Number(r.daysWorked || 0);
+      totals.absentDays += Number(r.unpaidLeaves || 0);
+      totals.otHrs += Number(r.otHrs || 0);
+      totals.basicRate += Number(r.basicRate || r.basicPay || 0);
+      totals.earnBasic += Number(r.earnBasic || r.basicPay || 0);
+      totals.allowanceRate += Number(r.allowanceRate || r.allowance || 0);
+      totals.earnAllowance += Number(r.earnAllowance || r.allowance || 0);
+      totals.totalEarn += Number(r.totalEarn || ((r.earnBasic || r.basicPay || 0) + (r.earnAllowance || r.allowance || 0)));
+      totals.washingAll += Number(r.compensation || 0);
+      totals.otAmount += Number(r.otAmount || 0);
+      totals.grossSalary += Number(r.grossSalary || 0);
+      totals.epfWages += Number(r.epfWages || Math.min(15000, r.earnBasic || r.basicPay || 0));
+      totals.pfDeduction += Number(r.pfDeduction || 0);
+      totals.lwfDeduction += Number(r.lwfDeduction || 0);
+      totals.esicDeduction += Number(r.esicDeduction || 0);
+      totals.emiDeduction += Number(r.emiDeduction || 0);
+      totals.otherDeductions += Number(r.otherDeductions || 0);
+      totals.canteenDeduction += Number(r.canteenDeduction || 0);
+      totals.totalDeductions += Number(r.totalDeductions || 0);
+      totals.netSalary += Number(r.netSalary || 0);
+      totals.diwaliBonus += Number(r.diwaliBonus || 0);
+      totals.netPayAmount += Number(r.netPayAmount || r.netSalary || 0);
+    });
+
+    return totals;
+  }, [paginatedRows]);
+
   return (
     <div className="space-y-6">
       {/* Header Panel */}
@@ -1286,43 +1449,59 @@ const Payroll = () => {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={handleExportCSV}
-            className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm text-sm"
-          >
-            <Download size={16} />
-            Export Excel (Payroll Formate)
-          </button>
-          <button
-            onClick={handleExportPDF}
-            className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm text-sm"
-          >
-            <FileText size={16} />
-            Export Summary PDF
-          </button>
-          <button
-            onClick={handleBulkDownload}
-            disabled={payrollRows.length === 0}
-            className={`px-4 py-2 border text-sm rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm ${payrollRows.length === 0
-                ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
-                : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-              }`}
-          >
-            <Download size={16} />
-            Bulk Payslips PDF
-          </button>
-          <button
-            onClick={handleSavePayroll}
-            disabled={saving || payrollRows.length === 0}
-            className={`px-5 py-2 text-white rounded-xl font-medium transition-all flex items-center gap-1.5 shadow-sm text-sm ${saving || payrollRows.length === 0
-                ? "bg-blue-300 cursor-not-allowed"
-                : "bg-blue-600 hover:bg-blue-700"
-              }`}
-          >
-            <Save size={16} />
-            {saving ? "Saving run..." : "Save Payroll Run"}
-          </button>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleExportCSV}
+              className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm text-sm"
+            >
+              <Download size={16} />
+              Export Excel (Payroll Formate)
+            </button>
+            {/* Export Summary PDF - Commented out for now
+            <button
+              onClick={handleExportPDF}
+              className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm text-sm"
+            >
+              <FileText size={16} />
+              Export Summary PDF
+            </button>
+            */}
+            {/* Bulk Payslips PDF - Commented out for now
+            <button
+              onClick={handleBulkDownload}
+              disabled={payrollRows.length === 0}
+              className={`px-4 py-2 border text-sm rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm ${payrollRows.length === 0
+                  ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                  : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                }`}
+            >
+              <Download size={16} />
+              Bulk Payslips PDF
+            </button>
+            */}
+            <button
+              onClick={handleSavePayroll}
+              disabled={saving || payrollRows.length === 0}
+              className={`px-5 py-2 text-white rounded-xl font-medium transition-all flex items-center gap-1.5 shadow-sm text-sm ${saving || payrollRows.length === 0
+                  ? "bg-blue-300 cursor-not-allowed"
+                  : "bg-blue-600 hover:bg-blue-700"
+                }`}
+            >
+              <Save size={16} />
+              {saving ? "Saving run..." : "Save Payroll Run"}
+            </button>
+          </div>
+
+          {/* Status Info Badge below the action buttons */}
+          <div className="flex items-center gap-1.5 text-xs font-medium text-blue-700 bg-blue-50/90 px-3 py-1 rounded-lg border border-blue-100 shadow-sm">
+            <Info className="w-3.5 h-3.5 shrink-0 text-blue-600" />
+            <span>
+              {isSavedRun
+                ? "Showing SAVED payroll run from database."
+                : "Showing DRAFT calculation. Click 'Save Payroll Run' to save."}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1411,9 +1590,10 @@ const Payroll = () => {
           </div>
         </div>
 
-        {/* Search & Dept Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="relative">
+        {/* Search & Multi-Filters Toolbar */}
+        <div className="space-y-3">
+          {/* Row 1: Full-width Search */}
+          <div className="relative w-full">
             <input
               type="text"
               placeholder="Search employee by name or code..."
@@ -1424,26 +1604,56 @@ const Payroll = () => {
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3.5" />
           </div>
 
-          <div>
-            <select
-              value={departmentFilter}
-              onChange={(e) => setDepartmentFilter(e.target.value)}
-              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All Departments</option>
-              {uniqueDepartments.map(d => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
+          {/* Row 2: Company, Pay Mode, Department - 3 Equal Balanced Columns */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+            {/* Company Filter Dropdown */}
+            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3.5 py-2 rounded-xl focus-within:ring-2 focus-within:ring-blue-500 focus-within:bg-white transition-all">
+              <Building2 size={16} className="text-gray-500 shrink-0" />
+              <span className="text-xs font-semibold text-gray-500 shrink-0">Company:</span>
+              <select
+                value={companyFilter}
+                onChange={(e) => setCompanyFilter(e.target.value)}
+                className="w-full bg-transparent border-0 text-xs font-semibold text-gray-800 focus:outline-none cursor-pointer truncate"
+              >
+                <option value="All">All Companies</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50/50 border border-blue-100 rounded-xl px-3 py-2">
-            <BadgeInfo className="w-5 h-5 flex-shrink-0 text-blue-500" />
-            <span>
-              {savedPayrollRuns.length > 0
-                ? "Showing SAVED payroll run from database."
-                : "Showing DRAFT calculation. Click 'Save Payroll Run' to save."}
-            </span>
+            {/* PAYMODE Filter Dropdown */}
+            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3.5 py-2 rounded-xl focus-within:ring-2 focus-within:ring-blue-500 focus-within:bg-white transition-all">
+              <CreditCard size={16} className="text-gray-500 shrink-0" />
+              <span className="text-xs font-semibold text-gray-500 shrink-0">Pay Mode:</span>
+              <select
+                value={payModeFilter}
+                onChange={(e) => setPayModeFilter(e.target.value)}
+                className="w-full bg-transparent border-0 text-xs font-semibold text-gray-800 focus:outline-none cursor-pointer truncate"
+              >
+                <option value="All">All Pay Modes</option>
+                <option value="BANK">Bank</option>
+                <option value="CASH">Cash</option>
+              </select>
+            </div>
+
+            {/* Department Filter Dropdown */}
+            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3.5 py-2 rounded-xl focus-within:ring-2 focus-within:ring-blue-500 focus-within:bg-white transition-all">
+              <Filter size={16} className="text-gray-500 shrink-0" />
+              <span className="text-xs font-semibold text-gray-500 shrink-0">Department:</span>
+              <select
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+                className="w-full bg-transparent border-0 text-xs font-semibold text-gray-800 focus:outline-none cursor-pointer truncate"
+              >
+                <option value="All">All Departments</option>
+                {uniqueDepartments.map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -1463,244 +1673,596 @@ const Payroll = () => {
           </div>
         ) : (
           <div className="overflow-x-auto max-h-[calc(100vh-280px)]">
-            <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 z-20 bg-gray-50 shadow-sm">
-                <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  <th className="py-4 px-4 sticky top-0 left-0 bg-gray-50 z-30 shadow-[2px_2px_5px_-2px_rgba(0,0,0,0.1)]">Emp Details</th>
-                  <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Payable Days</th>
-                  <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Paid Leaves</th>
-                  <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Absent</th>
-                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">Basic Pay (₹)</th>
-                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">Allowance (₹)</th>
-                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">OT & Comp (₹)</th>
-                  {activeMode === "Monthly" && <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">LWP Adjust (₹)</th>}
-                  <th className="py-4 px-3 text-right font-semibold text-green-600 bg-green-50/80 sticky top-0 z-20">Gross Salary (₹)</th>
-                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">PF (₹)</th>
-                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">ESIC (₹)</th>
-                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">EMI (₹)</th>
-                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">Canteen (₹)</th>
-                  <th className="py-4 px-3 text-right sticky top-0 bg-gray-50 z-20">Other Deduct (₹)</th>
-                  <th className="py-4 px-3 text-right font-semibold text-red-600 bg-red-50/80 sticky top-0 z-20">Total Deduct (₹)</th>
-                  <th className="py-4 px-3 text-right font-bold text-blue-600 bg-blue-50/80 sticky top-0 z-20">Net Salary (₹)</th>
-                  <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Paid Via</th>
-                  <th className="py-4 px-3 text-center sticky top-0 bg-gray-50 z-20">Status</th>
-                  <th className="py-4 px-3 sticky top-0 bg-gray-50 z-20">Remarks</th>
-                  <th className="py-4 px-4 text-center sticky top-0 bg-gray-50 z-20">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 text-sm">
-                {paginatedRows.map((row) => (
-                  <tr key={row.employeeId} className="hover:bg-gray-50/60 transition-colors">
-                    {/* Sticky Emp Info */}
-                    <td className="py-3.5 px-4 sticky left-0 bg-white group-hover:bg-gray-50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                      <div className="font-semibold text-gray-900">{row.employeeName}</div>
-                      <div className="text-xs text-gray-500 flex flex-wrap items-center gap-1.5 mt-0.5">
-                        <span className="bg-gray-100 px-1.5 py-0.5 rounded font-mono">{row.employeeCode}</span>
-                        <span>•</span>
-                        <span>{row.department}</span>
-                        {row.branchName && row.branchName !== "—" && (
-                          <>
-                            <span>•</span>
-                            <span className="text-indigo-600 font-semibold">{row.branchName}</span>
-                          </>
-                        )}
-                      </div>
-                    </td>
+            {activeMode === "Monthly" ? (
+              /* MONTHLY MODE: 32 Statutory Columns matching Payroll Formate.xlsx */
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 z-20 shadow-sm border-b border-gray-300">
+                  {/* Row 1: Main Headers + Grouped DEDUCTION */}
+                  <tr className="bg-slate-100/90 border-b border-gray-300 text-xs font-bold text-gray-700 uppercase tracking-wider select-none">
+                    <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-slate-100 z-20 border-r border-gray-200 min-w-[55px]">Sr. No.</th>
+                    <th rowSpan={2} className="py-3 px-3 text-left sticky top-0 bg-slate-100 z-20 border-r border-gray-200 min-w-[100px]">EMPCODE</th>
+                    <th rowSpan={2} className="py-3 px-4 text-left sticky top-0 bg-slate-100 z-20 border-r border-gray-200 min-w-[180px]">NAME</th>
+                    <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[120px]">UAN NO.</th>
+                    <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[120px]">IP No.</th>
+                    <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[90px]">TOTAL_DAYS</th>
+                    <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-blue-50 text-blue-900 z-20 border-r border-blue-200 min-w-[90px]">PAID_DAYS</th>
+                    <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-rose-50 text-rose-900 z-20 border-r border-rose-200 min-w-[95px]">ABSENT_DAYS</th>
+                    <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[75px]">OT HRS</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[105px]">BASIC+DA</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[110px]">EARN BASIC+DA</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[140px]">ALLOW_RATE</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[120px]">EARN ALLOW</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-100 z-20 border-r border-gray-200 min-w-[110px] font-extrabold text-gray-900">TOTAL</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[110px]">WASHING ALL.</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[80px]">OT</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-emerald-50 text-emerald-900 z-20 border-r border-emerald-200 min-w-[120px] font-extrabold">GROSS</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[110px]">EPF WAGES</th>
 
-                    {/* Payable Days */}
-                    <td className="py-3.5 px-3 text-center font-medium">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        disabled={activeMode === "Monthly"}
-                        value={row.daysWorked ?? ""}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9.]/g, "");
-                          handleCellChange(row.employeeId, "daysWorked", val);
-                        }}
-                        onWheel={(e) => e.target.blur()}
-                        className={`w-16 border rounded px-2 py-1 text-center text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none ${activeMode === "Monthly" ? "bg-gray-100/60 text-gray-500 border-gray-100" : "border-gray-200"
-                          }`}
-                      />
-                    </td>
+                    {/* DEDUCTION Grouped Header */}
+                    <th colSpan={7} className="py-2 px-3 text-center sticky top-0 bg-rose-100/90 text-rose-900 font-extrabold tracking-wider z-20 border-r border-b border-rose-200 uppercase">
+                      DEDUCTION
+                    </th>
 
-                    {/* Paid Leaves */}
-                    <td className="py-3.5 px-3 text-center font-mono text-blue-600">
-                      {row.paidLeaves || 0}
-                    </td>
-
-                    {/* Unpaid Leaves (LWP) */}
-                    <td className="py-3.5 px-3 text-center">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={row.unpaidLeaves ?? ""}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9]/g, "");
-                          handleCellChange(row.employeeId, "unpaidLeaves", val);
-                        }}
-                        onWheel={(e) => e.target.blur()}
-                        className="w-16 border border-gray-200 rounded px-2 py-1 text-center text-sm font-mono text-rose-600 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      />
-                    </td>
-
-                    {/* Basic Pay */}
-                    <td className="py-3.5 px-3 text-right">
-                      {row.basicPay.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
-
-                    {/* Allowance */}
-                    <td className="py-3.5 px-3 text-right">
-                      {row.allowance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
-
-                    {/* Compensation */}
-                    <td className="py-3.5 px-3 text-right">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={row.compensation ?? ""}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9.]/g, "");
-                          handleCellChange(row.employeeId, "compensation", val);
-                        }}
-                        onWheel={(e) => e.target.blur()}
-                        className="w-24 border border-gray-200 rounded px-2 py-1 text-right text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono"
-                      />
-                    </td>
-
-                    {/* LWP Leave Adjustment */}
-                    {activeMode === "Monthly" && (
-                      <td className="py-3.5 px-3 text-right text-red-500 font-mono">
-                        -{row.leaveAdjustment.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </td>
-                    )}
-
-                    {/* Gross Salary */}
-                    <td className="py-3.5 px-3 text-right font-semibold text-green-600 bg-green-50/10 font-mono">
-                      {row.grossSalary.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
-
-                    {/* PF */}
-                    <td className="py-3.5 px-3 text-right font-mono text-gray-700">
-                      {row.pfDeduction.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
-
-                    {/* ESIC */}
-                    <td className="py-3.5 px-3 text-right font-mono text-gray-700">
-                      {row.esicDeduction.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
-
-                    {/* EMI */}
-                    <td className="py-3.5 px-3 text-right font-mono text-gray-700">
-                      {row.emiDeduction.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
-
-                    {/* Canteen */}
-                    <td className="py-3.5 px-3 text-right font-mono text-gray-700">
-                      {row.canteenDeduction.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
-
-                    {/* Other Deductions */}
-                    <td className="py-3.5 px-3 text-right">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={row.otherDeductions ?? ""}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9.]/g, "");
-                          handleCellChange(row.employeeId, "otherDeductions", val);
-                        }}
-                        onWheel={(e) => e.target.blur()}
-                        className="w-20 border border-gray-200 rounded px-2 py-1 text-right text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono"
-                      />
-                    </td>
-
-                    {/* Total Deductions */}
-                    <td className="py-3.5 px-3 text-right font-semibold text-red-500 bg-red-50/10 font-mono">
-                      {row.totalDeductions.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
-
-                    {/* Net Salary */}
-                    <td className="py-3.5 px-3 text-right font-bold text-blue-600 bg-blue-50/10 font-mono">
-                      {row.netSalary.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
-
-                    {/* Paid Via (Payment Mode) */}
-                    <td className="py-3.5 px-3 text-center">
-                      <select
-                        value={row.paymentMode || "Cash"}
-                        onChange={(e) => handlePaymentModeChange(row.employeeId, e.target.value)}
-                        className="text-xs font-semibold px-2 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm"
-                      >
-                        <option value="Cash">Cash</option>
-                        <option value="Card">Card</option>
-                        <option value="Bank Transfer">Bank Transfer</option>
-                      </select>
-                    </td>
-
-                    {/* Status */}
-                    <td className="py-3.5 px-3 text-center">
-                      <select
-                        value={row.status}
-                        onChange={(e) => handleStatusChange(row.employeeId, e.target.value)}
-                        className={`text-xs font-semibold px-2 py-1 rounded-full border focus:outline-none focus:ring-1 focus:ring-blue-500 ${row.status === "Paid"
-                            ? "bg-green-50 text-green-700 border-green-200"
-                            : row.status === "Processed"
-                              ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                              : "bg-amber-50 text-amber-700 border-amber-200"
-                          }`}
-                      >
-                        <option value="Draft">Draft</option>
-                        <option value="Processed">Processed</option>
-                        <option value="Paid">Paid</option>
-                      </select>
-                    </td>
-
-                    {/* Remarks */}
-                    <td className="py-3.5 px-3">
-                      <input
-                        type="text"
-                        placeholder="Add remarks..."
-                        value={row.remarks || ""}
-                        onChange={(e) => handleRemarksChange(row.employeeId, e.target.value)}
-                        className="w-32 border border-gray-200 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      />
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => {
-                            setSelectedRowForPayslip(row);
-                            setShowPayslipModal(true);
-                          }}
-                          title="View Payslip"
-                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
-                        >
-                          <Eye size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDownloadPayslipPDF(row)}
-                          title="Download Payslip PDF"
-                          className="p-1.5 text-slate-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                        >
-                          <Download size={16} />
-                        </button>
-                        <button
-                          onClick={() => handlePrintPayslip(row)}
-                          title="Print Payslip"
-                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                        >
-                          <Printer size={16} />
-                        </button>
-                      </div>
-                    </td>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-blue-50 text-blue-900 z-20 border-r border-blue-200 min-w-[120px] font-bold">NET SALARY</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-amber-50 text-amber-900 z-20 border-r border-amber-200 min-w-[110px]">Diwali Bonus</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-emerald-100 text-emerald-950 z-20 border-r border-emerald-300 min-w-[130px] font-extrabold">NET PAY AMOUNT</th>
+                    <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[110px]">PAY-MODE</th>
+                    <th rowSpan={2} className="py-3 px-3 text-left sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[140px]">BANK A/C NO.</th>
+                    <th rowSpan={2} className="py-3 px-3 text-left sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[110px]">IFSC</th>
+                    <th rowSpan={2} className="py-3 px-3 text-left sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[130px]">REMARK</th>
+                    <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[100px]">STATUS</th>
+                    <th rowSpan={2} className="py-3 px-4 text-center sticky top-0 bg-slate-100 z-20 border-b border-gray-200 min-w-[105px]">ACTIONS</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+
+                  {/* Row 2: Sub-headers for DEDUCTION Columns */}
+                  <tr className="bg-rose-50/80 border-b border-gray-300 text-xs font-bold text-rose-800 uppercase tracking-wider select-none">
+                    <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-50/90 text-rose-800 z-20 border-r border-gray-200 min-w-[90px]">PF</th>
+                    <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-50/90 text-rose-800 z-20 border-r border-gray-200 min-w-[140px]">LABOUR WELFARE FUND</th>
+                    <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-50/90 text-rose-800 z-20 border-r border-gray-200 min-w-[90px]">ESIC</th>
+                    <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-50/90 text-rose-800 z-20 border-r border-gray-200 min-w-[90px]">ADV</th>
+                    <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-50/90 text-rose-800 z-20 border-r border-gray-200 min-w-[90px]">Penalty</th>
+                    <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-50/90 text-rose-800 z-20 border-r border-gray-200 min-w-[90px]">Canteen</th>
+                    <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-100 text-rose-950 font-extrabold z-20 border-r border-gray-200 min-w-[125px]">TOTAL DEDUCTION</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-sm">
+                  {paginatedRows.map((row, index) => (
+                    <tr key={row.employeeId} className="hover:bg-blue-50/30 transition-colors group">
+                      {/* 1. Sr. No. */}
+                      <td className="py-2.5 px-3 text-center border-r border-gray-100 text-xs font-mono text-gray-500">
+                        {startIndex + index + 1}
+                      </td>
+
+                      {/* 2. EMPCODE */}
+                      <td className="py-2.5 px-3 border-r border-gray-100">
+                        <span className="font-mono text-xs font-semibold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded">
+                          {row.employeeCode}
+                        </span>
+                      </td>
+
+                      {/* 3. NAME */}
+                      <td className="py-2.5 px-4 border-r border-gray-100">
+                        <div className="font-semibold text-gray-900 text-sm whitespace-nowrap">{row.employeeName}</div>
+                        <div className="text-[11px] text-gray-500 flex items-center gap-1 mt-0.5">
+                          <span>{row.department}</span>
+                          {row.branchName && row.branchName !== "—" && (
+                            <>
+                              <span>•</span>
+                              <span className="text-indigo-600 font-medium">{row.branchName}</span>
+                            </>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* 4. UAN NO. */}
+                      <td className="py-2.5 px-3 text-center font-mono text-xs text-gray-600 border-r border-gray-100 whitespace-nowrap">
+                        {row.uanNo || "—"}
+                      </td>
+
+                      {/* 5. IP No. */}
+                      <td className="py-2.5 px-3 text-center font-mono text-xs text-gray-600 border-r border-gray-100 whitespace-nowrap">
+                        {row.ipNo || "—"}
+                      </td>
+
+                      {/* 6. TOTAL_DAYS */}
+                      <td className="py-2.5 px-3 text-center font-semibold text-xs text-gray-700 border-r border-gray-100">
+                        {row.periodDays || currentPeriodDays}
+                      </td>
+
+                      {/* 7. PAID_DAYS */}
+                      <td className="py-2.5 px-3 text-center border-r border-gray-100">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={row.daysWorked ?? ""}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, "");
+                            handleCellChange(row.employeeId, "daysWorked", val);
+                          }}
+                          className="w-14 border border-blue-200 bg-blue-50/30 rounded px-1.5 py-0.5 text-center text-xs font-semibold font-mono text-blue-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* 8. ABSENT_DAYS */}
+                      <td className="py-2.5 px-3 text-center border-r border-gray-100">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={row.unpaidLeaves ?? ""}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, "");
+                            handleCellChange(row.employeeId, "unpaidLeaves", val);
+                          }}
+                          className="w-14 border border-rose-200 bg-rose-50/30 rounded px-1.5 py-0.5 text-center text-xs font-semibold font-mono text-rose-700 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* 9. OT HRS */}
+                      <td className="py-2.5 px-3 text-center font-mono text-xs text-gray-600 border-r border-gray-100">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={row.otHrs ?? 0}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, "");
+                            handleCellChange(row.employeeId, "otHrs", val);
+                          }}
+                          className="w-12 border border-gray-200 rounded px-1 py-0.5 text-center text-xs font-mono text-gray-700 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* 10. BASIC+DA */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs text-gray-700 border-r border-gray-100">
+                        {(Number(row.basicRate || row.basicPay || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 11. EARN BASIC+DA */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs text-gray-900 font-medium border-r border-gray-100">
+                        {(Number(row.earnBasic || row.basicPay || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 12. ALLOW_RATE */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs text-gray-700 border-r border-gray-100">
+                        {(Number(row.allowanceRate || row.allowance || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 13. EARN ALLOW */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs text-gray-900 font-medium border-r border-gray-100">
+                        {(Number(row.earnAllowance || row.allowance || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 14. TOTAL */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs font-bold text-gray-900 bg-slate-50/50 border-r border-gray-100">
+                        {(Number(row.totalEarn || ((row.earnBasic || row.basicPay || 0) + (row.earnAllowance || row.allowance || 0)))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 15. WASHING ALL. */}
+                      <td className="py-2.5 px-3 text-right border-r border-gray-100">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={row.compensation ?? 0}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, "");
+                            handleCellChange(row.employeeId, "compensation", val);
+                          }}
+                          className="w-20 border border-gray-200 rounded px-1.5 py-0.5 text-right text-xs font-mono focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* 16. OT */}
+                      <td className="py-2.5 px-3 text-right border-r border-gray-100">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={row.otAmount ?? 0}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, "");
+                            handleCellChange(row.employeeId, "otAmount", val);
+                          }}
+                          className="w-16 border border-gray-200 rounded px-1.5 py-0.5 text-right text-xs font-mono focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* 17. GROSS */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs font-bold text-emerald-800 bg-emerald-50/30 border-r border-emerald-100">
+                        {(Number(row.grossSalary || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 18. EPF WAGES */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs text-gray-700 border-r border-gray-100">
+                        {(Number(row.epfWages || Math.min(15000, row.earnBasic || row.basicPay || 0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 19. PF */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs text-rose-700 border-r border-gray-100">
+                        {(Number(row.pfDeduction || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 20. LABOUR WELFARE FUND */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs text-gray-600 border-r border-gray-100">
+                        {(Number(row.lwfDeduction || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 21. ESIC */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs text-rose-700 border-r border-gray-100">
+                        {(Number(row.esicDeduction || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 22. ADV */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs text-rose-700 border-r border-gray-100">
+                        {(Number(row.emiDeduction || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 23. Penalty */}
+                      <td className="py-2.5 px-3 text-right border-r border-gray-100">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={row.otherDeductions ?? 0}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, "");
+                            handleCellChange(row.employeeId, "otherDeductions", val);
+                          }}
+                          className="w-16 border border-rose-200 rounded px-1.5 py-0.5 text-right text-xs font-mono text-rose-700 focus:ring-1 focus:ring-rose-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* 24. Canteen */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs text-rose-700 border-r border-gray-100">
+                        {(Number(row.canteenDeduction || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 25. TOTAL DEDUCTION */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs font-bold text-rose-800 bg-rose-50/40 border-r border-rose-100">
+                        {(Number(row.totalDeductions || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 26. NET SALARY */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs font-bold text-blue-800 bg-blue-50/30 border-r border-blue-100">
+                        {(Number(row.netSalary || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 27. Diwali Bonus */}
+                      <td className="py-2.5 px-3 text-right border-r border-gray-100">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={row.diwaliBonus ?? 0}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, "");
+                            handleCellChange(row.employeeId, "diwaliBonus", val);
+                          }}
+                          className="w-16 border border-amber-200 bg-amber-50/30 rounded px-1.5 py-0.5 text-right text-xs font-mono text-amber-800 focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* 28. NET PAY AMOUNT */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs font-extrabold text-emerald-950 bg-emerald-100/50 border-r border-emerald-200">
+                        {(Number(row.netPayAmount || row.netSalary || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 29. PAY-MODE */}
+                      <td className="py-2.5 px-3 text-center border-r border-gray-100 whitespace-nowrap">
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                          ((row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK"))
+                            ? "bg-blue-50 text-blue-700 border border-blue-200"
+                            : "bg-amber-50 text-amber-700 border border-amber-200"
+                        }`}>
+                          {((row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK")) ? "BANK" : "CASH"}
+                        </span>
+                      </td>
+
+                      {/* 30. BANK A/C NO. */}
+                      <td className="py-2.5 px-3 text-left font-mono text-xs text-gray-600 border-r border-gray-100 whitespace-nowrap">
+                        {row.bankAccountNo || "—"}
+                      </td>
+
+                      {/* 31. IFSC */}
+                      <td className="py-2.5 px-3 text-left font-mono text-xs text-gray-600 border-r border-gray-100 whitespace-nowrap">
+                        {row.ifscCode || "—"}
+                      </td>
+
+                      {/* 32. REMARK */}
+                      <td className="py-2.5 px-3 border-r border-gray-100">
+                        <input
+                          type="text"
+                          placeholder="Remark..."
+                          value={row.remarks || ""}
+                          onChange={(e) => handleRemarksChange(row.employeeId, e.target.value)}
+                          className="w-24 border border-gray-200 rounded px-2 py-0.5 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* 33. STATUS */}
+                      <td className="py-2.5 px-3 text-center border-r border-gray-100">
+                        <select
+                          value={row.status}
+                          onChange={(e) => handleStatusChange(row.employeeId, e.target.value)}
+                          className={`text-[11px] font-bold px-2 py-0.5 rounded-full border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                            row.status === "Paid"
+                              ? "bg-green-50 text-green-700 border-green-200"
+                              : row.status === "Processed"
+                                ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                : "bg-amber-50 text-amber-700 border-amber-200"
+                          }`}
+                        >
+                          <option value="Draft">Draft</option>
+                          <option value="Processed">Processed</option>
+                          <option value="Paid">Paid</option>
+                        </select>
+                      </td>
+
+                      {/* 34. ACTIONS */}
+                      <td className="py-2.5 px-4 text-center border-r border-gray-100 min-w-[105px]">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => {
+                              setSelectedRowForPayslip(row);
+                              setShowPayslipModal(true);
+                            }}
+                            title="View Payslip"
+                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
+                          >
+                            <Eye size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleDownloadPayslipPDF(row)}
+                            title="Download Payslip PDF"
+                            className="p-1.5 text-slate-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                          >
+                            <Download size={15} />
+                          </button>
+                          <button
+                            onClick={() => handlePrintPayslip(row)}
+                            title="Print Payslip"
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                          >
+                            <Printer size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              /* DAILY MODE: Original Table Format */
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 z-20 shadow-sm border-b border-gray-200">
+                  <tr className="bg-gray-50/90 text-xs font-semibold text-gray-500 uppercase tracking-wider select-none">
+                    <th className="py-3 px-4 text-left">Emp Details</th>
+                    <th className="py-3 px-3 text-center">Payable Days</th>
+                    <th className="py-3 px-3 text-center">Paid Leaves</th>
+                    <th className="py-3 px-3 text-center">Absent</th>
+                    <th className="py-3 px-3 text-right">Basic Pay (₹)</th>
+                    <th className="py-3 px-3 text-right">Allowance (₹)</th>
+                    <th className="py-3 px-3 text-right">OT & Comp (₹)</th>
+                    <th className="py-3 px-3 text-right">LWP Adjust (₹)</th>
+                    <th className="py-3 px-3 text-right font-bold text-gray-700">Gross Salary (₹)</th>
+                    <th className="py-3 px-3 text-right">PF (₹)</th>
+                    <th className="py-3 px-3 text-right">ESIC (₹)</th>
+                    <th className="py-3 px-3 text-right">EMI (₹)</th>
+                    <th className="py-3 px-3 text-right">Canteen (₹)</th>
+                    <th className="py-3 px-3 text-right">Other Deduct (₹)</th>
+                    <th className="py-3 px-3 text-right font-bold text-rose-600">Total Deduct (₹)</th>
+                    <th className="py-3 px-3 text-right font-bold text-green-600">Net Salary (₹)</th>
+                    <th className="py-3 px-3 text-center">Paid Via</th>
+                    <th className="py-3 px-3 text-center">Status</th>
+                    <th className="py-3 px-3 text-left">Remarks</th>
+                    <th className="py-3 px-4 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-sm">
+                  {paginatedRows.map((row) => (
+                    <tr key={row.employeeId} className="hover:bg-blue-50/30 transition-colors group">
+                      {/* Emp Details */}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-semibold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded">
+                            {row.employeeCode}
+                          </span>
+                          <span className="font-semibold text-gray-900">{row.employeeName}</span>
+                        </div>
+                        <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                          <span>{row.department}</span>
+                          {row.branchName && row.branchName !== "—" && (
+                            <>
+                              <span>•</span>
+                              <span className="text-indigo-600 font-medium">{row.branchName}</span>
+                            </>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Payable Days */}
+                      <td className="py-3 px-3 text-center">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={row.daysWorked ?? ""}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, "");
+                            handleCellChange(row.employeeId, "daysWorked", val);
+                          }}
+                          className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-center font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* Paid Leaves */}
+                      <td className="py-3 px-3 text-center">
+                        <span className="font-mono px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700">
+                          {row.paidLeaves ?? 0}
+                        </span>
+                      </td>
+
+                      {/* Absent */}
+                      <td className="py-3 px-3 text-center">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={row.unpaidLeaves ?? ""}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, "");
+                            handleCellChange(row.employeeId, "unpaidLeaves", val);
+                          }}
+                          className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-center font-mono text-rose-600 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* Basic Pay */}
+                      <td className="py-3 px-3 text-right font-mono">
+                        {(Number(row.earnBasic || row.basicPay || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* Allowance */}
+                      <td className="py-3 px-3 text-right font-mono">
+                        {(Number(row.earnAllowance || row.allowance || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* OT & Comp */}
+                      <td className="py-3 px-3 text-right">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={row.compensation ?? 0}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, "");
+                            handleCellChange(row.employeeId, "compensation", val);
+                          }}
+                          className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-right font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* LWP Adjust */}
+                      <td className="py-3 px-3 text-right font-mono text-rose-500">
+                        {Number(row.leaveAdjustment || 0) > 0 ? `-${(Number(row.leaveAdjustment)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "0.00"}
+                      </td>
+
+                      {/* Gross Salary */}
+                      <td className="py-3 px-3 text-right font-mono font-bold text-gray-900">
+                        {(Number(row.grossSalary || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* PF */}
+                      <td className="py-3 px-3 text-right font-mono text-rose-600">
+                        {(Number(row.pfDeduction || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* ESIC */}
+                      <td className="py-3 px-3 text-right font-mono text-rose-600">
+                        {(Number(row.esicDeduction || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* EMI */}
+                      <td className="py-3 px-3 text-right font-mono text-rose-600">
+                        {(Number(row.emiDeduction || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* Canteen */}
+                      <td className="py-3 px-3 text-right font-mono text-rose-600">
+                        {(Number(row.canteenDeduction || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* Other Deduct */}
+                      <td className="py-3 px-3 text-right">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={row.otherDeductions ?? 0}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9.]/g, "");
+                            handleCellChange(row.employeeId, "otherDeductions", val);
+                          }}
+                          className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-right font-mono text-rose-600 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* Total Deduct */}
+                      <td className="py-3 px-3 text-right font-mono font-bold text-rose-600">
+                        {(Number(row.totalDeductions || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* Net Salary */}
+                      <td className="py-3 px-3 text-right font-mono font-bold text-green-600">
+                        {(Number(row.netSalary || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* Paid Via */}
+                      <td className="py-3 px-3 text-center whitespace-nowrap">
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                          ((row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK"))
+                            ? "bg-blue-50 text-blue-700 border border-blue-200"
+                            : "bg-amber-50 text-amber-700 border border-amber-200"
+                        }`}>
+                          {((row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK")) ? "BANK" : "CASH"}
+                        </span>
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-3 px-3 text-center">
+                        <select
+                          value={row.status}
+                          onChange={(e) => handleStatusChange(row.employeeId, e.target.value)}
+                          className={`text-xs font-bold px-2 py-1 rounded-full border focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            row.status === "Paid"
+                              ? "bg-green-50 text-green-700 border-green-200"
+                              : row.status === "Processed"
+                                ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                : "bg-amber-50 text-amber-700 border-amber-200"
+                          }`}
+                        >
+                          <option value="Draft">Draft</option>
+                          <option value="Processed">Processed</option>
+                          <option value="Paid">Paid</option>
+                        </select>
+                      </td>
+
+                      {/* Remarks */}
+                      <td className="py-3 px-3">
+                        <input
+                          type="text"
+                          placeholder="Remark..."
+                          value={row.remarks || ""}
+                          onChange={(e) => handleRemarksChange(row.employeeId, e.target.value)}
+                          className="w-28 border border-gray-200 rounded-lg px-2 py-1 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => {
+                              setSelectedRowForPayslip(row);
+                              setShowPayslipModal(true);
+                            }}
+                            title="View Payslip"
+                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors"
+                          >
+                            <Eye size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleDownloadPayslipPDF(row)}
+                            title="Download Payslip PDF"
+                            className="p-1.5 text-slate-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                          >
+                            <Download size={15} />
+                          </button>
+                          <button
+                            onClick={() => handlePrintPayslip(row)}
+                            title="Print Payslip"
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                          >
+                            <Printer size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </div>
