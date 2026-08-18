@@ -98,6 +98,7 @@ const Sidebar = ({ onClose }) => {
       items: [
         { path: "/attendance-dashboard", label: "Attendance Dashboard" },
         { path: "/shift-management", label: "Shift Management" },
+        { path: "/overtime-management", label: "Overtime (OT) Request" },
       ],
     },
     { path: "/employee", icon: Users, label: "Employee" },
@@ -230,6 +231,7 @@ const Sidebar = ({ onClose }) => {
         items: [
           { path: '/attendance-dashboard', label: 'Attendance Dashboard' },
           { path: '/shift-management', label: 'Shift Management' },
+          { path: '/overtime-management', label: 'Overtime (OT) Request' },
         ],
       });
     }
@@ -283,6 +285,7 @@ const Sidebar = ({ onClose }) => {
     return [
       { path: '/my-profile', icon: User, label: 'My Profile' },
       { path: '/my-attendance', icon: Clock, label: 'My Attendance' },
+      { path: '/overtime-management', icon: Clock, label: 'Overtime (OT) Request' },
       {
         type: 'dropdown',
         icon: CalendarClock,

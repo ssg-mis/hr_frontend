@@ -356,6 +356,8 @@ const TAB_CONFIG = [
 const Employee = () => {
   const [activeTab, setActiveTab] = useState('Active');
   const [searchTerm, setSearchTerm] = useState('');
+  const [companies, setCompanies] = useState([]);
+  const [selectedCompany, setSelectedCompany] = useState('All');
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState({ Active: 0, Pending: 0, Relieved: 0 });
   const [loading, setLoading] = useState(false);
@@ -366,11 +368,25 @@ const Employee = () => {
   const [exporting, setExporting] = useState(false);
   const isFirstRun = React.useRef(true);
 
+  // Fetch company branches for dropdown filter
+  useEffect(() => {
+    api.get('/company-branches').then(res => {
+      const list = res.data || [];
+      setCompanies(list);
+    }).catch(err => {
+      console.error("Failed to load company branches", err);
+    });
+  }, []);
+
   const handleExportExcel = async () => {
     setExporting(true);
     try {
       const res = await api.get(`/employees?status=${activeTab}`);
       let list = res.data || [];
+
+      if (selectedCompany && selectedCompany !== 'All') {
+        list = list.filter(e => String(e.branchId) === String(selectedCompany) || e.branchName === selectedCompany);
+      }
 
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase();
@@ -501,11 +517,15 @@ const Employee = () => {
   }, []);
 
   /* fetch + filter for the current tab */
-  const fetchList = useCallback(async (pg = 1, tab = activeTab, search = searchTerm) => {
+  const fetchList = useCallback(async (pg = 1, tab = activeTab, search = searchTerm, company = selectedCompany) => {
     setLoading(true);
     try {
       const res = await api.get(`/employees?status=${tab}`);
       let list = res.data || [];
+
+      if (company && company !== 'All') {
+        list = list.filter(e => String(e.branchId) === String(company) || e.branchName === company);
+      }
 
       if (search.trim()) {
         const q = search.toLowerCase();
@@ -535,27 +555,27 @@ const Employee = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, searchTerm]);
+  }, [activeTab, searchTerm, selectedCompany]);
 
   useEffect(() => {
     setPage(1);
-    fetchList(1, activeTab, searchTerm);
+    fetchList(1, activeTab, searchTerm, selectedCompany);
     fetchStats();
-  }, [activeTab]);
+  }, [activeTab, selectedCompany]);
 
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false;
       return;
     }
-    const t = setTimeout(() => { setPage(1); fetchList(1, activeTab, searchTerm); }, 350);
+    const t = setTimeout(() => { setPage(1); fetchList(1, activeTab, searchTerm, selectedCompany); }, 350);
     return () => clearTimeout(t);
   }, [searchTerm]);
 
   const goPage = (p) => {
     if (p < 1 || p > totalPages) return;
     setPage(p);
-    fetchList(p, activeTab, searchTerm);
+    fetchList(p, activeTab, searchTerm, selectedCompany);
   };
 
   return (
@@ -579,7 +599,7 @@ const Employee = () => {
             <span>{exporting ? 'Exporting...' : 'Export Excel'}</span>
           </button>
           <button
-            onClick={() => { fetchList(page); fetchStats(); }}
+            onClick={() => { fetchList(page, activeTab, searchTerm, selectedCompany); fetchStats(); }}
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 shadow-sm transition-colors cursor-pointer"
           >
             <RefreshCw size={14} /> Refresh
@@ -610,25 +630,44 @@ const Employee = () => {
 
         {/* Toolbar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-gray-200">
-          {/* Tabs */}
-          <nav className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-            {TAB_CONFIG.map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key)}
-                className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${activeTab === key
-                    ? 'bg-white text-indigo-700 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                  }`}
+          {/* Tabs + Company Dropdown Filter */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <nav className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+              {TAB_CONFIG.map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${activeTab === key
+                      ? 'bg-white text-indigo-700 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                >
+                  {label}
+                  <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${activeTab === key ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 text-gray-500'
+                    }`}>
+                    {stats[key]}
+                  </span>
+                </button>
+              ))}
+            </nav>
+
+            {/* Company Dropdown Filter */}
+            <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+              <span className="text-xs font-semibold text-gray-500 pl-2">Company:</span>
+              <select
+                value={selectedCompany}
+                onChange={(e) => setSelectedCompany(e.target.value)}
+                className="bg-white border border-gray-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer max-w-[210px] truncate"
               >
-                {label}
-                <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${activeTab === key ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 text-gray-500'
-                  }`}>
-                  {stats[key]}
-                </span>
-              </button>
-            ))}
-          </nav>
+                <option value="All">All Companies</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
           {/* Search */}
           <div className="relative w-full sm:w-72">
