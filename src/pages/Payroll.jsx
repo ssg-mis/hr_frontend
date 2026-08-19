@@ -432,12 +432,10 @@ const Payroll = () => {
 
         const monthlyBase = Number(salRecord.baseSalary || run.basicPay || 0);
         const monthlyAllowance = Number(salRecord.allowanceSalary || run.allowance || 0);
-        const { compSum: liveComp, otHours: liveOtHrs } = getApprovedCompensationDetails(run.employeeId, monthlyBase);
+        const { compSum: liveOtAmount, otHours: liveOtHrs } = getApprovedCompensationDetails(run.employeeId, monthlyBase);
 
-        // Merge live compensation if saved compensation is less than live approved compensation, or if status is Draft
-        const finalComp = (run.status === "Draft" || parseFloat(run.compensation || 0) < liveComp)
-          ? liveComp
-          : parseFloat(run.compensation || 0);
+        // Washing allowance (compensation) is independent
+        const finalComp = parseFloat(run.compensation || 0);
 
         // Merge live canteen deduction if saved canteen is less than live canteen, or if status is Draft
         const liveCanteen = getLiveCanteenDeductionForEmployee(run.employeeId);
@@ -450,28 +448,14 @@ const Payroll = () => {
         const earnBasic = basicPay;
         const earnAllowance = allowance;
         const totalEarn = parseFloat((earnBasic + earnAllowance).toFixed(2));
-        const otAmount = (run.status === "Draft" || parseFloat(run.otAmount || 0) < finalComp)
-          ? finalComp
+        const otAmount = (run.status === "Draft" || parseFloat(run.otAmount || 0) < liveOtAmount)
+          ? liveOtAmount
           : parseFloat(run.otAmount || 0);
         const finalOtHrs = (run.status === "Draft" || parseFloat(run.otHrs || 0) < liveOtHrs)
           ? liveOtHrs
           : parseFloat(run.otHrs || 0);
-        const grossSalary = parseFloat((totalEarn + otAmount).toFixed(2));
+        const grossSalary = parseFloat((totalEarn + finalComp + otAmount).toFixed(2));
         const epfWages = Math.min(15000, earnBasic);
-
-        const pfDeduction = parseFloat(run.pfDeduction || 0);
-        const lwfDeduction = parseFloat(run.lwfDeduction || 0);
-        const esicDeduction = parseFloat(run.esicDeduction || 0);
-        const emiDeduction = parseFloat(run.emiDeduction || 0);
-        const leaveAdjustment = parseFloat(run.leaveAdjustment || 0);
-        const otherDeductions = parseFloat(run.otherDeductions || 0);
-
-        const totalDeductions = parseFloat(
-          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + leaveAdjustment + otherDeductions).toFixed(2)
-        );
-        const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
-        const diwaliBonus = parseFloat(run.diwaliBonus || 0);
-        const netPayAmount = parseFloat((netSalary + diwaliBonus).toFixed(2));
 
         const paidDays = parseFloat(run.daysWorked != null ? run.daysWorked : 30);
         
@@ -500,6 +484,25 @@ const Payroll = () => {
         } else {
           absentDays = Math.max(0, currentPeriodDays - paidDays);
         }
+
+        const pfDeduction = parseFloat(run.pfDeduction || 0);
+        const lwfDeduction = parseFloat(run.lwfDeduction || 0);
+        const esicDeduction = parseFloat(run.esicDeduction || 0);
+        const emiDeduction = parseFloat(run.emiDeduction || 0);
+        const liveLeaveAdjustment = (absentDays > 0 && activeMode === "Monthly" && currentPeriodDays > 0)
+          ? parseFloat(((monthlyBase / currentPeriodDays) * absentDays).toFixed(2))
+          : 0;
+        const leaveAdjustment = (run.status === "Draft" || parseFloat(run.leaveAdjustment || 0) < liveLeaveAdjustment)
+          ? liveLeaveAdjustment
+          : parseFloat(run.leaveAdjustment || 0);
+        const otherDeductions = parseFloat(run.otherDeductions || 0);
+
+        const totalDeductions = parseFloat(
+          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + leaveAdjustment + otherDeductions).toFixed(2)
+        );
+        const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
+        const diwaliBonus = parseFloat(run.diwaliBonus || 0);
+        const netPayAmount = parseFloat((netSalary + diwaliBonus).toFixed(2));
 
         return {
           ...run,
@@ -677,16 +680,16 @@ const Payroll = () => {
 
       const totalEarn = parseFloat((earnBasic + earnAllowance).toFixed(2));
       let leaveAdjustment = 0;
-      if (activeMode === "Monthly" && totalUnpaidLeaves > 0) {
-        leaveAdjustment = parseFloat(((monthlyBase / 30) * totalUnpaidLeaves).toFixed(2));
+      if (activeMode === "Monthly" && totalUnpaidLeaves > 0 && daysInPeriod > 0) {
+        leaveAdjustment = parseFloat(((monthlyBase / daysInPeriod) * totalUnpaidLeaves).toFixed(2));
       }
 
       // Fetch canteen deductions
       const canteenDeduction = getLiveCanteenDeductionForEmployee(emp.id);
 
-      // Fetch approved overtime and special compensation
-      const { compSum: compensation, otHours: otHrs } = getApprovedCompensationDetails(emp.id, monthlyBase);
-      const otAmount = compensation;
+      // Fetch approved overtime hours & amount
+      const { compSum: otAmount, otHours: otHrs } = getApprovedCompensationDetails(emp.id, monthlyBase);
+      const compensation = 0; // Washing Allowance is independent
 
       const grossSalary = parseFloat((totalEarn + compensation + otAmount).toFixed(2));
       const epfWages = Math.min(15000, earnBasic);
@@ -712,7 +715,7 @@ const Payroll = () => {
       const lwfDeduction = 0;
       const otherDeductions = 0;
       const totalDeductions = parseFloat(
-        (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + canteenDeduction + otherDeductions).toFixed(2)
+        (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + canteenDeduction + leaveAdjustment + otherDeductions).toFixed(2)
       );
       const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
       const diwaliBonus = 0;
@@ -1023,10 +1026,60 @@ const Payroll = () => {
       cellA2.value = periodSubtitle;
       cellA2.alignment = { horizontal: "center", vertical: "middle" };
 
-      // Ensure merges exist for A1:AF1, A2:AF2, and S3:Y3
-      try { ws.mergeCells("A1:AF1"); } catch (e) {}
-      try { ws.mergeCells("A2:AF2"); } catch (e) {}
-      try { ws.mergeCells("S3:Y3"); } catch (e) {}
+      // Update Column 14 (N3) and Column 17 (Q3) header titles
+      const cellN3 = ws.getCell("N3");
+      if (cellN3) cellN3.value = "GROSS TOTAL";
+      const cellQ3 = ws.getCell("Q3");
+      if (cellQ3) cellQ3.value = "EARN GROSS";
+
+      // Ensure merges and headers exist for A1:AG1, A2:AG2, and S3:Z3 (DEDUCTION)
+      try { ws.mergeCells("A1:AG1"); } catch (e) {}
+      try { ws.mergeCells("A2:AG2"); } catch (e) {}
+      try { ws.unMergeCells("S3:Y3"); } catch (e) {}
+      try { ws.mergeCells("S3:Z3"); } catch (e) {}
+      const cellS3 = ws.getCell("S3");
+      if (cellS3) {
+        cellS3.value = "DEDUCTION";
+        cellS3.alignment = { horizontal: "center", vertical: "middle" };
+      }
+
+      // Explicitly set Row 4 sub-headers for DEDUCTION and trailing columns
+      const headersMap = {
+        19: "PF",
+        20: "LABOUR WELFARE FUND",
+        21: "ESIC",
+        22: "ADV",
+        23: "Penalty",
+        24: "ABSENT",
+        25: "Canteen",
+        26: "TOTAL DEDUCTION",
+      };
+      Object.entries(headersMap).forEach(([col, title]) => {
+        const cell = ws.getRow(4).getCell(Number(col));
+        if (cell) {
+          cell.value = title;
+          cell.font = { name: "Calibri", size: 8, bold: true };
+          cell.alignment = { horizontal: "center", vertical: "middle" };
+        }
+      });
+
+      const topHeadersMap = {
+        27: "NET SALARY",
+        28: "Diwali Bonus",
+        29: "NET PAY AMOUNT",
+        30: "PAY-MODE",
+        31: "BANK A/C NO.",
+        32: "IFSC",
+        33: "REMARK",
+      };
+      Object.entries(topHeadersMap).forEach(([col, title]) => {
+        const cell = ws.getRow(3).getCell(Number(col));
+        if (cell) {
+          cell.value = title;
+          cell.font = { name: "Calibri", size: 9, bold: true };
+          cell.alignment = { horizontal: "center", vertical: "middle" };
+        }
+      });
 
       // Unmerge any old hardcoded template summary row (e.g. A123:E123)
       try { ws.unMergeCells("A123:E123"); } catch (e) {}
@@ -1041,7 +1094,7 @@ const Payroll = () => {
       // 6. Clear dummy/old rows from row 5 to 500
       for (let r = 5; r <= 500; r++) {
         const row = ws.getRow(r);
-        for (let c = 1; c <= 32; c++) {
+        for (let c = 1; c <= 33; c++) {
           row.getCell(c).value = null;
         }
       }
@@ -1054,7 +1107,7 @@ const Payroll = () => {
       };
 
       const startRowIdx = 5; // Row 5 (1-indexed in ExcelJS)
-      const columnSums = {}; // For calculating totals across all numeric columns (6 to 28)
+      const columnSums = {}; // For calculating totals across all numeric columns (6 to 29)
 
       // 7. Populate employee records starting at Row 5 into the provided template
       rows.forEach((row, idx) => {
@@ -1091,8 +1144,9 @@ const Payroll = () => {
         const esicDeduction = Number(row.esicDeduction) || 0;
         const emiDeduction = Number(row.emiDeduction) || 0;
         const penalty = Number(row.otherDeductions) || 0;
+        const absentCut = Number(row.leaveAdjustment) || 0;
         const canteen = Number(row.canteenDeduction) || 0;
-        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + canteen).toFixed(2));
+        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + absentCut + canteen).toFixed(2));
         const netSalary = Number(row.netSalary) || Math.max(0, Number((grossSalary - totalDeductions).toFixed(2)));
 
         const rowValues = [
@@ -1109,25 +1163,26 @@ const Payroll = () => {
           earnBasic,                                                                   // 11: EARN BASIC+DA
           allowanceRate,                                                               // 12: ALLOW_RATE(TA,MOB,HRA,CON.)
           earnAllowance,                                                               // 13: EARN ALLOW (TA,MOB,HRA,CON.)
-          totalEarn,                                                                   // 14: TOTAL
+          totalEarn,                                                                   // 14: GROSS TOTAL
           washingAll,                                                                  // 15: WASHING ALL.
           otAmount,                                                                    // 16: OT
-          grossSalary,                                                                 // 17: GROSS
+          grossSalary,                                                                 // 17: EARN GROSS
           epfWages,                                                                    // 18: EPF WAGES
           pfDeduction,                                                                 // 19: PF
           0,                                                                          // 20: LABOUR WELFARE FUND
           esicDeduction,                                                               // 21: ESIC
           emiDeduction,                                                                // 22: ADV
           penalty,                                                                     // 23: Penalty
-          canteen,                                                                     // 24: Canteen
-          totalDeductions,                                                             // 25: TOTAL DEDUCTION
-          netSalary,                                                                   // 26: NET SALARY
-          0,                                                                          // 27: Diwali Bonus
-          netSalary,                                                                   // 28: NET PAY AMOUNT
-          (row.paymentMode || row.payMode || empRecord.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH",               // 29: PAY-MODE
-          row.bankAccountNo || empRecord.bankAccountNo || "",                            // 30: BANK A/C NO.
-          row.ifscCode || empRecord.ifscCode || "",                                    // AE: IFSC
-          row.remarks || "",                                                           // AF: REMARK
+          absentCut,                                                                   // 24: ABSENT
+          canteen,                                                                     // 25: Canteen
+          totalDeductions,                                                             // 26: TOTAL DEDUCTION
+          netSalary,                                                                   // 27: NET SALARY
+          0,                                                                          // 28: Diwali Bonus
+          netSalary,                                                                   // 29: NET PAY AMOUNT
+          (row.paymentMode || row.payMode || empRecord.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH",               // 30: PAY-MODE
+          row.bankAccountNo || empRecord.bankAccountNo || "",                            // 31: BANK A/C NO.
+          row.ifscCode || empRecord.ifscCode || "",                                    // 32: IFSC
+          row.remarks || "",                                                           // 33: REMARK
         ];
 
         const excelRow = ws.getRow(rIdx);
@@ -1138,7 +1193,7 @@ const Payroll = () => {
           cell.font = { name: "Calibri", size: 9, bold: false };
           cell.alignment = { horizontal: "left", vertical: "middle" };
           cell.border = normalBorder;
-          if (typeof val === "number" && colNum >= 6 && colNum <= 28) {
+          if (typeof val === "number" && colNum >= 6 && colNum <= 29) {
             columnSums[colNum] = (columnSums[colNum] || 0) + val;
           }
         });
@@ -1150,7 +1205,7 @@ const Payroll = () => {
       try { ws.mergeCells(`A${totalRowIdx}:E${totalRowIdx}`); } catch (e) {}
 
       const totalRow = ws.getRow(totalRowIdx);
-      for (let c = 1; c <= 32; c++) {
+      for (let c = 1; c <= 33; c++) {
         const cell = totalRow.getCell(c);
         cell.border = normalBorder;
         cell.alignment = { horizontal: "left", vertical: "middle" };
@@ -1161,7 +1216,7 @@ const Payroll = () => {
       cellTotalLabel.font = { bold: true };
 
       // Set numeric sum totals in bold
-      for (let c = 6; c <= 28; c++) {
+      for (let c = 6; c <= 29; c++) {
         const sumVal = columnSums[c] !== undefined ? columnSums[c] : null;
         const cell = totalRow.getCell(c);
         cell.value = sumVal !== null ? (Number.isInteger(sumVal) ? sumVal : Number(sumVal.toFixed(2))) : null;
@@ -1216,9 +1271,9 @@ const Payroll = () => {
         [
           "Sr. No.", "EMPCODE", "NAME", "UAN NO.", "IP No.", "TOTAL_DAYS",
           "PAID_DAYS", "ABSENT_DAYS", "OT HRS", "BASIC+DA", "EARN BASIC+DA",
-          "ALLOW_RATE(TA,MOB,HRA,CON.)", "EARN ALLOW (TA,MOB,HRA,CON.)", "TOTAL",
-          "WASHING ALL.", "OT", "GROSS", "EPF WAGES", "PF", "LABOUR WELFARE FUND",
-          "ESIC", "ADV", "Penalty", "Canteen", "TOTAL DEDUCTION.", "NET SALARY",
+          "ALLOW_RATE(TA,MOB,HRA,CON.)", "EARN ALLOW (TA,MOB,HRA,CON.)", "GROSS TOTAL",
+          "WASHING ALL.", "OT", "EARN GROSS", "EPF WAGES", "PF", "LABOUR WELFARE FUND",
+          "ESIC", "ADV", "Penalty", "ABSENT", "Canteen", "TOTAL DEDUCTION.", "NET SALARY",
           "Diwali Bonus", "NET PAY AMOUNT", "PAY-MODE", "BANK A/C NO.", "IFSC", "REMARK"
         ]
       ];
@@ -1275,6 +1330,7 @@ const Payroll = () => {
           fmt(row.esicDeduction),
           fmt(row.emiDeduction),
           fmt(row.otherDeductions),
+          fmt(row.leaveAdjustment),
           fmt(row.canteenDeduction),
           fmt(row.totalDeductions),
           fmt(row.netSalary),
@@ -1693,14 +1749,14 @@ const Payroll = () => {
                     <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[110px]">EARN BASIC+DA</th>
                     <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[140px]">ALLOW_RATE</th>
                     <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[120px]">EARN ALLOW</th>
-                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-100 z-20 border-r border-gray-200 min-w-[110px] font-extrabold text-gray-900">TOTAL</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-100 z-20 border-r border-gray-200 min-w-[125px] font-extrabold text-gray-900">GROSS TOTAL</th>
                     <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[110px]">WASHING ALL.</th>
                     <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[80px]">OT</th>
-                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-emerald-50 text-emerald-900 z-20 border-r border-emerald-200 min-w-[120px] font-extrabold">GROSS</th>
+                    <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-emerald-50 text-emerald-900 z-20 border-r border-emerald-200 min-w-[130px] font-extrabold">EARN GROSS</th>
                     <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[110px]">EPF WAGES</th>
 
                     {/* DEDUCTION Grouped Header */}
-                    <th colSpan={7} className="py-2 px-3 text-center sticky top-0 bg-rose-100/90 text-rose-900 font-extrabold tracking-wider z-20 border-r border-b border-rose-200 uppercase">
+                    <th colSpan={8} className="py-2 px-3 text-center sticky top-0 bg-rose-100/90 text-rose-900 font-extrabold tracking-wider z-20 border-r border-b border-rose-200 uppercase">
                       DEDUCTION
                     </th>
 
@@ -1722,6 +1778,7 @@ const Payroll = () => {
                     <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-50/90 text-rose-800 z-20 border-r border-gray-200 min-w-[90px]">ESIC</th>
                     <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-50/90 text-rose-800 z-20 border-r border-gray-200 min-w-[90px]">ADV</th>
                     <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-50/90 text-rose-800 z-20 border-r border-gray-200 min-w-[90px]">Penalty</th>
+                    <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-50/90 text-rose-800 z-20 border-r border-gray-200 min-w-[95px]">ABSENT</th>
                     <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-50/90 text-rose-800 z-20 border-r border-gray-200 min-w-[90px]">Canteen</th>
                     <th className="py-2 px-3 text-right sticky top-[37px] bg-rose-100 text-rose-950 font-extrabold z-20 border-r border-gray-200 min-w-[125px]">TOTAL DEDUCTION</th>
                   </tr>
@@ -1909,12 +1966,17 @@ const Payroll = () => {
                         />
                       </td>
 
-                      {/* 24. Canteen */}
+                      {/* 24. ABSENT DEDUCTION */}
+                      <td className="py-2.5 px-3 text-right font-mono text-xs text-rose-700 border-r border-gray-100 bg-rose-50/20 font-semibold">
+                        {(Number(row.leaveAdjustment || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+
+                      {/* 25. Canteen */}
                       <td className="py-2.5 px-3 text-right font-mono text-xs text-rose-700 border-r border-gray-100">
                         {(Number(row.canteenDeduction || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
-                      {/* 25. TOTAL DEDUCTION */}
+                      {/* 26. TOTAL DEDUCTION */}
                       <td className="py-2.5 px-3 text-right font-mono text-xs font-bold text-rose-800 bg-rose-50/40 border-r border-rose-100">
                         {(Number(row.totalDeductions || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
