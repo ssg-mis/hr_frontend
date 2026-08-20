@@ -583,20 +583,20 @@ const AttendanceDashboard = () => {
             <p className="text-sm">No records found matching the query.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
             <table className="w-full text-left border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-20 shadow-sm bg-gray-50 border-b border-gray-200">
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Emp Code</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Name</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Shift</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center">Present</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center">Half Day</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center">Absent</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center">On Leave</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center">Overtime (Hrs)</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center">Payable Days</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-right">Actions</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Emp Code</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Name</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Shift</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Present</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Half Day</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Absent</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">On Leave</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Overtime (Hrs)</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Payable Days</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-right sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-150">
@@ -712,15 +712,15 @@ const AttendanceDashboard = () => {
             {/* Modal Content */}
             <div className="p-6 max-h-[60vh] overflow-y-auto">
               <table className="w-full text-left border-collapse">
-                <thead>
+                <thead className="sticky top-0 z-20 shadow-sm bg-gray-50 border-b border-gray-200">
                   <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500">Date</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500">Shift</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500">Status</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500">Check In</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500">Check Out</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500">Duration</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 text-right">Raw Punches</th>
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Date</th>
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Shift</th>
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Status</th>
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Check In</th>
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Check Out</th>
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Duration</th>
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 text-right sticky top-0 bg-gray-50 z-20">Raw Punches</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-150">
