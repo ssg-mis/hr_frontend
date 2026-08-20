@@ -447,14 +447,16 @@ const Payroll = () => {
         const allowance = parseFloat(run.allowance || 0);
         const earnBasic = basicPay;
         const earnAllowance = allowance;
-        const totalEarn = parseFloat((earnBasic + earnAllowance).toFixed(2));
+        const grossTotal = parseFloat((monthlyBase + monthlyAllowance).toFixed(2));
+        const totalEarn = grossTotal;
         const otAmount = (run.status === "Draft" || parseFloat(run.otAmount || 0) < liveOtAmount)
           ? liveOtAmount
           : parseFloat(run.otAmount || 0);
         const finalOtHrs = (run.status === "Draft" || parseFloat(run.otHrs || 0) < liveOtHrs)
           ? liveOtHrs
           : parseFloat(run.otHrs || 0);
-        const grossSalary = parseFloat((totalEarn + finalComp + otAmount).toFixed(2));
+        const earnGross = parseFloat(((earnBasic + earnAllowance) + finalComp + otAmount).toFixed(2));
+        const grossSalary = earnGross;
         const epfWages = Math.min(15000, earnBasic);
 
         const paidDays = parseFloat(run.daysWorked != null ? run.daysWorked : 30);
@@ -509,8 +511,8 @@ const Payroll = () => {
           branchName: run.branchName || empRecord?.branchName || "—",
           branchAddress: run.branchAddress || empRecord?.branchAddress || "",
           paymentMode: (run.paymentMode || empRecord?.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH",
-          bankAccountNo: empRecord?.bankAccountNo || "—",
-          ifscCode: empRecord?.ifscCode || "—",
+          bankAccountNo: ((run.paymentMode || empRecord?.payMode || "CASH").toUpperCase().includes("BANK") ? (empRecord?.bankAccountNo || "—") : "—"),
+          ifscCode: ((run.paymentMode || empRecord?.payMode || "CASH").toUpperCase().includes("BANK") ? (empRecord?.ifscCode || "—") : "—"),
           uanNo: pfRecord.uanNo || empRecord.pfNo || empRecord.uanNo || "—",
           ipNo: esicRecord.esicNumber || esicRecord.ipNo || empRecord.esicNo || empRecord.ipNo || "—",
           periodDays: currentPeriodDays,
@@ -521,7 +523,9 @@ const Payroll = () => {
           earnBasic,
           allowanceRate: monthlyAllowance,
           earnAllowance,
+          grossTotal,
           totalEarn,
+          earnGross,
           basicPay,
           allowance,
           compensation: finalComp,
@@ -678,7 +682,8 @@ const Payroll = () => {
         earnAllowance = parseFloat(((monthlyAllowance / daysInPeriod) * payableDays).toFixed(2));
       }
 
-      const totalEarn = parseFloat((earnBasic + earnAllowance).toFixed(2));
+      const grossTotal = parseFloat((monthlyBase + monthlyAllowance).toFixed(2));
+      const totalEarn = grossTotal;
       let leaveAdjustment = 0;
       if (activeMode === "Monthly" && totalUnpaidLeaves > 0 && daysInPeriod > 0) {
         leaveAdjustment = parseFloat(((monthlyBase / daysInPeriod) * totalUnpaidLeaves).toFixed(2));
@@ -691,7 +696,8 @@ const Payroll = () => {
       const { compSum: otAmount, otHours: otHrs } = getApprovedCompensationDetails(emp.id, monthlyBase);
       const compensation = 0; // Washing Allowance is independent
 
-      const grossSalary = parseFloat((totalEarn + compensation + otAmount).toFixed(2));
+      const earnGross = parseFloat(((earnBasic + earnAllowance) + compensation + otAmount).toFixed(2));
+      const grossSalary = earnGross;
       const epfWages = Math.min(15000, earnBasic);
 
       // PF Calculation
@@ -740,7 +746,9 @@ const Payroll = () => {
         earnBasic,
         allowanceRate: monthlyAllowance,
         earnAllowance,
+        grossTotal,
         totalEarn,
+        earnGross,
         basicPay: earnBasic,
         allowance: earnAllowance,
         compensation,
@@ -761,8 +769,8 @@ const Payroll = () => {
         netPayAmount,
         status: "Draft",
         paymentMode: (emp.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH",
-        bankAccountNo: emp.bankAccountNo || "—",
-        ifscCode: emp.ifscCode || "—",
+        bankAccountNo: ((emp.payMode || "CASH").toUpperCase().includes("BANK") ? (emp.bankAccountNo || "—") : "—"),
+        ifscCode: ((emp.payMode || "CASH").toUpperCase().includes("BANK") ? (emp.ifscCode || "—") : "—"),
         uanNo: pfRecord ? (pfRecord.uanNo || emp.pfNo || "—") : (emp.pfNo || "—"),
         ipNo: esicRecord ? (esicRecord.esicNumber || esicRecord.ipNo || emp.esicNo || "—") : (emp.esicNo || "—"),
         payDate: todayStr,
@@ -1134,10 +1142,11 @@ const Payroll = () => {
           earnBasic = Number(row.basicPay);
         }
 
-        const totalEarn = Number((earnBasic + earnAllowance).toFixed(2));
+        const grossTotal = Number((basicRate + allowanceRate).toFixed(2));
         const washingAll = Number(row.compensation) || 0;
         const otAmount = Number(row.otAmount) || 0;
-        const grossSalary = Number((totalEarn + washingAll + otAmount).toFixed(2));
+        const earnGross = Number(((earnBasic + earnAllowance) + washingAll + otAmount).toFixed(2));
+        const grossSalary = earnGross;
         const epfWages = Math.min(15000, earnBasic);
 
         const pfDeduction = Number(row.pfDeduction) || 0;
@@ -1163,10 +1172,10 @@ const Payroll = () => {
           earnBasic,                                                                   // 11: EARN BASIC+DA
           allowanceRate,                                                               // 12: ALLOW_RATE(TA,MOB,HRA,CON.)
           earnAllowance,                                                               // 13: EARN ALLOW (TA,MOB,HRA,CON.)
-          totalEarn,                                                                   // 14: GROSS TOTAL
+          grossTotal,                                                                  // 14: GROSS TOTAL
           washingAll,                                                                  // 15: WASHING ALL.
           otAmount,                                                                    // 16: OT
-          grossSalary,                                                                 // 17: EARN GROSS
+          earnGross,                                                                   // 17: EARN GROSS
           epfWages,                                                                    // 18: EPF WAGES
           pfDeduction,                                                                 // 19: PF
           0,                                                                          // 20: LABOUR WELFARE FUND
@@ -1292,6 +1301,7 @@ const Payroll = () => {
 
         const monthlyBase = salRec ? parseFloat(salRec.baseSalary) : 0;
         const monthlyAllowance = salRec ? parseFloat(salRec.allowanceSalary) : 0;
+        const grossTotal = monthlyBase + monthlyAllowance;
         const earnedTotal = (row.basicPay || 0) + (row.allowance || 0);
         const epfWages = Math.min(row.basicPay || 0, 15000);
 
@@ -1320,10 +1330,10 @@ const Payroll = () => {
           fmt(row.basicPay),
           fmt(monthlyAllowance),
           fmt(row.allowance),
-          fmt(earnedTotal),
+          fmt(grossTotal),
           "", // WASHING ALL.
-          fmt(row.compensation),
-          fmt(row.grossSalary),
+          fmt(row.otAmount),
+          fmt(row.grossSalary || row.earnGross),
           fmt(epfWages),
           fmt(row.pfDeduction),
           "", // LABOUR WELFARE FUND
@@ -1472,10 +1482,10 @@ const Payroll = () => {
       totals.earnBasic += Number(r.earnBasic || r.basicPay || 0);
       totals.allowanceRate += Number(r.allowanceRate || r.allowance || 0);
       totals.earnAllowance += Number(r.earnAllowance || r.allowance || 0);
-      totals.totalEarn += Number(r.totalEarn || ((r.earnBasic || r.basicPay || 0) + (r.earnAllowance || r.allowance || 0)));
+      totals.totalEarn += Number(r.grossTotal || ((r.basicRate || 0) + (r.allowanceRate || 0)));
       totals.washingAll += Number(r.compensation || 0);
       totals.otAmount += Number(r.otAmount || 0);
-      totals.grossSalary += Number(r.grossSalary || 0);
+      totals.grossSalary += Number(r.earnGross || r.grossSalary || 0);
       totals.epfWages += Number(r.epfWages || Math.min(15000, r.earnBasic || r.basicPay || 0));
       totals.pfDeduction += Number(r.pfDeduction || 0);
       totals.lwfDeduction += Number(r.lwfDeduction || 0);
@@ -1827,46 +1837,25 @@ const Payroll = () => {
                         {row.periodDays || currentPeriodDays}
                       </td>
 
-                      {/* 7. PAID_DAYS */}
+                      {/* 7. PAID_DAYS - Read-only: from attendance */}
                       <td className="py-2.5 px-3 text-center border-r border-gray-100">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={row.daysWorked ?? ""}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/[^0-9.]/g, "");
-                            handleCellChange(row.employeeId, "daysWorked", val);
-                          }}
-                          className="w-14 border border-blue-200 bg-blue-50/30 rounded px-1.5 py-0.5 text-center text-xs font-semibold font-mono text-blue-900 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        />
+                        <span className="inline-block w-14 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5 text-center text-xs font-semibold font-mono text-blue-900 select-none">
+                          {row.daysWorked ?? ""}
+                        </span>
                       </td>
 
-                      {/* 8. ABSENT_DAYS */}
+                      {/* 8. ABSENT_DAYS - Read-only: from attendance */}
                       <td className="py-2.5 px-3 text-center border-r border-gray-100">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={row.unpaidLeaves ?? ""}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/[^0-9.]/g, "");
-                            handleCellChange(row.employeeId, "unpaidLeaves", val);
-                          }}
-                          className="w-14 border border-rose-200 bg-rose-50/30 rounded px-1.5 py-0.5 text-center text-xs font-semibold font-mono text-rose-700 focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                        />
+                        <span className="inline-block w-14 bg-gray-50 border border-rose-100 rounded px-1.5 py-0.5 text-center text-xs font-semibold font-mono text-rose-700 select-none">
+                          {row.unpaidLeaves ?? ""}
+                        </span>
                       </td>
 
-                      {/* 9. OT HRS */}
+                      {/* 9. OT HRS - Read-only: from approved OT requests */}
                       <td className="py-2.5 px-3 text-center font-mono text-xs text-gray-600 border-r border-gray-100">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={row.otHrs ?? 0}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/[^0-9.]/g, "");
-                            handleCellChange(row.employeeId, "otHrs", val);
-                          }}
-                          className="w-12 border border-gray-200 rounded px-1 py-0.5 text-center text-xs font-mono text-gray-700 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                        />
+                        <span className="inline-block w-12 bg-gray-50 border border-gray-200 rounded px-1 py-0.5 text-center text-xs font-mono text-gray-700 select-none">
+                          {row.otHrs ?? 0}
+                        </span>
                       </td>
 
                       {/* 10. BASIC+DA */}
@@ -1889,42 +1878,28 @@ const Payroll = () => {
                         {(Number(row.earnAllowance || row.allowance || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
-                      {/* 14. TOTAL */}
+                      {/* 14. GROSS TOTAL = BASIC+DA + ALLOW_RATE */}
                       <td className="py-2.5 px-3 text-right font-mono text-xs font-bold text-gray-900 bg-slate-50/50 border-r border-gray-100">
-                        {(Number(row.totalEarn || ((row.earnBasic || row.basicPay || 0) + (row.earnAllowance || row.allowance || 0)))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {(Number(row.grossTotal || ((row.basicRate || row.basicSalary || row.basicPay || 0) + (row.allowanceRate || row.allowanceSalary || row.allowance || 0)))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
-                      {/* 15. WASHING ALL. */}
+                      {/* 15. WASHING ALL. - Read-only: from approved compensation */}
                       <td className="py-2.5 px-3 text-right border-r border-gray-100">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={row.compensation ?? 0}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/[^0-9.]/g, "");
-                            handleCellChange(row.employeeId, "compensation", val);
-                          }}
-                          className="w-20 border border-gray-200 rounded px-1.5 py-0.5 text-right text-xs font-mono focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                        />
+                        <span className="inline-block w-20 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5 text-right text-xs font-mono text-gray-700 select-none">
+                          {(Number(row.compensation ?? 0)).toFixed(2)}
+                        </span>
                       </td>
 
-                      {/* 16. OT */}
+                      {/* 16. OT - Read-only: from approved OT calculation */}
                       <td className="py-2.5 px-3 text-right border-r border-gray-100">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={row.otAmount ?? 0}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/[^0-9.]/g, "");
-                            handleCellChange(row.employeeId, "otAmount", val);
-                          }}
-                          className="w-16 border border-gray-200 rounded px-1.5 py-0.5 text-right text-xs font-mono focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                        />
+                        <span className="inline-block w-16 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5 text-right text-xs font-mono text-gray-700 select-none">
+                          {(Number(row.otAmount ?? 0)).toFixed(2)}
+                        </span>
                       </td>
 
-                      {/* 17. GROSS */}
+                      {/* 17. EARN GROSS = EARN BASIC+DA + EARN ALLOW + WASHING ALL + OT */}
                       <td className="py-2.5 px-3 text-right font-mono text-xs font-bold text-emerald-800 bg-emerald-50/30 border-r border-emerald-100">
-                        {(Number(row.grossSalary || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {(Number(row.earnGross || row.grossSalary || ((row.earnBasic || 0) + (row.earnAllowance || 0) + (row.compensation || 0) + (row.otAmount || 0)))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
                       {/* 18. EPF WAGES */}
@@ -2138,18 +2113,11 @@ const Payroll = () => {
                         </div>
                       </td>
 
-                      {/* Payable Days */}
+                      {/* Payable Days - Read-only: from attendance */}
                       <td className="py-3 px-3 text-center">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={row.daysWorked ?? ""}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/[^0-9.]/g, "");
-                            handleCellChange(row.employeeId, "daysWorked", val);
-                          }}
-                          className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-center font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        />
+                        <span className="inline-block w-16 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-center font-mono text-sm select-none">
+                          {row.daysWorked ?? ""}
+                        </span>
                       </td>
 
                       {/* Paid Leaves */}
@@ -2159,18 +2127,11 @@ const Payroll = () => {
                         </span>
                       </td>
 
-                      {/* Absent */}
+                      {/* Absent - Read-only: from attendance */}
                       <td className="py-3 px-3 text-center">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={row.unpaidLeaves ?? ""}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/[^0-9.]/g, "");
-                            handleCellChange(row.employeeId, "unpaidLeaves", val);
-                          }}
-                          className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-center font-mono text-rose-600 focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                        />
+                        <span className="inline-block w-16 bg-gray-50 border border-rose-100 rounded-lg px-2 py-1 text-center font-mono text-rose-600 select-none">
+                          {row.unpaidLeaves ?? ""}
+                        </span>
                       </td>
 
                       {/* Basic Pay */}
@@ -2183,18 +2144,11 @@ const Payroll = () => {
                         {(Number(row.earnAllowance || row.allowance || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
-                      {/* OT & Comp */}
+                      {/* OT & Comp - Read-only: from approved compensation/OT */}
                       <td className="py-3 px-3 text-right">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={row.compensation ?? 0}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/[^0-9.]/g, "");
-                            handleCellChange(row.employeeId, "compensation", val);
-                          }}
-                          className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-right font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        />
+                        <span className="inline-block w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-right font-mono text-sm select-none">
+                          {(Number(row.compensation ?? 0)).toFixed(2)}
+                        </span>
                       </td>
 
                       {/* LWP Adjust */}
