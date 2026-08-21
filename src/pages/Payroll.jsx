@@ -443,7 +443,7 @@ const Payroll = () => {
           ? liveCanteen
           : parseFloat(run.canteenDeduction || 0);
 
-        // Compute live attendance days
+        // Compute live attendance days from biometric logs
         const empAtt = attendanceByEmployeeId.get(Number(run.employeeId)) || [];
         let livePresentDays = 0;
         let absentDays = 0;
@@ -470,13 +470,46 @@ const Payroll = () => {
           absentDays = absentDates.size;
         }
 
-        const paidDays = (run.status === "Draft" && empAtt.length > 0 && livePresentDays > 0)
-          ? livePresentDays
-          : parseFloat(run.daysWorked != null ? run.daysWorked : 30);
-        
-        if (empAtt.length === 0) {
-          absentDays = Math.max(0, currentPeriodDays - paidDays);
+        // Calculate leaves for saved run to ensure paid and unpaid leaves are properly accounted for
+        const empLeaves = leavesByEmployeeId.get(Number(run.employeeId)) || [];
+        let lwpDays = 0;
+        let paidLeaveDays = 0;
+        if (activeMode === "Monthly") {
+          const [yearStr, monthStr] = selectedMonth.split("-").map(Number);
+          const firstOfMonth = new Date(yearStr, monthStr - 1, 1);
+          const lastOfMonth = new Date(yearStr, monthStr, 0);
+
+          empLeaves.forEach(l => {
+            const lStart = new Date(l.startDate);
+            const lEnd = new Date(l.endDate);
+            const overlapStart = lStart > firstOfMonth ? lStart : firstOfMonth;
+            const overlapEnd = lEnd < lastOfMonth ? lEnd : lastOfMonth;
+
+            if (overlapStart <= overlapEnd) {
+              const diff = Math.abs(overlapEnd.getTime() - overlapStart.getTime());
+              const daysCount = Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
+              const code = (l.leaveCode || '').toUpperCase();
+              const typeStr = (l.leaveType || '').toLowerCase();
+              if (code === "LWP" || typeStr.includes("without pay") || code.includes("UNPAID")) {
+                lwpDays += daysCount;
+              } else {
+                paidLeaveDays += daysCount;
+              }
+            }
+          });
         }
+
+        const livePaidDays = livePresentDays + paidLeaveDays;
+        const totalUnpaidLeaves = lwpDays + absentDays;
+
+        const paidDays = (run.status === "Draft" && empAtt.length > 0)
+          ? livePaidDays
+          : parseFloat(run.daysWorked != null ? run.daysWorked : (currentPeriodDays - totalUnpaidLeaves));
+        
+        const finalAbsentDays = (run.status === "Draft" && empAtt.length > 0)
+          ? totalUnpaidLeaves
+          : (run.unpaidLeaves != null ? parseFloat(run.unpaidLeaves) : (empAtt.length === 0 ? Math.max(0, currentPeriodDays - paidDays) : totalUnpaidLeaves));
+        absentDays = finalAbsentDays;
 
         const liveEarnBasic = (currentPeriodDays > 0 && paidDays < currentPeriodDays)
           ? parseFloat(((monthlyBase / currentPeriodDays) * paidDays).toFixed(2))
@@ -520,9 +553,9 @@ const Payroll = () => {
         const otherDeductions = parseFloat(run.otherDeductions || 0);
 
         const totalDeductions = parseFloat(
-          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + otherDeductions).toFixed(2)
+          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + otherDeductions + leaveAdjustment).toFixed(2)
         );
-        const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
+        const netSalary = parseFloat(Math.max(0, earnGross - totalDeductions).toFixed(2));
         const diwaliBonus = parseFloat(run.diwaliBonus || 0);
         const netPayAmount = parseFloat((netSalary + diwaliBonus).toFixed(2));
 
@@ -743,9 +776,9 @@ const Payroll = () => {
       const lwfDeduction = 0;
       const otherDeductions = 0;
       const totalDeductions = parseFloat(
-        (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + canteenDeduction + otherDeductions).toFixed(2)
+        (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + canteenDeduction + otherDeductions + leaveAdjustment).toFixed(2)
       );
-      const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
+      const netSalary = parseFloat(Math.max(0, earnGross - totalDeductions).toFixed(2));
       const diwaliBonus = 0;
       const netPayAmount = parseFloat((netSalary + diwaliBonus).toFixed(2));
 
@@ -890,8 +923,10 @@ const Payroll = () => {
         const penalty = updatedRow.otherDeductions !== undefined ? updatedRow.otherDeductions : (row.otherDeductions || 0);
         const canteen = updatedRow.canteenDeduction || 0;
 
+        const absentCut = updatedRow.leaveAdjustment !== undefined ? updatedRow.leaveAdjustment : (row.leaveAdjustment || 0);
+
         const totalDeductions = parseFloat(
-          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + penalty + canteen).toFixed(2)
+          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + penalty + absentCut + canteen).toFixed(2)
         );
         updatedRow.totalDeductions = totalDeductions;
 
@@ -899,6 +934,7 @@ const Payroll = () => {
         updatedRow.netSalary = netSalary;
 
         const diwaliBonus = updatedRow.diwaliBonus !== undefined ? updatedRow.diwaliBonus : (row.diwaliBonus || 0);
+        updatedRow.diwaliBonus = diwaliBonus;
         updatedRow.netPayAmount = parseFloat((netSalary + diwaliBonus).toFixed(2));
 
         return updatedRow;
@@ -1188,8 +1224,10 @@ const Payroll = () => {
         const penalty = Number(row.otherDeductions) || 0;
         const absentCut = Number(row.leaveAdjustment) || 0;
         const canteen = Number(row.canteenDeduction) || 0;
-        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + canteen).toFixed(2));
-        const netSalary = Number(row.netSalary) || Math.max(0, Number((grossSalary - totalDeductions).toFixed(2)));
+        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + absentCut + canteen).toFixed(2));
+        const netSalary = Number(row.netSalary) || Math.max(0, Number((earnGross - totalDeductions).toFixed(2)));
+        const diwaliBonus = Number(row.diwaliBonus) || 0;
+        const netPayAmount = Number(row.netPayAmount) || Number((netSalary + diwaliBonus).toFixed(2));
 
         const rowValues = [
           idx + 1,                                                                     // 1: Sr. No.
@@ -1211,7 +1249,7 @@ const Payroll = () => {
           earnGross,                                                                   // 17: EARN GROSS
           epfWages,                                                                    // 18: EPF WAGES
           pfDeduction,                                                                 // 19: PF
-          0,                                                                          // 20: LABOUR WELFARE FUND
+          Number(row.lwfDeduction) || 0,                                              // 20: LABOUR WELFARE FUND
           esicDeduction,                                                               // 21: ESIC
           emiDeduction,                                                                // 22: ADV
           penalty,                                                                     // 23: Penalty
@@ -1219,8 +1257,8 @@ const Payroll = () => {
           canteen,                                                                     // 25: Canteen
           totalDeductions,                                                             // 26: TOTAL DEDUCTION
           netSalary,                                                                   // 27: NET SALARY
-          0,                                                                          // 28: Diwali Bonus
-          netSalary,                                                                   // 29: NET PAY AMOUNT
+          diwaliBonus,                                                                 // 28: Diwali Bonus
+          netPayAmount,                                                                // 29: NET PAY AMOUNT
           (row.paymentMode || row.payMode || empRecord.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH",               // 30: PAY-MODE
           row.bankAccountNo || empRecord.bankAccountNo || "",                            // 31: BANK A/C NO.
           row.ifscCode || empRecord.ifscCode || "",                                    // 32: IFSC
@@ -1354,23 +1392,23 @@ const Payroll = () => {
           index + 1,
           row.employeeCode || "-",
           row.employeeName || "-",
-          pfRec?.uanNumber || "",
-          esicRec?.esicNumber || "",
+          pfRec?.uanNumber || row.uanNo || "",
+          esicRec?.esicNumber || row.ipNo || "",
           totalDays,
           row.daysWorked || 0,
           row.unpaidLeaves || 0,
-          row.compensation > 0 ? ((row.compensation / ((monthlyBase || 1) / 240 * 1.5)).toFixed(1)) : "0",
+          row.otHrs || 0,
           fmt(monthlyBase),
           fmt(row.basicPay),
           fmt(monthlyAllowance),
           fmt(row.allowance),
           fmt(grossTotal),
-          "", // WASHING ALL.
-          fmt(row.otAmount),
+          fmt(row.compensation || 0), // WASHING ALL.
+          fmt(row.otAmount || 0),
           fmt(row.grossSalary || row.earnGross),
           fmt(epfWages),
           fmt(row.pfDeduction),
-          "", // LABOUR WELFARE FUND
+          fmt(row.lwfDeduction || 0), // LABOUR WELFARE FUND
           fmt(row.esicDeduction),
           fmt(row.emiDeduction),
           fmt(row.otherDeductions),
@@ -1378,11 +1416,11 @@ const Payroll = () => {
           fmt(row.canteenDeduction),
           fmt(row.totalDeductions),
           fmt(row.netSalary),
-          "", // Diwali Bonus
-          fmt(row.netSalary), // NET PAY AMOUNT
-          "", // PAY-MODE
-          "", // BANK A/C NO.
-          "", // IFSC
+          fmt(row.diwaliBonus || 0), // Diwali Bonus
+          fmt(row.netPayAmount || (Number(row.netSalary || 0) + Number(row.diwaliBonus || 0))), // NET PAY AMOUNT
+          (row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH", // PAY-MODE
+          row.bankAccountNo || "—", // BANK A/C NO.
+          row.ifscCode || "—", // IFSC
           row.remarks || ""
         ];
       });
@@ -1502,6 +1540,7 @@ const Payroll = () => {
       emiDeduction: 0,
       otherDeductions: 0,
       canteenDeduction: 0,
+      leaveAdjustment: 0,
       totalDeductions: 0,
       netSalary: 0,
       diwaliBonus: 0,
@@ -1527,6 +1566,7 @@ const Payroll = () => {
       totals.emiDeduction += Number(r.emiDeduction || 0);
       totals.otherDeductions += Number(r.otherDeductions || 0);
       totals.canteenDeduction += Number(r.canteenDeduction || 0);
+      totals.leaveAdjustment += Number(r.leaveAdjustment || 0);
       totals.totalDeductions += Number(r.totalDeductions || 0);
       totals.netSalary += Number(r.netSalary || 0);
       totals.diwaliBonus += Number(r.diwaliBonus || 0);

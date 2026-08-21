@@ -106,22 +106,38 @@ const drawPayslip = (doc, data, startY = 10) => {
   currentY = lastTableY + 6;
 
   // Earnings and Deductions Data
+  const basicVal = Number(data.basicRate || data.basicPay || 0);
+  const allowanceVal = Number(data.allowanceRate || data.allowance || 0);
+  const washingVal = Number(data.compensation || 0);
+  const otVal = Number(data.otAmount || 0);
+  const grossEarningsVal = Number((basicVal + allowanceVal + washingVal + otVal).toFixed(2)) || Number(data.grossTotal || data.grossSalary || 0);
+
+  const pfVal = Number(data.pfDeduction || 0);
+  const lwfVal = Number(data.lwfDeduction || 0);
+  const esicVal = Number(data.esicDeduction || 0);
+  const emiVal = Number(data.emiDeduction || 0);
+  const canteenVal = Number(data.canteenDeduction || 0);
+  const absentVal = Number(data.leaveAdjustment || 0);
+  const penaltyVal = Number(data.otherDeductions || 0);
+  const totalDeductionVal = Number(data.totalDeductions) || Number((pfVal + lwfVal + esicVal + emiVal + canteenVal + absentVal + penaltyVal).toFixed(2));
+  const netPayVal = Number(data.netPayAmount || data.netSalary || 0);
+
   const earnings = [
-    ['Basic Pay', formatCurrency(data.basicPay)],
-    ['Allowances', formatCurrency(data.allowance)],
-    ['OT & Compensation', formatCurrency(data.compensation)],
-    ['', ''],
+    ['Basic + DA Rate', formatCurrency(basicVal)],
+    ['Allowance Rate', formatCurrency(allowanceVal)],
+    ['Washing Allowance', formatCurrency(washingVal)],
+    ['Overtime (OT)', formatCurrency(otVal)],
     ['', ''],
     ['', '']
   ];
 
   const deductions = [
-    ['PF Contribution', formatCurrency(data.pfDeduction)],
-    ['ESIC Deduction', formatCurrency(data.esicDeduction)],
-    ['EMI Deduction', formatCurrency(data.emiDeduction)],
-    ['Canteen Deduction', formatCurrency(data.canteenDeduction)],
-    ['LWP Leave Adjustment', formatCurrency(data.leaveAdjustment)],
-    ['Other Deductions', formatCurrency(data.otherDeductions)]
+    ['PF Contribution', formatCurrency(pfVal)],
+    ['Labour Welfare Fund (LWF)', formatCurrency(lwfVal)],
+    ['ESIC Deduction', formatCurrency(esicVal)],
+    ['EMI / Advance', formatCurrency(emiVal)],
+    ['Absent Deduction', formatCurrency(absentVal)],
+    ['Canteen & Penalty', formatCurrency(canteenVal + penaltyVal)]
   ];
 
   const tableBody = [];
@@ -147,7 +163,7 @@ const drawPayslip = (doc, data, startY = 10) => {
     head: [['Earnings', 'Amount', 'Deductions', 'Amount']],
     body: tableBody,
     foot: [
-      ['Gross Earnings', formatCurrency(data.grossSalary), 'Total Deductions', formatCurrency(data.totalDeductions)]
+      ['Gross Earnings', formatCurrency(grossEarningsVal), 'Total Deductions', formatCurrency(totalDeductionVal)]
     ],
     footStyles: { fillColor: [245, 245, 245], textColor: [0, 0, 0], fontStyle: 'bold' }
   });
@@ -162,11 +178,11 @@ const drawPayslip = (doc, data, startY = 10) => {
   
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
-  doc.text(`NET SALARY (Take-Home Pay): ${formatCurrency(data.netSalary)}`, 20, currentY + 8);
+  doc.text(`NET PAY AMOUNT (Take-Home Pay): ${formatCurrency(netPayVal)}`, 20, currentY + 8);
   
   doc.setFontSize(9);
   doc.setFont('helvetica', 'italic');
-  doc.text(`In Words: Rupees ${numberToIndianWords(data.netSalary || 0)}`, 20, currentY + 16);
+  doc.text(`In Words: Rupees ${numberToIndianWords(netPayVal)}`, 20, currentY + 16);
 
   // Footer area
   const footerY = 265;
