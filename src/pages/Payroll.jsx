@@ -443,10 +443,52 @@ const Payroll = () => {
           ? liveCanteen
           : parseFloat(run.canteenDeduction || 0);
 
-        const basicPay = parseFloat(run.basicPay || 0);
-        const allowance = parseFloat(run.allowance || 0);
-        const earnBasic = basicPay;
-        const earnAllowance = allowance;
+        // Compute live attendance days
+        const empAtt = attendanceByEmployeeId.get(Number(run.employeeId)) || [];
+        let livePresentDays = 0;
+        let absentDays = 0;
+        if (empAtt.length > 0) {
+          const presentLogs = empAtt.filter(a => a.status === "Present" || a.punchIn || a.firstCheckIn);
+          const presentDates = new Set(
+            presentLogs.map(a => {
+              const d = a.workDate || a.date || a.attendanceDate || '';
+              return typeof d === 'string' ? d.slice(0, 10) : (d ? new Date(d).toISOString().slice(0, 10) : '');
+            })
+          );
+          presentDates.delete('');
+          livePresentDays = presentDates.size;
+
+          const absentLogs = empAtt.filter(a => a.status === "Absent");
+          const absentDates = new Set(
+            absentLogs.map(a => {
+              const d = a.workDate || a.date || a.attendanceDate || '';
+              return typeof d === 'string' ? d.slice(0, 10) : (d ? new Date(d).toISOString().slice(0, 10) : '');
+            })
+          );
+          absentDates.delete('');
+          for (const p of presentDates) absentDates.delete(p);
+          absentDays = absentDates.size;
+        }
+
+        const paidDays = (run.status === "Draft" && empAtt.length > 0 && livePresentDays > 0)
+          ? livePresentDays
+          : parseFloat(run.daysWorked != null ? run.daysWorked : 30);
+        
+        if (empAtt.length === 0) {
+          absentDays = Math.max(0, currentPeriodDays - paidDays);
+        }
+
+        const liveEarnBasic = (currentPeriodDays > 0 && paidDays < currentPeriodDays)
+          ? parseFloat(((monthlyBase / currentPeriodDays) * paidDays).toFixed(2))
+          : monthlyBase;
+        const liveEarnAllowance = (currentPeriodDays > 0 && paidDays < currentPeriodDays)
+          ? parseFloat(((monthlyAllowance / currentPeriodDays) * paidDays).toFixed(2))
+          : monthlyAllowance;
+
+        const earnBasic = run.status === "Draft" ? liveEarnBasic : parseFloat(run.basicPay || 0);
+        const earnAllowance = run.status === "Draft" ? liveEarnAllowance : parseFloat(run.allowance || 0);
+        const basicPay = earnBasic;
+        const allowance = earnAllowance;
         const grossTotal = parseFloat((monthlyBase + monthlyAllowance).toFixed(2));
         const totalEarn = grossTotal;
         const otAmount = (run.status === "Draft" || parseFloat(run.otAmount || 0) < liveOtAmount)
@@ -458,34 +500,6 @@ const Payroll = () => {
         const earnGross = parseFloat(((earnBasic + earnAllowance) + finalComp + otAmount).toFixed(2));
         const grossSalary = earnGross;
         const epfWages = Math.min(15000, earnBasic);
-
-        const paidDays = parseFloat(run.daysWorked != null ? run.daysWorked : 30);
-        
-        // Compute absentDays from attendance records or fallback
-        const empAtt = attendanceByEmployeeId.get(Number(run.employeeId)) || [];
-        let absentDays = 0;
-        if (empAtt.length > 0) {
-          const presentLogs = empAtt.filter(a => a.status === "Present" || a.punchIn || a.firstCheckIn);
-          const presentDates = new Set(
-            presentLogs.map(a => {
-              const d = a.workDate || a.date || a.attendanceDate || '';
-              return typeof d === 'string' ? d.slice(0, 10) : (d ? new Date(d).toISOString().slice(0, 10) : '');
-            })
-          );
-          presentDates.delete('');
-          const absentLogs = empAtt.filter(a => a.status === "Absent");
-          const absentDates = new Set(
-            absentLogs.map(a => {
-              const d = a.workDate || a.date || a.attendanceDate || '';
-              return typeof d === 'string' ? d.slice(0, 10) : (d ? new Date(d).toISOString().slice(0, 10) : '');
-            })
-          );
-          absentDates.delete('');
-          for (const p of presentDates) absentDates.delete(p);
-          absentDays = absentDates.size;
-        } else {
-          absentDays = Math.max(0, currentPeriodDays - paidDays);
-        }
 
         const isPfOptedIn = pfRecord?.isOptedIn != null ? pfRecord.isOptedIn : (grossTotal <= 15000);
         const livePfDeduction = isPfOptedIn ? parseFloat((epfWages * 0.12).toFixed(2)) : 0;
@@ -506,7 +520,7 @@ const Payroll = () => {
         const otherDeductions = parseFloat(run.otherDeductions || 0);
 
         const totalDeductions = parseFloat(
-          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + leaveAdjustment + otherDeductions).toFixed(2)
+          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + otherDeductions).toFixed(2)
         );
         const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
         const diwaliBonus = parseFloat(run.diwaliBonus || 0);
@@ -729,7 +743,7 @@ const Payroll = () => {
       const lwfDeduction = 0;
       const otherDeductions = 0;
       const totalDeductions = parseFloat(
-        (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + canteenDeduction + leaveAdjustment + otherDeductions).toFixed(2)
+        (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + canteenDeduction + otherDeductions).toFixed(2)
       );
       const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
       const diwaliBonus = 0;
@@ -1174,7 +1188,7 @@ const Payroll = () => {
         const penalty = Number(row.otherDeductions) || 0;
         const absentCut = Number(row.leaveAdjustment) || 0;
         const canteen = Number(row.canteenDeduction) || 0;
-        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + absentCut + canteen).toFixed(2));
+        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + canteen).toFixed(2));
         const netSalary = Number(row.netSalary) || Math.max(0, Number((grossSalary - totalDeductions).toFixed(2)));
 
         const rowValues = [
