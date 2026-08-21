@@ -443,26 +443,9 @@ const Payroll = () => {
           ? liveCanteen
           : parseFloat(run.canteenDeduction || 0);
 
-        const basicPay = parseFloat(run.basicPay || 0);
-        const allowance = parseFloat(run.allowance || 0);
-        const earnBasic = basicPay;
-        const earnAllowance = allowance;
-        const grossTotal = parseFloat((monthlyBase + monthlyAllowance).toFixed(2));
-        const totalEarn = grossTotal;
-        const otAmount = (run.status === "Draft" || parseFloat(run.otAmount || 0) < liveOtAmount)
-          ? liveOtAmount
-          : parseFloat(run.otAmount || 0);
-        const finalOtHrs = (run.status === "Draft" || parseFloat(run.otHrs || 0) < liveOtHrs)
-          ? liveOtHrs
-          : parseFloat(run.otHrs || 0);
-        const earnGross = parseFloat(((earnBasic + earnAllowance) + finalComp + otAmount).toFixed(2));
-        const grossSalary = earnGross;
-        const epfWages = Math.min(15000, earnGross);
-
-        const paidDays = parseFloat(run.daysWorked != null ? run.daysWorked : 30);
-        
-        // Compute absentDays from attendance records or fallback
+        // Compute live attendance days
         const empAtt = attendanceByEmployeeId.get(Number(run.employeeId)) || [];
+        let livePresentDays = 0;
         let absentDays = 0;
         if (empAtt.length > 0) {
           const presentLogs = empAtt.filter(a => a.status === "Present" || a.punchIn || a.firstCheckIn);
@@ -473,6 +456,8 @@ const Payroll = () => {
             })
           );
           presentDates.delete('');
+          livePresentDays = presentDates.size;
+
           const absentLogs = empAtt.filter(a => a.status === "Absent");
           const absentDates = new Set(
             absentLogs.map(a => {
@@ -483,9 +468,38 @@ const Payroll = () => {
           absentDates.delete('');
           for (const p of presentDates) absentDates.delete(p);
           absentDays = absentDates.size;
-        } else {
+        }
+
+        const paidDays = (run.status === "Draft" && empAtt.length > 0 && livePresentDays > 0)
+          ? livePresentDays
+          : parseFloat(run.daysWorked != null ? run.daysWorked : 30);
+        
+        if (empAtt.length === 0) {
           absentDays = Math.max(0, currentPeriodDays - paidDays);
         }
+
+        const liveEarnBasic = (currentPeriodDays > 0 && paidDays < currentPeriodDays)
+          ? parseFloat(((monthlyBase / currentPeriodDays) * paidDays).toFixed(2))
+          : monthlyBase;
+        const liveEarnAllowance = (currentPeriodDays > 0 && paidDays < currentPeriodDays)
+          ? parseFloat(((monthlyAllowance / currentPeriodDays) * paidDays).toFixed(2))
+          : monthlyAllowance;
+
+        const earnBasic = run.status === "Draft" ? liveEarnBasic : parseFloat(run.basicPay || 0);
+        const earnAllowance = run.status === "Draft" ? liveEarnAllowance : parseFloat(run.allowance || 0);
+        const basicPay = earnBasic;
+        const allowance = earnAllowance;
+        const grossTotal = parseFloat((monthlyBase + monthlyAllowance).toFixed(2));
+        const totalEarn = grossTotal;
+        const otAmount = (run.status === "Draft" || parseFloat(run.otAmount || 0) < liveOtAmount)
+          ? liveOtAmount
+          : parseFloat(run.otAmount || 0);
+        const finalOtHrs = (run.status === "Draft" || parseFloat(run.otHrs || 0) < liveOtHrs)
+          ? liveOtHrs
+          : parseFloat(run.otHrs || 0);
+        const earnGross = parseFloat(((earnBasic + earnAllowance) + finalComp + otAmount).toFixed(2));
+        const grossSalary = earnGross;
+        const epfWages = Math.min(15000, earnBasic);
 
         const isPfOptedIn = pfRecord?.isOptedIn != null ? pfRecord.isOptedIn : (grossTotal <= 15000);
         const livePfDeduction = isPfOptedIn ? parseFloat((epfWages * 0.12).toFixed(2)) : 0;
@@ -506,7 +520,7 @@ const Payroll = () => {
         const otherDeductions = parseFloat(run.otherDeductions || 0);
 
         const totalDeductions = parseFloat(
-          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + leaveAdjustment + otherDeductions).toFixed(2)
+          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + otherDeductions).toFixed(2)
         );
         const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
         const diwaliBonus = parseFloat(run.diwaliBonus || 0);
@@ -706,9 +720,9 @@ const Payroll = () => {
 
       const earnGross = parseFloat(((earnBasic + earnAllowance) + compensation + otAmount).toFixed(2));
       const grossSalary = earnGross;
-      const epfWages = Math.min(15000, earnGross);
+      const epfWages = Math.min(15000, earnBasic);
 
-      // PF Calculation (Deducted from Earn Gross, capped at 15,000)
+      // PF Calculation (Deducted from Earn Basic + DA, capped at 15,000)
       let pfDeduction = 0;
       if (isPfOptedIn) {
         pfDeduction = parseFloat((epfWages * 0.12).toFixed(2));
@@ -729,7 +743,7 @@ const Payroll = () => {
       const lwfDeduction = 0;
       const otherDeductions = 0;
       const totalDeductions = parseFloat(
-        (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + canteenDeduction + leaveAdjustment + otherDeductions).toFixed(2)
+        (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + canteenDeduction + otherDeductions).toFixed(2)
       );
       const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
       const diwaliBonus = 0;
@@ -834,10 +848,10 @@ const Payroll = () => {
         updatedRow.grossSalary = grossSalary;
 
         const grossTotal = parseFloat(((updatedRow.basicRate || row.basicRate || 0) + (updatedRow.allowanceRate || row.allowanceRate || 0)).toFixed(2));
-        const epfWages = Math.min(15000, grossSalary);
+        const epfWages = Math.min(15000, earnBasic);
         updatedRow.epfWages = epfWages;
 
-        // PF Deduction (Deducted from Earn Gross, capped at 15,000)
+        // PF Deduction (Deducted from Earn Basic + DA, capped at 15,000)
         const pfRecord = pfByEmployeeId.get(Number(empId));
         const isPfOptedIn = pfRecord ? pfRecord.isOptedIn : ((basicRate + allowanceRate) <= 15000);
         if (isPfOptedIn) {
@@ -1166,7 +1180,7 @@ const Payroll = () => {
         const otAmount = Number(row.otAmount) || 0;
         const earnGross = Number(((earnBasic + earnAllowance) + washingAll + otAmount).toFixed(2));
         const grossSalary = earnGross;
-        const epfWages = Math.min(15000, earnGross);
+        const epfWages = Math.min(15000, earnBasic);
 
         const pfDeduction = Number(row.pfDeduction) || 0;
         const esicDeduction = Number(row.esicDeduction) || 0;
@@ -1174,7 +1188,7 @@ const Payroll = () => {
         const penalty = Number(row.otherDeductions) || 0;
         const absentCut = Number(row.leaveAdjustment) || 0;
         const canteen = Number(row.canteenDeduction) || 0;
-        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + absentCut + canteen).toFixed(2));
+        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + canteen).toFixed(2));
         const netSalary = Number(row.netSalary) || Math.max(0, Number((grossSalary - totalDeductions).toFixed(2)));
 
         const rowValues = [
@@ -1323,7 +1337,7 @@ const Payroll = () => {
         const grossTotal = monthlyBase + monthlyAllowance;
         const earnedTotal = (row.basicPay || 0) + (row.allowance || 0);
         const earnGross = row.grossSalary || row.earnGross || earnedTotal || 0;
-        const epfWages = Math.min(earnGross, 15000);
+        const epfWages = Math.min(row.basicPay || row.earnBasic || monthlyBase || 0, 15000);
 
         let totalDays = 30;
         if (activeMode === "Daily" && startDate && endDate) {
@@ -1506,7 +1520,7 @@ const Payroll = () => {
       totals.washingAll += Number(r.compensation || 0);
       totals.otAmount += Number(r.otAmount || 0);
       totals.grossSalary += Number(r.earnGross || r.grossSalary || 0);
-      totals.epfWages += Number(r.epfWages || Math.min(15000, r.earnGross || r.grossSalary || ((r.earnBasic || 0) + (r.earnAllowance || 0))));
+      totals.epfWages += Number(r.epfWages || Math.min(15000, r.earnBasic || r.basicPay || 0));
       totals.pfDeduction += Number(r.pfDeduction || 0);
       totals.lwfDeduction += Number(r.lwfDeduction || 0);
       totals.esicDeduction += Number(r.esicDeduction || 0);
@@ -1924,7 +1938,7 @@ const Payroll = () => {
 
                       {/* 18. EPF WAGES */}
                       <td className="py-2.5 px-3 text-right font-mono text-xs text-gray-700 border-r border-gray-100">
-                        {(Number(row.epfWages || Math.min(15000, row.earnGross || row.grossSalary || ((row.earnBasic || 0) + (row.earnAllowance || 0))))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {(Number(row.epfWages || Math.min(15000, row.earnBasic || row.basicPay || 0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
                       {/* 19. PF */}
