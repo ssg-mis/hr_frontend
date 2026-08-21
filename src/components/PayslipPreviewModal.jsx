@@ -81,8 +81,9 @@ const PayslipPreviewModal = ({ isOpen, onClose, payslipData }) => {
     basicPay: payslipData.basicPay || 0,
     allowance: payslipData.allowance || 0,
     compensation: payslipData.compensation || 0,
+    otAmount: payslipData.otAmount || 0,
     leaveAdjustment: payslipData.leaveAdjustment || 0,
-    grossSalary: payslipData.grossSalary || 0,
+    grossSalary: payslipData.grossSalary || payslipData.earnGross || 0,
     pfDeduction: payslipData.pfDeduction || 0,
     esicDeduction: payslipData.esicDeduction || 0,
     emiDeduction: payslipData.emiDeduction || 0,
@@ -90,6 +91,8 @@ const PayslipPreviewModal = ({ isOpen, onClose, payslipData }) => {
     otherDeductions: payslipData.otherDeductions || 0,
     totalDeductions: payslipData.totalDeductions || 0,
     netSalary: payslipData.netSalary || 0,
+    diwaliBonus: payslipData.diwaliBonus || 0,
+    netPayAmount: payslipData.netPayAmount || payslipData.netSalary || 0,
   };
 
   return (
@@ -196,15 +199,15 @@ const PayslipPreviewModal = ({ isOpen, onClose, payslipData }) => {
                         <td className="p-3 text-right font-mono text-slate-900">{formatCurrency(data.allowance)}</td>
                       </tr>
                       <tr className="border-b border-slate-100">
-                        <td className="p-3 text-slate-600">Compensation</td>
-                        <td className="p-3 text-right font-mono text-slate-900">{formatCurrency(data.compensation)}</td>
+                        <td className="p-3 text-slate-600">Overtime (OT)</td>
+                        <td className="p-3 text-right font-mono text-slate-900">{formatCurrency(data.otAmount || 0)}</td>
                       </tr>
                       <tr className="border-b border-slate-100">
-                        <td className="p-3 text-slate-600">Leave Adjustment</td>
-                        <td className="p-3 text-right font-mono text-slate-900">{formatCurrency(data.leaveAdjustment)}</td>
+                        <td className="p-3 text-slate-600">Compensation / Washing</td>
+                        <td className="p-3 text-right font-mono text-slate-900">{formatCurrency(data.compensation)}</td>
                       </tr>
-                      {/* Filler rows to match height */}
-                      <tr><td className="p-3 text-transparent">-</td><td className="p-3">-</td></tr>
+                      <tr className="border-b border-slate-100"><td className="p-3 text-transparent">-</td><td className="p-3 text-transparent">-</td></tr>
+                      <tr><td className="p-3 text-transparent">-</td><td className="p-3 text-transparent">-</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -224,6 +227,10 @@ const PayslipPreviewModal = ({ isOpen, onClose, payslipData }) => {
                       <tr className="border-b border-slate-100">
                         <td className="p-3 text-slate-600">EMI Deduction</td>
                         <td className="p-3 text-right font-mono text-slate-900">{formatCurrency(data.emiDeduction)}</td>
+                      </tr>
+                      <tr className="border-b border-slate-100">
+                        <td className="p-3 text-slate-600">Leave Adjustment</td>
+                        <td className="p-3 text-right font-mono text-slate-900">{formatCurrency(data.leaveAdjustment)}</td>
                       </tr>
                       <tr className="border-b border-slate-100">
                         <td className="p-3 text-slate-600">Canteen Deduction</td>
