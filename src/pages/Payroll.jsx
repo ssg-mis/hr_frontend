@@ -457,7 +457,7 @@ const Payroll = () => {
           : parseFloat(run.otHrs || 0);
         const earnGross = parseFloat(((earnBasic + earnAllowance) + finalComp + otAmount).toFixed(2));
         const grossSalary = earnGross;
-        const epfWages = Math.min(15000, earnBasic);
+        const epfWages = Math.min(15000, earnGross);
 
         const paidDays = parseFloat(run.daysWorked != null ? run.daysWorked : 30);
         
@@ -487,16 +487,22 @@ const Payroll = () => {
           absentDays = Math.max(0, currentPeriodDays - paidDays);
         }
 
-        const pfDeduction = parseFloat(run.pfDeduction || 0);
+        const isPfOptedIn = pfRecord?.isOptedIn != null ? pfRecord.isOptedIn : (grossTotal <= 15000);
+        const livePfDeduction = isPfOptedIn ? parseFloat((epfWages * 0.12).toFixed(2)) : 0;
+        const pfDeduction = run.status === "Draft" ? livePfDeduction : parseFloat(run.pfDeduction || 0);
+
+        const isEsicOptedIn = esicRecord?.isOptedIn != null ? esicRecord.isOptedIn : (grossTotal <= 21000);
+        const liveEsicDeduction = (isEsicOptedIn && grossTotal <= 21000) ? parseFloat((grossTotal * 0.0075).toFixed(2)) : 0;
+        const esicDeduction = run.status === "Draft" ? liveEsicDeduction : parseFloat(run.esicDeduction || 0);
+
         const lwfDeduction = parseFloat(run.lwfDeduction || 0);
-        const esicDeduction = parseFloat(run.esicDeduction || 0);
-        const emiDeduction = parseFloat(run.emiDeduction || 0);
         const liveLeaveAdjustment = (absentDays > 0 && activeMode === "Monthly" && currentPeriodDays > 0)
           ? parseFloat(((monthlyBase / currentPeriodDays) * absentDays).toFixed(2))
           : 0;
         const leaveAdjustment = (run.status === "Draft" || parseFloat(run.leaveAdjustment || 0) < liveLeaveAdjustment)
           ? liveLeaveAdjustment
           : parseFloat(run.leaveAdjustment || 0);
+        const emiDeduction = parseFloat(run.emiDeduction || 0);
         const otherDeductions = parseFloat(run.otherDeductions || 0);
 
         const totalDeductions = parseFloat(
@@ -698,18 +704,18 @@ const Payroll = () => {
 
       const earnGross = parseFloat(((earnBasic + earnAllowance) + compensation + otAmount).toFixed(2));
       const grossSalary = earnGross;
-      const epfWages = Math.min(15000, earnBasic);
+      const epfWages = Math.min(15000, earnGross);
 
-      // PF Calculation
+      // PF Calculation (Deducted from Earn Gross, capped at 15,000)
       let pfDeduction = 0;
       if (isPfOptedIn) {
         pfDeduction = parseFloat((epfWages * 0.12).toFixed(2));
       }
 
-      // ESIC Calculation
+      // ESIC Calculation (Deducted from Total Gross when monthly package <= 21,000)
       let esicDeduction = 0;
-      if (isEsicOptedIn && (monthlyBase + monthlyAllowance) <= 21000) {
-        esicDeduction = parseFloat((grossSalary * 0.0075).toFixed(2));
+      if (isEsicOptedIn && grossTotal <= 21000) {
+        esicDeduction = parseFloat((grossTotal * 0.0075).toFixed(2));
       }
 
       // EMI Deduction
@@ -825,21 +831,22 @@ const Payroll = () => {
         const grossSalary = parseFloat((updatedRow.totalEarn + washingAll + otAmount).toFixed(2));
         updatedRow.grossSalary = grossSalary;
 
-        const epfWages = Math.min(15000, earnBasic);
+        const grossTotal = parseFloat(((updatedRow.basicRate || row.basicRate || 0) + (updatedRow.allowanceRate || row.allowanceRate || 0)).toFixed(2));
+        const epfWages = Math.min(15000, grossSalary);
         updatedRow.epfWages = epfWages;
 
-        // PF Deduction
+        // PF Deduction (Deducted from Earn Gross, capped at 15,000)
         const pfRecord = pfByEmployeeId.get(Number(empId));
-        const isPfOptedIn = pfRecord ? pfRecord.isOptedIn : (basicRate <= 15000);
+        const isPfOptedIn = pfRecord ? pfRecord.isOptedIn : ((basicRate + allowanceRate) <= 15000);
         if (isPfOptedIn) {
           updatedRow.pfDeduction = parseFloat((epfWages * 0.12).toFixed(2));
         }
 
-        // ESIC Deduction
+        // ESIC Deduction (Deducted from Total Gross when monthly package <= 21,000)
         const esicRecord = esicByEmployeeId.get(Number(empId));
-        const isEsicOptedIn = esicRecord ? esicRecord.isOptedIn : ((basicRate + allowanceRate) <= 21000);
-        if (isEsicOptedIn && (basicRate + allowanceRate) <= 21000) {
-          updatedRow.esicDeduction = parseFloat((grossSalary * 0.0075).toFixed(2));
+        const isEsicOptedIn = esicRecord ? esicRecord.isOptedIn : (grossTotal <= 21000);
+        if (isEsicOptedIn && grossTotal <= 21000) {
+          updatedRow.esicDeduction = parseFloat((grossTotal * 0.0075).toFixed(2));
         }
 
         // Daily EMI Pro-rate
@@ -1147,7 +1154,7 @@ const Payroll = () => {
         const otAmount = Number(row.otAmount) || 0;
         const earnGross = Number(((earnBasic + earnAllowance) + washingAll + otAmount).toFixed(2));
         const grossSalary = earnGross;
-        const epfWages = Math.min(15000, earnBasic);
+        const epfWages = Math.min(15000, earnGross);
 
         const pfDeduction = Number(row.pfDeduction) || 0;
         const esicDeduction = Number(row.esicDeduction) || 0;
@@ -1303,7 +1310,8 @@ const Payroll = () => {
         const monthlyAllowance = salRec ? parseFloat(salRec.allowanceSalary) : 0;
         const grossTotal = monthlyBase + monthlyAllowance;
         const earnedTotal = (row.basicPay || 0) + (row.allowance || 0);
-        const epfWages = Math.min(row.basicPay || 0, 15000);
+        const earnGross = row.grossSalary || row.earnGross || earnedTotal || 0;
+        const epfWages = Math.min(earnGross, 15000);
 
         let totalDays = 30;
         if (activeMode === "Daily" && startDate && endDate) {
@@ -1486,7 +1494,7 @@ const Payroll = () => {
       totals.washingAll += Number(r.compensation || 0);
       totals.otAmount += Number(r.otAmount || 0);
       totals.grossSalary += Number(r.earnGross || r.grossSalary || 0);
-      totals.epfWages += Number(r.epfWages || Math.min(15000, r.earnBasic || r.basicPay || 0));
+      totals.epfWages += Number(r.epfWages || Math.min(15000, r.earnGross || r.grossSalary || ((r.earnBasic || 0) + (r.earnAllowance || 0))));
       totals.pfDeduction += Number(r.pfDeduction || 0);
       totals.lwfDeduction += Number(r.lwfDeduction || 0);
       totals.esicDeduction += Number(r.esicDeduction || 0);
@@ -1904,7 +1912,7 @@ const Payroll = () => {
 
                       {/* 18. EPF WAGES */}
                       <td className="py-2.5 px-3 text-right font-mono text-xs text-gray-700 border-r border-gray-100">
-                        {(Number(row.epfWages || Math.min(15000, row.earnBasic || row.basicPay || 0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {(Number(row.epfWages || Math.min(15000, row.earnGross || row.grossSalary || ((row.earnBasic || 0) + (row.earnAllowance || 0))))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
                       {/* 19. PF */}
