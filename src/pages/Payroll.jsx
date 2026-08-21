@@ -492,13 +492,13 @@ const Payroll = () => {
         const pfDeduction = run.status === "Draft" ? livePfDeduction : parseFloat(run.pfDeduction || 0);
 
         const isEsicOptedIn = esicRecord?.isOptedIn != null ? esicRecord.isOptedIn : (grossTotal <= 21000);
-        const liveEsicDeduction = (isEsicOptedIn && grossTotal <= 21000) ? parseFloat((grossTotal * 0.0075).toFixed(2)) : 0;
+        const liveEsicDeduction = (isEsicOptedIn && grossTotal <= 21000) ? parseFloat((earnGross * 0.0075).toFixed(2)) : 0;
         const esicDeduction = run.status === "Draft" ? liveEsicDeduction : parseFloat(run.esicDeduction || 0);
 
         const lwfDeduction = parseFloat(run.lwfDeduction || 0);
         const liveLeaveAdjustment = (absentDays > 0 && activeMode === "Monthly" && currentPeriodDays > 0)
-          ? parseFloat(((monthlyBase / currentPeriodDays) * absentDays).toFixed(2))
-          : 0;
+          ? parseFloat(((grossTotal / currentPeriodDays) * absentDays).toFixed(2))
+          : (absentDays > 0 && activeMode === "Daily" ? parseFloat(((grossTotal / 30) * absentDays).toFixed(2)) : 0);
         const leaveAdjustment = (run.status === "Draft" || parseFloat(run.leaveAdjustment || 0) < liveLeaveAdjustment)
           ? liveLeaveAdjustment
           : parseFloat(run.leaveAdjustment || 0);
@@ -692,7 +692,9 @@ const Payroll = () => {
       const totalEarn = grossTotal;
       let leaveAdjustment = 0;
       if (activeMode === "Monthly" && totalUnpaidLeaves > 0 && daysInPeriod > 0) {
-        leaveAdjustment = parseFloat(((monthlyBase / daysInPeriod) * totalUnpaidLeaves).toFixed(2));
+        leaveAdjustment = parseFloat(((grossTotal / daysInPeriod) * totalUnpaidLeaves).toFixed(2));
+      } else if (activeMode === "Daily" && totalUnpaidLeaves > 0) {
+        leaveAdjustment = parseFloat(((grossTotal / 30) * totalUnpaidLeaves).toFixed(2));
       }
 
       // Fetch canteen deductions
@@ -712,10 +714,10 @@ const Payroll = () => {
         pfDeduction = parseFloat((epfWages * 0.12).toFixed(2));
       }
 
-      // ESIC Calculation (Deducted from Total Gross when monthly package <= 21,000)
+      // ESIC Calculation (Deducted from Earn Gross when monthly package <= 21,000)
       let esicDeduction = 0;
       if (isEsicOptedIn && grossTotal <= 21000) {
-        esicDeduction = parseFloat((grossTotal * 0.0075).toFixed(2));
+        esicDeduction = parseFloat((earnGross * 0.0075).toFixed(2));
       }
 
       // EMI Deduction
@@ -842,11 +844,21 @@ const Payroll = () => {
           updatedRow.pfDeduction = parseFloat((epfWages * 0.12).toFixed(2));
         }
 
-        // ESIC Deduction (Deducted from Total Gross when monthly package <= 21,000)
+        // ESIC Deduction (Deducted from Earn Gross when monthly package <= 21,000)
         const esicRecord = esicByEmployeeId.get(Number(empId));
         const isEsicOptedIn = esicRecord ? esicRecord.isOptedIn : (grossTotal <= 21000);
         if (isEsicOptedIn && grossTotal <= 21000) {
-          updatedRow.esicDeduction = parseFloat((grossTotal * 0.0075).toFixed(2));
+          updatedRow.esicDeduction = parseFloat((grossSalary * 0.0075).toFixed(2));
+        }
+
+        // Dynamic Leave / Absent Adjustment on Total Gross
+        const curPeriodDays = Number(row.periodDays || 30);
+        const unpLeaves = Math.max(0, curPeriodDays - pDays);
+        updatedRow.unpaidLeaves = unpLeaves;
+        if (activeMode === "Monthly" && curPeriodDays > 0) {
+          updatedRow.leaveAdjustment = parseFloat(((grossTotal / curPeriodDays) * unpLeaves).toFixed(2));
+        } else if (activeMode === "Daily") {
+          updatedRow.leaveAdjustment = parseFloat(((grossTotal / 30) * unpLeaves).toFixed(2));
         }
 
         // Daily EMI Pro-rate
