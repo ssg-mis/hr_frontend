@@ -260,6 +260,8 @@ const Payroll = () => {
         attendancePromise,
       ]);
 
+      // Set both at once to avoid a partial-state render where attendance is empty
+      // but savedPayrollRuns are already set (which causes wrong absentDays on initial load)
       setCanteenData(cantRes.data || []);
       setAttendanceData(attRes.data || []);
     } catch (err) {
@@ -268,6 +270,8 @@ const Payroll = () => {
   };
 
   useEffect(() => {
+    // Reset attendance before re-fetching so stale data doesn't briefly show wrong absent days
+    setAttendanceData([]);
     loadMonthLogsData();
   }, [activeMode, selectedMonth, startDate, endDate]);
 
@@ -447,25 +451,31 @@ const Payroll = () => {
         const empAtt = attendanceByEmployeeId.get(Number(run.employeeId)) || [];
         let livePresentDays = 0;
         let absentDays = 0;
+        // Helper: extract wall-clock YYYY-MM-DD from any date value WITHOUT re-applying UTC offset
+        const toDateKey = (d) => {
+          if (!d) return '';
+          if (typeof d === 'string') return d.slice(0, 10); // Wall-clock string - safe slice
+          if (d instanceof Date) {
+            // Use UTC methods since we store wall-clock as UTC in DB
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+          }
+          return '';
+        };
         if (empAtt.length > 0) {
           const presentLogs = empAtt.filter(a => a.status === "Present" || a.punchIn || a.firstCheckIn);
           const presentDates = new Set(
-            presentLogs.map(a => {
-              const d = a.workDate || a.date || a.attendanceDate || '';
-              return typeof d === 'string' ? d.slice(0, 10) : (d ? new Date(d).toISOString().slice(0, 10) : '');
-            })
+            presentLogs.map(a => toDateKey(a.workDate || a.date || a.attendanceDate))
           );
           presentDates.delete('');
           livePresentDays = presentDates.size;
 
-          const absentLogs = empAtt.filter(a => a.status === "Absent");
+          const absentLogs = empAtt.filter(a => a.status === "Absent" && !a.punchIn && !a.firstCheckIn);
           const absentDates = new Set(
-            absentLogs.map(a => {
-              const d = a.workDate || a.date || a.attendanceDate || '';
-              return typeof d === 'string' ? d.slice(0, 10) : (d ? new Date(d).toISOString().slice(0, 10) : '');
-            })
+            absentLogs.map(a => toDateKey(a.workDate || a.date || a.attendanceDate))
           );
           absentDates.delete('');
+          // Remove any date that also appears in presentDates (double-session days)
           for (const p of presentDates) absentDates.delete(p);
           absentDays = absentDates.size;
         }
@@ -505,7 +515,7 @@ const Payroll = () => {
         const paidDays = (run.status === "Draft" && empAtt.length > 0)
           ? livePaidDays
           : parseFloat(run.daysWorked != null ? run.daysWorked : (currentPeriodDays - totalUnpaidLeaves));
-        
+
         const finalAbsentDays = (run.status === "Draft" && empAtt.length > 0)
           ? totalUnpaidLeaves
           : (run.unpaidLeaves != null ? parseFloat(run.unpaidLeaves) : (empAtt.length === 0 ? Math.max(0, currentPeriodDays - paidDays) : totalUnpaidLeaves));
@@ -846,6 +856,30 @@ const Payroll = () => {
         const numVal = parseFloat(val) || 0;
         const updatedRow = { ...row, [field]: numVal };
 
+        // 1. DIWALI BONUS: Only changes diwaliBonus and netPayAmount (netSalary and totalDeductions remain untouched)
+        if (field === "diwaliBonus") {
+          const currentNetSalary = parseFloat(row.netSalary || 0);
+          updatedRow.diwaliBonus = numVal;
+          updatedRow.netPayAmount = parseFloat((currentNetSalary + numVal).toFixed(2));
+          return updatedRow;
+        }
+
+        // 2. OTHER DEDUCTIONS: Only changes otherDeductions, totalDeductions, netSalary, and netPayAmount
+        if (field === "otherDeductions") {
+          const oldOther = parseFloat(row.otherDeductions || 0);
+          const currentTotalDeductions = parseFloat(row.totalDeductions || 0);
+          const newTotalDeductions = parseFloat((currentTotalDeductions - oldOther + numVal).toFixed(2));
+          const currentEarnGross = parseFloat(row.earnGross || row.grossSalary || row.totalEarn || 0);
+          const newNetSalary = parseFloat(Math.max(0, currentEarnGross - newTotalDeductions).toFixed(2));
+          const currentDiwaliBonus = parseFloat(row.diwaliBonus || 0);
+
+          updatedRow.otherDeductions = numVal;
+          updatedRow.totalDeductions = newTotalDeductions;
+          updatedRow.netSalary = newNetSalary;
+          updatedRow.netPayAmount = parseFloat((newNetSalary + currentDiwaliBonus).toFixed(2));
+          return updatedRow;
+        }
+
         const periodDays = row.periodDays || currentPeriodDays || 30;
         const basicRate = Number(row.basicRate || row.basicPay || 0);
         const allowanceRate = Number(row.allowanceRate || row.allowance || 0);
@@ -877,8 +911,9 @@ const Payroll = () => {
 
         const washingAll = updatedRow.compensation !== undefined ? updatedRow.compensation : (row.compensation || 0);
         const otAmount = updatedRow.otAmount !== undefined ? updatedRow.otAmount : (row.otAmount || 0);
-        const grossSalary = parseFloat((updatedRow.totalEarn + washingAll + otAmount).toFixed(2));
-        updatedRow.grossSalary = grossSalary;
+        const earnGross = parseFloat((updatedRow.totalEarn + washingAll + otAmount).toFixed(2));
+        updatedRow.earnGross = earnGross;
+        updatedRow.grossSalary = earnGross;
 
         const grossTotal = parseFloat(((updatedRow.basicRate || row.basicRate || 0) + (updatedRow.allowanceRate || row.allowanceRate || 0)).toFixed(2));
         const epfWages = Math.min(15000, earnBasic);
@@ -895,7 +930,7 @@ const Payroll = () => {
         const esicRecord = esicByEmployeeId.get(Number(empId));
         const isEsicOptedIn = esicRecord ? esicRecord.isOptedIn : (grossTotal <= 21000);
         if (isEsicOptedIn && grossTotal <= 21000) {
-          updatedRow.esicDeduction = parseFloat((grossSalary * 0.0075).toFixed(2));
+          updatedRow.esicDeduction = parseFloat((earnGross * 0.0075).toFixed(2));
         }
 
         // Dynamic Leave / Absent Adjustment on Total Gross
@@ -930,7 +965,7 @@ const Payroll = () => {
         );
         updatedRow.totalDeductions = totalDeductions;
 
-        const netSalary = parseFloat(Math.max(0, grossSalary - totalDeductions).toFixed(2));
+        const netSalary = parseFloat(Math.max(0, earnGross - totalDeductions).toFixed(2));
         updatedRow.netSalary = netSalary;
 
         const diwaliBonus = updatedRow.diwaliBonus !== undefined ? updatedRow.diwaliBonus : (row.diwaliBonus || 0);
@@ -1110,10 +1145,10 @@ const Payroll = () => {
       if (cellQ3) cellQ3.value = "EARN GROSS";
 
       // Ensure merges and headers exist for A1:AG1, A2:AG2, and S3:Z3 (DEDUCTION)
-      try { ws.mergeCells("A1:AG1"); } catch (e) {}
-      try { ws.mergeCells("A2:AG2"); } catch (e) {}
-      try { ws.unMergeCells("S3:Y3"); } catch (e) {}
-      try { ws.mergeCells("S3:Z3"); } catch (e) {}
+      try { ws.mergeCells("A1:AG1"); } catch (e) { }
+      try { ws.mergeCells("A2:AG2"); } catch (e) { }
+      try { ws.unMergeCells("S3:Y3"); } catch (e) { }
+      try { ws.mergeCells("S3:Z3"); } catch (e) { }
       const cellS3 = ws.getCell("S3");
       if (cellS3) {
         cellS3.value = "DEDUCTION";
@@ -1159,7 +1194,7 @@ const Payroll = () => {
       });
 
       // Unmerge any old hardcoded template summary row (e.g. A123:E123)
-      try { ws.unMergeCells("A123:E123"); } catch (e) {}
+      try { ws.unMergeCells("A123:E123"); } catch (e) { }
 
       // 5. Calculate total days in period
       let periodDays = 30;
@@ -1282,7 +1317,7 @@ const Payroll = () => {
 
       // 8. Place the dynamic TOTAL row at the very bottom of the data
       const totalRowIdx = startRowIdx + rows.length;
-      try { ws.mergeCells(`A${totalRowIdx}:E${totalRowIdx}`); } catch (e) {}
+      try { ws.mergeCells(`A${totalRowIdx}:E${totalRowIdx}`); } catch (e) { }
 
       const totalRow = ws.getRow(totalRowIdx);
       for (let c = 1; c <= 33; c++) {
@@ -1625,8 +1660,8 @@ const Payroll = () => {
               onClick={handleSavePayroll}
               disabled={saving || payrollRows.length === 0}
               className={`px-5 py-2 text-white rounded-xl font-medium transition-all flex items-center gap-1.5 shadow-sm text-sm ${saving || payrollRows.length === 0
-                  ? "bg-blue-300 cursor-not-allowed"
-                  : "bg-blue-600 hover:bg-blue-700"
+                ? "bg-blue-300 cursor-not-allowed"
+                : "bg-blue-600 hover:bg-blue-700"
                 }`}
             >
               <Save size={16} />
@@ -1654,8 +1689,8 @@ const Payroll = () => {
             <button
               onClick={() => setActiveMode("Monthly")}
               className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeMode === "Monthly"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-gray-500 hover:text-gray-900"
+                ? "bg-white text-blue-600 shadow-sm"
+                : "text-gray-500 hover:text-gray-900"
                 }`}
             >
               Monthly Form
@@ -1663,8 +1698,8 @@ const Payroll = () => {
             <button
               onClick={() => setActiveMode("Daily")}
               className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeMode === "Daily"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-gray-500 hover:text-gray-900"
+                ? "bg-white text-blue-600 shadow-sm"
+                : "text-gray-500 hover:text-gray-900"
                 }`}
             >
               Daily Form
@@ -2056,11 +2091,10 @@ const Payroll = () => {
 
                       {/* 29. PAY-MODE */}
                       <td className="py-2.5 px-3 text-center border-r border-gray-100 whitespace-nowrap">
-                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                          ((row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK"))
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold ${((row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK"))
                             ? "bg-blue-50 text-blue-700 border border-blue-200"
                             : "bg-amber-50 text-amber-700 border border-amber-200"
-                        }`}>
+                          }`}>
                           {((row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK")) ? "BANK" : "CASH"}
                         </span>
                       </td>
@@ -2091,13 +2125,12 @@ const Payroll = () => {
                         <select
                           value={row.status}
                           onChange={(e) => handleStatusChange(row.employeeId, e.target.value)}
-                          className={`text-[11px] font-bold px-2 py-0.5 rounded-full border focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                            row.status === "Paid"
+                          className={`text-[11px] font-bold px-2 py-0.5 rounded-full border focus:outline-none focus:ring-1 focus:ring-blue-500 ${row.status === "Paid"
                               ? "bg-green-50 text-green-700 border-green-200"
                               : row.status === "Processed"
                                 ? "bg-indigo-50 text-indigo-700 border-indigo-200"
                                 : "bg-amber-50 text-amber-700 border-amber-200"
-                          }`}
+                            }`}
                         >
                           <option value="Draft">Draft</option>
                           <option value="Processed">Processed</option>
@@ -2281,11 +2314,10 @@ const Payroll = () => {
 
                       {/* Paid Via */}
                       <td className="py-3 px-3 text-center whitespace-nowrap">
-                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                          ((row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK"))
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold ${((row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK"))
                             ? "bg-blue-50 text-blue-700 border border-blue-200"
                             : "bg-amber-50 text-amber-700 border border-amber-200"
-                        }`}>
+                          }`}>
                           {((row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK")) ? "BANK" : "CASH"}
                         </span>
                       </td>
@@ -2295,13 +2327,12 @@ const Payroll = () => {
                         <select
                           value={row.status}
                           onChange={(e) => handleStatusChange(row.employeeId, e.target.value)}
-                          className={`text-xs font-bold px-2 py-1 rounded-full border focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                            row.status === "Paid"
+                          className={`text-xs font-bold px-2 py-1 rounded-full border focus:outline-none focus:ring-2 focus:ring-blue-500 ${row.status === "Paid"
                               ? "bg-green-50 text-green-700 border-green-200"
                               : row.status === "Processed"
                                 ? "bg-indigo-50 text-indigo-700 border-indigo-200"
                                 : "bg-amber-50 text-amber-700 border-amber-200"
-                          }`}
+                            }`}
                         >
                           <option value="Draft">Draft</option>
                           <option value="Processed">Processed</option>
@@ -2389,8 +2420,8 @@ const Payroll = () => {
               onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
               disabled={currentPage === 1}
               className={`px-3 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1 transition-colors ${currentPage === 1
-                  ? "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed"
-                  : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+                ? "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed"
+                : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
                 }`}
             >
               <ChevronLeft size={16} />
@@ -2408,8 +2439,8 @@ const Payroll = () => {
               onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
               disabled={currentPage === totalPages}
               className={`px-3 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1 transition-colors ${currentPage === totalPages
-                  ? "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed"
-                  : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+                ? "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed"
+                : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
                 }`}
             >
               <span>Next</span>

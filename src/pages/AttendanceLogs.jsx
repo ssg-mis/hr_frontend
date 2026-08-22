@@ -130,7 +130,27 @@ const AttendanceLogs = () => {
   };
 
   const formatTime = (dateStr) => {
-    return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (!dateStr) return "—";
+    if (typeof dateStr === "string" && (dateStr.includes(" ") || dateStr.includes("T"))) {
+      const parts = dateStr.trim().split(/[ T]/);
+      if (parts.length >= 2 && parts[1]) {
+        const timeParts = parts[1].split(":");
+        if (timeParts.length >= 2) {
+          let hours = parseInt(timeParts[0], 10);
+          const minutes = timeParts[1].padStart(2, "0");
+          if (!isNaN(hours)) {
+            const ampm = hours >= 12 ? "PM" : "AM";
+            hours = hours % 12;
+            hours = hours ? hours : 12;
+            const hrsStr = String(hours).padStart(2, "0");
+            return `${hrsStr}:${minutes} ${ampm}`;
+          }
+        }
+      }
+    }
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const formatDate = (dateStr) => {
