@@ -88,6 +88,23 @@ const MyAttendance = () => {
 
         const formatTime = (isoString) => {
           if (!isoString) return '';
+          if (typeof isoString === "string" && (isoString.includes(" ") || isoString.includes("T"))) {
+            const parts = isoString.trim().split(/[ T]/);
+            if (parts.length >= 2 && parts[1]) {
+              const timeParts = parts[1].split(":");
+              if (timeParts.length >= 2) {
+                let hours = parseInt(timeParts[0], 10);
+                const minutes = timeParts[1].padStart(2, "0");
+                if (!isNaN(hours)) {
+                  const ampm = hours >= 12 ? 'PM' : 'AM';
+                  hours = hours % 12;
+                  hours = hours ? hours : 12;
+                  const hrsStr = String(hours).padStart(2, '0');
+                  return `${hrsStr}:${minutes} ${ampm}`;
+                }
+              }
+            }
+          }
           const date = new Date(isoString);
           if (isNaN(date.getTime())) return '';
           let hours = date.getHours();
