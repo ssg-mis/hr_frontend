@@ -17,8 +17,17 @@ const Avatar = ({ name, size = "md" }) => {
   );
 };
 
-const fmtDate = (d) =>
-  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+const fmtDate = (d) => {
+  if (!d) return '—';
+  if (typeof d === 'string' && d.includes('-') && !d.includes('T')) {
+    const [y, m, day] = d.split('-').map(Number);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${String(day).padStart(2, '0')} ${months[(m || 1) - 1]} ${y}`;
+  }
+  const dateObj = new Date(d);
+  if (isNaN(dateObj.getTime())) return '—';
+  return dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+};
 
 const employeeStatusBadge = (status) => {
   const map = {
@@ -429,9 +438,9 @@ const AttendanceDashboard = () => {
     const halfShiftThreshold = Math.floor(expShiftMins / 2);
 
     const statusLower = (record.status || "").toLowerCase();
-    const isPresent = statusLower === "present" || Boolean(record.punchIn);
+    const isPresent = statusLower === "present" || Boolean(record.punchIn) || Boolean(record.punchOut);
     const isLeave = statusLower === "leave";
-    const isWeekoff = statusLower === "weekoff";
+    const isWeekoff = record.isWeeklyOff === true || statusLower === "weekoff" || statusLower === "wo";
     const isUpcoming = statusLower === "upcoming";
 
     if (isPresent) {
@@ -734,6 +743,7 @@ const AttendanceDashboard = () => {
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Date</th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Shift</th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Status</th>
+                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-purple-500 sticky top-0 bg-gray-50 z-20">WO</th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Check In</th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Check Out</th>
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Duration</th>
@@ -742,7 +752,11 @@ const AttendanceDashboard = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-150">
                   {[...selectedEmployeeLogs.days]
-                    .sort((a, b) => new Date(a.workDate) - new Date(b.workDate))
+                    .sort((a, b) => {
+                      const dDiff = new Date(a.workDate) - new Date(b.workDate);
+                      if (dDiff !== 0) return dDiff;
+                      return (a.sessionSeq || 1) - (b.sessionSeq || 1);
+                    })
                     .map((day) => {
                       let mins = day.workMinutes || 0;
                       if (!mins && day.punchIn && day.punchOut) {
@@ -754,10 +768,11 @@ const AttendanceDashboard = () => {
                           mins = Math.round(diff);
                         }
                       }
-                      const isPresent = (day.status || "").toLowerCase() === "present" || Boolean(day.punchIn);
-                      const isLeave = (day.status || "").toLowerCase() === "leave" && !day.punchIn;
-                      const isWeekoff = (day.status || "").toLowerCase() === "weekoff";
+                      const isPresent = (day.status || "").toLowerCase() === "present" || Boolean(day.punchIn) || Boolean(day.punchOut);
+                      const isLeave = (day.status || "").toLowerCase() === "leave" && !day.punchIn && !day.punchOut;
+                      const isWeekoff = (day.status || "").toLowerCase() === "weekoff" || (day.status || "").toLowerCase() === "wo";
                       const isUpcoming = (day.status || "").toLowerCase() === "upcoming";
+                      const isSinglePunch = isPresent && (!day.punchIn || !day.punchOut);
 
                       return (
                         <tr key={`${day.workDate}-${day.sessionId || 'none'}`} className="hover:bg-gray-50/50 transition duration-150">
@@ -777,28 +792,39 @@ const AttendanceDashboard = () => {
                           </td>
                           <td className="px-4 py-3">
                             {isPresent ? (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                Present
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 border border-green-200">
+                                <span>Present</span>
+                                {isSinglePunch && (
+                                  <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded-full border border-amber-200" title={!day.punchIn ? "Missing Check-in" : "Missing Check-out"}>
+                                    Single Punch
+                                  </span>
+                                )}
                               </span>
                             ) : isLeave ? (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200">
                                 On Leave
                               </span>
-                            ) : isWeekoff ? (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                Weekoff
-                              </span>
                             ) : isUpcoming ? (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500 border border-gray-200">
                                 Upcoming
                               </span>
                             ) : (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200">
                                 Absent
                               </span>
                             )}
                           </td>
 
+                          {/* WO Column - shows WO badge if this is the employee's assigned weekly off day */}
+                          <td className="px-4 py-3">
+                            {day.isWeeklyOff ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                                WO
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 text-sm">—</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-sm text-gray-600 font-medium">{formatPunchTime(day.punchIn)}</td>
                           <td className="px-4 py-3 text-sm text-gray-600 font-medium">{formatPunchTime(day.punchOut)}</td>
                           <td className="px-4 py-3 text-sm text-gray-600 font-semibold">{isPresent ? formatMinutes(mins) : "—"}</td>
