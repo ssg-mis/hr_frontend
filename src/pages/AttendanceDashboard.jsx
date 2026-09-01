@@ -857,8 +857,8 @@ const AttendanceDashboard = () => {
 
       {/* Selected Employee Logs Modal */}
       {selectedEmployeeLogs && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-2xl max-w-4xl w-full mx-4 shadow-xl border border-gray-200 overflow-hidden transform transition-all duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-2xl w-full max-w-6xl mx-auto shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[90vh]">
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
               <div>
@@ -875,20 +875,20 @@ const AttendanceDashboard = () => {
               </button>
             </div>
 
-            {/* Modal Content */}
-            <div className="p-6 max-h-[60vh] overflow-y-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 z-20 shadow-sm bg-gray-50 border-b border-gray-200">
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Date</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Shift</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Status</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-purple-500 sticky top-0 bg-gray-50 z-20">WO</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Check In</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Check Out</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Duration</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-amber-600 text-center sticky top-0 bg-gray-50 z-20">OT (HRS)</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 text-right sticky top-0 bg-gray-50 z-20">Raw Punches</th>
+            {/* Modal Content — fixed height scroll area */}
+            <div className="overflow-auto flex-1" style={{maxHeight: 'calc(90vh - 130px)'}}>
+              <table className="w-full text-left border-collapse" style={{minWidth: '900px'}}>
+                <thead className="sticky top-0 z-20 bg-gray-50 border-b border-gray-200 shadow-sm">
+                  <tr>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Date</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Shift</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Status</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-purple-500 whitespace-nowrap">WO</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Check In</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Check Out</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Duration</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-amber-600 text-center whitespace-nowrap">OT (HRS)</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 text-right whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-150">
@@ -916,8 +916,8 @@ const AttendanceDashboard = () => {
                       const isSinglePunch = isPresent && (!day.punchIn || !day.punchOut);
 
                       return (
-                        <tr key={`${day.workDate}-${day.sessionId || 'none'}`} className="hover:bg-gray-50/50 transition duration-150">
-                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                        <tr key={`${day.workDate}-${day.sessionId || 'none'}`} className="hover:bg-gray-50/50 transition duration-150 border-b border-gray-100">
+                          <td className="px-3 py-2.5 text-sm font-semibold text-gray-900 whitespace-nowrap">
                             {fmtDate(day.workDate)}
                             {/* Show session suffix for multi-session days (sessionSeq > 1) */}
                             {day.sessionSeq > 1 && (
@@ -926,7 +926,7 @@ const AttendanceDashboard = () => {
                               </span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-xs font-medium">
+                          <td className="px-3 py-2.5 text-xs font-medium whitespace-nowrap">
                             <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold capitalize bg-indigo-50 text-indigo-700 border border-indigo-200">
                               {day.shiftName === 'general' ? 'General' : `Shift ${day.shiftName?.toUpperCase()}`} ({day.startTime}-{day.endTime})
                             </span>
@@ -955,9 +955,7 @@ const AttendanceDashboard = () => {
                               </span>
                             )}
                           </td>
-
-                          {/* WO Column - shows WO badge if this is the employee's assigned weekly off day */}
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-2.5">
                             {day.isWeeklyOff ? (
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
                                 WO
@@ -966,9 +964,9 @@ const AttendanceDashboard = () => {
                               <span className="text-gray-300 text-sm">—</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 font-medium">{formatPunchTime(day.punchIn)}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600 font-medium">{formatPunchTime(day.punchOut)}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600 font-semibold">{isPresent ? formatMinutes(mins) : "—"}</td>
+                          <td className="px-3 py-2.5 text-sm text-gray-600 font-medium whitespace-nowrap">{formatPunchTime(day.punchIn)}</td>
+                          <td className="px-3 py-2.5 text-sm text-gray-600 font-medium whitespace-nowrap">{formatPunchTime(day.punchOut)}</td>
+                          <td className="px-3 py-2.5 text-sm text-gray-600 font-semibold whitespace-nowrap">{isPresent ? formatMinutes(mins) : "—"}</td>
 
                           {/* OT (HRS) Column - Editable by Admin */}
                           <td className="px-4 py-3 text-center">
@@ -1007,7 +1005,6 @@ const AttendanceDashboard = () => {
                       );
                     })}
                 </tbody>
-
               </table>
             </div>
 
