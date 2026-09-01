@@ -72,9 +72,10 @@ const Payroll = () => {
   const [esicDetailsList, setEsicDetailsList] = useState([]);
   const [emisList, setEmisList] = useState([]);
   const [compensationList, setCompensationList] = useState([]);
-  const [canteenData, setCanteenData] = useState([]); // Monthly array or Daily logs
+  const [canteenData, setCanteenData] = useState([]);
   const [leavesList, setLeavesList] = useState([]);
   const [attendanceData, setAttendanceData] = useState([]);
+  const [holidaysList, setHolidaysList] = useState([]);
 
   // Calculated & Edited payroll records
   const [payrollRows, setPayrollRows] = useState([]);
@@ -184,19 +185,37 @@ const Payroll = () => {
     return map;
   }, [canteenData]);
 
+  // Company Holiday Dates Set
+  const holidaysSet = useMemo(() => {
+    const set = new Set();
+    const pad = (n) => String(n).padStart(2, '0');
+    holidaysList.forEach(h => {
+      if (h.type === 'holiday' && h.date) {
+        const d = new Date(h.date);
+        if (!isNaN(d.getTime())) {
+          set.add(`${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);
+          set.add(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+          if (typeof h.date === 'string') set.add(h.date.slice(0, 10));
+        }
+      }
+    });
+    return set;
+  }, [holidaysList]);
+
   // Load basic configurations
   const loadBaseData = async () => {
     setLoading(true);
     try {
-      const [empRes, salRes, pfRes, esicRes, emiRes, compRes, leavesRes, branchRes] = await Promise.all([
-        api.get("/employees"),
-        api.get("/salaries?limit=1000"),
-        api.get("/pf/payroll"),
-        api.get("/esic/payroll"),
-        api.get("/emis"),
-        api.get("/compensation"),
-        api.get("/leaves?limit=10000"),
+      const [empRes, salRes, pfRes, esicRes, emiRes, compRes, leavesRes, branchRes, calRes] = await Promise.all([
+        api.get("/employees").catch(() => ({ data: [] })),
+        api.get("/salaries?limit=1000").catch(() => ({ data: [] })),
+        api.get("/pf/payroll").catch(() => ({ data: [] })),
+        api.get("/esic/payroll").catch(() => ({ data: [] })),
+        api.get("/emis").catch(() => ({ data: [] })),
+        api.get("/compensation").catch(() => ({ data: [] })),
+        api.get("/leaves?limit=10000").catch(() => ({ data: [] })),
         api.get("/company-branches").catch(() => ({ data: [] })),
+        api.get("/calendar").catch(() => ({ data: [] })),
       ]);
 
       const activeEmps = getArrayData(empRes).filter(e => e.status === "Active");
@@ -206,6 +225,7 @@ const Payroll = () => {
       setEsicDetailsList(getArrayData(esicRes));
       setEmisList(getArrayData(emiRes).filter(e => e.status === "Active"));
       setCompanies(getArrayData(branchRes));
+      setHolidaysList(getArrayData(calRes));
 
       const allComps = getArrayData(compRes);
       const approvedComps = allComps.filter(c => {
@@ -246,9 +266,10 @@ const Payroll = () => {
         if (endD > todayStr) endD = todayStr;
       }
 
-      const canteenPromise = activeMode === "Monthly"
+      const canteenPromise = (activeMode === "Monthly"
         ? api.get(`/canteen/deductions?month=${selectedMonth}`)
-        : api.get(`/canteen/logs?startDate=${startDate}&endDate=${endDate}`);
+        : api.get(`/canteen/logs?startDate=${startDate}&endDate=${endDate}`)
+      ).catch(() => ({ data: [] }));
 
       const attendancePromise = api.get(`/attendance/sessions?startDate=${startD}&endDate=${endD}`).catch(attErr => {
         console.error("Attendance API query error:", attErr);
@@ -462,12 +483,14 @@ const Payroll = () => {
           }
           return '';
         };
+
+        const presentDates = new Set();
         if (empAtt.length > 0) {
           const presentLogs = empAtt.filter(a => a.status === "Present" || a.punchIn || a.firstCheckIn);
-          const presentDates = new Set(
-            presentLogs.map(a => toDateKey(a.workDate || a.date || a.attendanceDate))
-          );
-          presentDates.delete('');
+          presentLogs.forEach(a => {
+            const k = toDateKey(a.workDate || a.date || a.attendanceDate);
+            if (k) presentDates.add(k);
+          });
           livePresentDays = presentDates.size;
 
           const absentLogs = empAtt.filter(a => a.status === "Absent" && !a.punchIn && !a.firstCheckIn);
@@ -484,6 +507,8 @@ const Payroll = () => {
         const empLeaves = leavesByEmployeeId.get(Number(run.employeeId)) || [];
         let lwpDays = 0;
         let paidLeaveDays = 0;
+        const paidLeavesDates = new Set();
+
         if (activeMode === "Monthly") {
           const [yearStr, monthStr] = selectedMonth.split("-").map(Number);
           const firstOfMonth = new Date(yearStr, monthStr - 1, 1);
@@ -504,13 +529,85 @@ const Payroll = () => {
                 lwpDays += daysCount;
               } else {
                 paidLeaveDays += daysCount;
+                // Add leave dates to set for proximity check
+                let curL = new Date(overlapStart);
+                while (curL <= overlapEnd) {
+                  paidLeavesDates.add(toDateKey(curL));
+                  curL.setDate(curL.getDate() + 1);
+                }
               }
             }
           });
         }
 
-        const livePaidDays = livePresentDays + paidLeaveDays;
-        const totalUnpaidLeaves = lwpDays + absentDays;
+        // Evaluate Weekly Offs (WO) with 1-day before / after presence check (Adjacent-Day Proximity Rule)
+        let workedWoCount = 0;
+        let unworkedEarnedWoCount = 0;
+        let disallowedWo = 0;
+
+        if (activeMode === "Monthly" && selectedMonth) {
+          const [y, m] = selectedMonth.split("-").map(Number);
+          const dayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+          const targetWo = (empRecord?.weeklyOffDay || "SUN").toUpperCase();
+          const pad = (n) => String(n).padStart(2, '0');
+
+          for (let d = 1; d <= currentPeriodDays; d++) {
+            const curDateStr = `${y}-${pad(m)}-${pad(d)}`;
+            const dt = new Date(Date.UTC(y, m - 1, d));
+            const dayName = dayNames[dt.getUTCDay()];
+
+            if (dayName === targetWo) {
+              if (presentDates.has(curDateStr)) {
+                workedWoCount++;
+                continue;
+              }
+              if (paidLeavesDates.has(curDateStr)) {
+                unworkedEarnedWoCount++;
+                continue;
+              }
+
+              // Check 1 day before (WO - 1)
+              const prevDt = new Date(Date.UTC(y, m - 1, d - 1));
+              const prevDateStr = `${prevDt.getUTCFullYear()}-${pad(prevDt.getUTCMonth() + 1)}-${pad(prevDt.getUTCDate())}`;
+              const isPrevPresent = presentDates.has(prevDateStr) || paidLeavesDates.has(prevDateStr);
+
+              // Check 1 day after (WO + 1)
+              const nextDt = new Date(Date.UTC(y, m - 1, d + 1));
+              const nextDateStr = `${nextDt.getUTCFullYear()}-${pad(nextDt.getUTCMonth() + 1)}-${pad(nextDt.getUTCDate())}`;
+              const isNextPresent = presentDates.has(nextDateStr) || paidLeavesDates.has(nextDateStr);
+
+              if (isPrevPresent || isNextPresent) {
+                unworkedEarnedWoCount++;
+              } else {
+                disallowedWo++;
+              }
+            }
+          }
+        }
+
+        const totalEarnedWo = workedWoCount + unworkedEarnedWoCount;
+        // livePaidDays includes worked days + paid leaves + earned unworked weekly offs
+        const livePaidDays = livePresentDays + paidLeaveDays + unworkedEarnedWoCount;
+
+        // Calculate elapsed days in the period (do not count future dates as absent in ongoing/current month)
+        let elapsedDaysInPeriod = currentPeriodDays;
+        if (activeMode === "Monthly" && selectedMonth) {
+          const [selY, selM] = selectedMonth.split("-").map(Number);
+          const now = new Date();
+          const curY = now.getFullYear();
+          const curM = now.getMonth() + 1;
+          const curD = now.getDate();
+
+          if (selY > curY || (selY === curY && selM > curM)) {
+            elapsedDaysInPeriod = 0;
+          } else if (selY === curY && selM === curM) {
+            elapsedDaysInPeriod = Math.min(currentPeriodDays, curD);
+          } else {
+            elapsedDaysInPeriod = currentPeriodDays;
+          }
+        }
+
+        const totalUnpaidLeaves = Math.max(0, elapsedDaysInPeriod - livePaidDays);
 
         const paidDays = (run.status === "Draft" && empAtt.length > 0)
           ? livePaidDays
@@ -518,7 +615,7 @@ const Payroll = () => {
 
         const finalAbsentDays = (run.status === "Draft" && empAtt.length > 0)
           ? totalUnpaidLeaves
-          : (run.unpaidLeaves != null ? parseFloat(run.unpaidLeaves) : (empAtt.length === 0 ? Math.max(0, currentPeriodDays - paidDays) : totalUnpaidLeaves));
+          : (run.unpaidLeaves != null ? parseFloat(run.unpaidLeaves) : (empAtt.length === 0 ? Math.max(0, elapsedDaysInPeriod - paidDays) : totalUnpaidLeaves));
         absentDays = finalAbsentDays;
 
         const liveEarnBasic = (currentPeriodDays > 0 && paidDays < currentPeriodDays)
@@ -534,12 +631,20 @@ const Payroll = () => {
         const allowance = earnAllowance;
         const grossTotal = parseFloat((monthlyBase + monthlyAllowance).toFixed(2));
         const totalEarn = grossTotal;
-        const otAmount = (run.status === "Draft" || parseFloat(run.otAmount || 0) < liveOtAmount)
-          ? liveOtAmount
-          : parseFloat(run.otAmount || 0);
-        const finalOtHrs = (run.status === "Draft" || parseFloat(run.otHrs || 0) < liveOtHrs)
-          ? liveOtHrs
+
+        // Auto calculate OT from Company Holidays: only holiday days count as OT (8 hrs per holiday worked)
+        const holidayWorkedDates = Array.from(presentDates).filter(d => holidaysSet.has(d));
+        const autoHolidayOtHrs = holidayWorkedDates.length * 8;
+        const hourlyRate = (monthlyBase > 0 && currentPeriodDays > 0) ? (monthlyBase / (currentPeriodDays * 8)) : 0;
+        const autoHolidayOtAmount = parseFloat((autoHolidayOtHrs * hourlyRate).toFixed(2));
+
+        const finalOtHrs = (run.status === "Draft" || run.otHrs == null)
+          ? autoHolidayOtHrs
           : parseFloat(run.otHrs || 0);
+        const otAmount = (run.status === "Draft" || run.otAmount == null)
+          ? autoHolidayOtAmount
+          : parseFloat(run.otAmount || 0);
+
         const earnGross = parseFloat(((earnBasic + earnAllowance) + finalComp + otAmount).toFixed(2));
         const grossSalary = earnGross;
         const epfWages = Math.min(15000, earnBasic);
@@ -580,6 +685,8 @@ const Payroll = () => {
           ipNo: esicRecord.esicNumber || esicRecord.ipNo || empRecord.esicNo || empRecord.ipNo || "—",
           periodDays: currentPeriodDays,
           daysWorked: paidDays,
+          presentDays: Math.max(0, livePresentDays - workedWoCount),
+          woDays: totalEarnedWo,
           paidLeaves: 0,
           unpaidLeaves: absentDays,
           basicRate: monthlyBase,
@@ -642,6 +749,17 @@ const Payroll = () => {
       const empLeaves = leavesByEmployeeId.get(Number(emp.id)) || [];
       let lwpDays = 0;
       let paidLeaveDays = 0;
+      const paidLeavesDates = new Set();
+
+      const toDateKey = (d) => {
+        if (!d) return '';
+        if (typeof d === 'string') return d.slice(0, 10);
+        if (d instanceof Date) {
+          const pad = (n) => String(n).padStart(2, '0');
+          return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+        }
+        return '';
+      };
 
       if (activeMode === "Monthly") {
         const [yearStr, monthStr] = selectedMonth.split("-").map(Number);
@@ -663,6 +781,11 @@ const Payroll = () => {
               lwpDays += daysCount;
             } else {
               paidLeaveDays += daysCount;
+              let curL = new Date(overlapStart);
+              while (curL <= overlapEnd) {
+                paidLeavesDates.add(toDateKey(curL));
+                curL.setDate(curL.getDate() + 1);
+              }
             }
           }
         });
@@ -685,6 +808,11 @@ const Payroll = () => {
               lwpDays += daysCount;
             } else {
               paidLeaveDays += daysCount;
+              let curL = new Date(overlapStart);
+              while (curL <= overlapEnd) {
+                paidLeavesDates.add(toDateKey(curL));
+                curL.setDate(curL.getDate() + 1);
+              }
             }
           }
         });
@@ -694,10 +822,7 @@ const Payroll = () => {
       const empAttRecords = attendanceByEmployeeId.get(Number(emp.id)) || [];
       const presentLogs = empAttRecords.filter(a => a.status === "Present" || a.punchIn || a.firstCheckIn);
       const presentDates = new Set(
-        presentLogs.map(a => {
-          const d = a.workDate || a.date || a.attendanceDate || '';
-          return typeof d === 'string' ? d.slice(0, 10) : (d ? new Date(d).toISOString().slice(0, 10) : '');
-        })
+        presentLogs.map(a => toDateKey(a.workDate || a.date || a.attendanceDate))
       );
       presentDates.delete('');
       const presentDaysCount = presentDates.size;
@@ -705,10 +830,7 @@ const Payroll = () => {
       // Count unexcused absent days from attendance logs (status === "Absent", excluding any date marked present)
       const absentLogs = empAttRecords.filter(a => a.status === "Absent");
       const absentDates = new Set(
-        absentLogs.map(a => {
-          const d = a.workDate || a.date || a.attendanceDate || '';
-          return typeof d === 'string' ? d.slice(0, 10) : (d ? new Date(d).toISOString().slice(0, 10) : '');
-        })
+        absentLogs.map(a => toDateKey(a.workDate || a.date || a.attendanceDate))
       );
       absentDates.delete('');
       for (const pDate of presentDates) {
@@ -716,21 +838,82 @@ const Payroll = () => {
       }
       const unexcusedAbsents = absentDates.size;
 
-      // Total Unpaid Leaves = Approved LWP + Unexcused Absents
-      let totalUnpaidLeaves = lwpDays + unexcusedAbsents;
+      // Evaluate Weekly Offs with Adjacent-Day Proximity Rule
+      let workedWoCount = 0;
+      let unworkedEarnedWoCount = 0;
+      let disallowedWo = 0;
 
-      // If attendance logs exist, payableDays is the actual present days + paid leaves:
+      if (activeMode === "Monthly" && selectedMonth) {
+        const [y, m] = selectedMonth.split("-").map(Number);
+        const dayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+        const targetWo = (emp?.weeklyOffDay || "SUN").toUpperCase();
+        const pad = (n) => String(n).padStart(2, '0');
+
+        for (let d = 1; d <= daysInPeriod; d++) {
+          const curDateStr = `${y}-${pad(m)}-${pad(d)}`;
+          const dt = new Date(Date.UTC(y, m - 1, d));
+          const dayName = dayNames[dt.getUTCDay()];
+
+          if (dayName === targetWo) {
+            if (presentDates.has(curDateStr)) {
+              workedWoCount++;
+              continue;
+            }
+            if (paidLeavesDates.has(curDateStr)) {
+              unworkedEarnedWoCount++;
+              continue;
+            }
+
+            // Check 1 day before (WO - 1)
+            const prevDt = new Date(Date.UTC(y, m - 1, d - 1));
+            const prevDateStr = `${prevDt.getUTCFullYear()}-${pad(prevDt.getUTCMonth() + 1)}-${pad(prevDt.getUTCDate())}`;
+            const isPrevPresent = presentDates.has(prevDateStr) || paidLeavesDates.has(prevDateStr);
+
+            // Check 1 day after (WO + 1)
+            const nextDt = new Date(Date.UTC(y, m - 1, d + 1));
+            const nextDateStr = `${nextDt.getUTCFullYear()}-${pad(nextDt.getUTCMonth() + 1)}-${pad(nextDt.getUTCDate())}`;
+            const isNextPresent = presentDates.has(nextDateStr) || paidLeavesDates.has(nextDateStr);
+
+            if (isPrevPresent || isNextPresent) {
+              unworkedEarnedWoCount++;
+            } else {
+              disallowedWo++;
+            }
+          }
+        }
+      }
+
+      const totalEarnedWo = workedWoCount + unworkedEarnedWoCount;
+
+      // Calculate elapsed days in the period (do not count future dates as absent in ongoing/current month)
+      let elapsedDaysInPeriod = daysInPeriod;
+      if (activeMode === "Monthly" && selectedMonth) {
+        const [selY, selM] = selectedMonth.split("-").map(Number);
+        const now = new Date();
+        const curY = now.getFullYear();
+        const curM = now.getMonth() + 1;
+        const curD = now.getDate();
+
+        if (selY > curY || (selY === curY && selM > curM)) {
+          elapsedDaysInPeriod = 0;
+        } else if (selY === curY && selM === curM) {
+          elapsedDaysInPeriod = Math.min(daysInPeriod, curD);
+        } else {
+          elapsedDaysInPeriod = daysInPeriod;
+        }
+      }
+
       let payableDays = 0;
       let absentDays = 0;
 
       if (empAttRecords.length > 0) {
-        payableDays = presentDaysCount + paidLeaveDays;
-        absentDays = totalUnpaidLeaves;
+        payableDays = presentDaysCount + paidLeaveDays + unworkedEarnedWoCount;
+        absentDays = Math.max(0, elapsedDaysInPeriod - payableDays);
       } else {
         // Fallback if attendance logs haven't been recorded for this period:
-        totalUnpaidLeaves = lwpDays;
+        let totalUnpaidLeaves = lwpDays;
         payableDays = Math.max(0, workedDays - totalUnpaidLeaves);
-        absentDays = totalUnpaidLeaves;
+        absentDays = Math.max(0, elapsedDaysInPeriod - payableDays);
       }
 
       // Calculate base and allowance for period
@@ -748,17 +931,23 @@ const Payroll = () => {
       const grossTotal = parseFloat((monthlyBase + monthlyAllowance).toFixed(2));
       const totalEarn = grossTotal;
       let leaveAdjustment = 0;
-      if (activeMode === "Monthly" && totalUnpaidLeaves > 0 && daysInPeriod > 0) {
-        leaveAdjustment = parseFloat(((grossTotal / daysInPeriod) * totalUnpaidLeaves).toFixed(2));
-      } else if (activeMode === "Daily" && totalUnpaidLeaves > 0) {
-        leaveAdjustment = parseFloat(((grossTotal / 30) * totalUnpaidLeaves).toFixed(2));
+      if (activeMode === "Monthly" && absentDays > 0 && daysInPeriod > 0) {
+        leaveAdjustment = parseFloat(((grossTotal / daysInPeriod) * absentDays).toFixed(2));
+      } else if (activeMode === "Daily" && absentDays > 0) {
+        leaveAdjustment = parseFloat(((grossTotal / 30) * absentDays).toFixed(2));
       }
 
       // Fetch canteen deductions
       const canteenDeduction = getLiveCanteenDeductionForEmployee(emp.id);
 
-      // Fetch approved overtime hours & amount
-      const { compSum: otAmount, otHours: otHrs } = getApprovedCompensationDetails(emp.id, monthlyBase);
+      // Auto calculate OT from Company Holidays: only holiday days count as OT (8 hrs per holiday worked)
+      const holidayWorkedDates = Array.from(presentDates).filter(d => holidaysSet.has(d));
+      const autoHolidayOtHrs = holidayWorkedDates.length * 8;
+      const hourlyRate = (monthlyBase > 0 && daysInPeriod > 0) ? (monthlyBase / (daysInPeriod * 8)) : 0;
+      const autoHolidayOtAmount = parseFloat((autoHolidayOtHrs * hourlyRate).toFixed(2));
+
+      const otHrs = autoHolidayOtHrs;
+      const otAmount = autoHolidayOtAmount;
       const compensation = 0; // Washing Allowance is independent
 
       const earnGross = parseFloat(((earnBasic + earnAllowance) + compensation + otAmount).toFixed(2));
@@ -804,7 +993,8 @@ const Payroll = () => {
         type: activeMode,
         periodDays: daysInPeriod,
         daysWorked: payableDays,
-        presentDays: presentDaysCount,
+        woDays: totalEarnedWo,
+        presentDays: Math.max(0, presentDaysCount - workedWoCount),
         paidLeaves: paidLeaveDays,
         unpaidLeaves: absentDays,
         basicRate: monthlyBase,
@@ -880,6 +1070,16 @@ const Payroll = () => {
           return updatedRow;
         }
 
+        // 3. OT HRS: Admin can edit OT hours and it dynamically recalculates OT Amount and Earn Gross
+        if (field === "otHrs") {
+          const periodDays = row.periodDays || currentPeriodDays || 30;
+          const basicRate = Number(row.basicRate || row.basicPay || 0);
+          const hourlyRate = (basicRate > 0 && periodDays > 0) ? (basicRate / (periodDays * 8)) : 0;
+          const newOtAmount = parseFloat((numVal * hourlyRate).toFixed(2));
+          updatedRow.otHrs = numVal;
+          updatedRow.otAmount = newOtAmount;
+        }
+
         const periodDays = row.periodDays || currentPeriodDays || 30;
         const basicRate = Number(row.basicRate || row.basicPay || 0);
         const allowanceRate = Number(row.allowanceRate || row.allowance || 0);
@@ -935,7 +1135,22 @@ const Payroll = () => {
 
         // Dynamic Leave / Absent Adjustment on Total Gross
         const curPeriodDays = Number(row.periodDays || 30);
-        const unpLeaves = Math.max(0, curPeriodDays - pDays);
+        let elapsedDays = curPeriodDays;
+        if (activeMode === "Monthly" && selectedMonth) {
+          const now = new Date();
+          const curY = now.getFullYear();
+          const curM = now.getMonth() + 1;
+          const curD = now.getDate();
+          const [selY, selM] = selectedMonth.split("-").map(Number);
+          if (selY > curY || (selY === curY && selM > curM)) {
+            elapsedDays = 0;
+          } else if (selY === curY && selM === curM) {
+            elapsedDays = Math.min(curPeriodDays, curD);
+          } else {
+            elapsedDays = curPeriodDays;
+          }
+        }
+        const unpLeaves = Math.max(0, elapsedDays - pDays);
         updatedRow.unpaidLeaves = unpLeaves;
         if (activeMode === "Monthly" && curPeriodDays > 0) {
           updatedRow.leaveAdjustment = parseFloat(((grossTotal / curPeriodDays) * unpLeaves).toFixed(2));
@@ -1008,8 +1223,12 @@ const Payroll = () => {
         emiDeduction: row.emiDeduction.toString(),
         canteenDeduction: row.canteenDeduction.toString(),
         otherDeductions: row.otherDeductions.toString(),
+        otHrs: (row.otHrs || 0).toString(),
+        otAmount: (row.otAmount || 0).toString(),
         totalDeductions: row.totalDeductions.toString(),
         netSalary: row.netSalary.toString(),
+        diwaliBonus: (row.diwaliBonus || 0).toString(),
+        netPayAmount: (row.netPayAmount || row.netSalary || 0).toString(),
         status: row.status,
         paymentMode: row.paymentMode || "Cash",
         payDate: row.payDate,
@@ -1272,6 +1491,8 @@ const Payroll = () => {
           row.esicNo || row.ipNo || empRecord.esicNo || "",                                       // 5: IP No.
           periodDays,                                                                  // 6: TOTAL_DAYS
           paidDays,                                                                    // 7: PAID_DAYS
+          Number(row.presentDays) || 0,                                                // 7a: PRESENT_DAYS
+          Number(row.woDays) || 0,                                                     // 7b: WO
           absentDays,                                                                  // 8: ABSENT_DAYS
           Number(row.otHrs) || 0,                                                      // 9: OT HRS
           basicRate,                                                                   // 10: BASIC+DA
@@ -1308,7 +1529,7 @@ const Payroll = () => {
           cell.font = { name: "Calibri", size: 9, bold: false };
           cell.alignment = { horizontal: "left", vertical: "middle" };
           cell.border = normalBorder;
-          if (typeof val === "number" && colNum >= 6 && colNum <= 29) {
+          if (typeof val === "number" && colNum >= 6 && colNum <= 31) {
             columnSums[colNum] = (columnSums[colNum] || 0) + val;
           }
         });
@@ -1320,7 +1541,7 @@ const Payroll = () => {
       try { ws.mergeCells(`A${totalRowIdx}:E${totalRowIdx}`); } catch (e) { }
 
       const totalRow = ws.getRow(totalRowIdx);
-      for (let c = 1; c <= 33; c++) {
+      for (let c = 1; c <= 35; c++) {
         const cell = totalRow.getCell(c);
         cell.border = normalBorder;
         cell.alignment = { horizontal: "left", vertical: "middle" };
@@ -1331,7 +1552,7 @@ const Payroll = () => {
       cellTotalLabel.font = { bold: true };
 
       // Set numeric sum totals in bold
-      for (let c = 6; c <= 29; c++) {
+      for (let c = 6; c <= 31; c++) {
         const sumVal = columnSums[c] !== undefined ? columnSums[c] : null;
         const cell = totalRow.getCell(c);
         cell.value = sumVal !== null ? (Number.isInteger(sumVal) ? sumVal : Number(sumVal.toFixed(2))) : null;
@@ -1385,7 +1606,7 @@ const Payroll = () => {
       const tableHeaders = [
         [
           "Sr. No.", "EMPCODE", "NAME", "UAN NO.", "IP No.", "TOTAL_DAYS",
-          "PAID_DAYS", "ABSENT_DAYS", "OT HRS", "BASIC+DA", "EARN BASIC+DA",
+          "PAID_DAYS", "PRESENT_DAYS", "WO", "ABSENT_DAYS", "OT HRS", "BASIC+DA", "EARN BASIC+DA",
           "ALLOW_RATE(TA,MOB,HRA,CON.)", "EARN ALLOW (TA,MOB,HRA,CON.)", "GROSS TOTAL",
           "WASHING ALL.", "OT", "EARN GROSS", "EPF WAGES", "PF", "LABOUR WELFARE FUND",
           "ESIC", "ADV", "Penalty", "ABSENT", "Canteen", "TOTAL DEDUCTION.", "NET SALARY",
@@ -1408,7 +1629,7 @@ const Payroll = () => {
         const monthlyBase = salRec ? parseFloat(salRec.baseSalary) : 0;
         const monthlyAllowance = salRec ? parseFloat(salRec.allowanceSalary) : 0;
         const grossTotal = monthlyBase + monthlyAllowance;
-        const earnedTotal = (row.basicPay || 0) + (row.allowance || 0);
+        const earnedTotal = (row.earnBasic || 0) + (row.earnAllowance || 0) + (row.compensation || 0) + (row.otAmount || 0);
         const earnGross = row.grossSalary || row.earnGross || earnedTotal || 0;
         const epfWages = Math.min(row.basicPay || row.earnBasic || monthlyBase || 0, 15000);
 
@@ -1431,6 +1652,8 @@ const Payroll = () => {
           esicRec?.esicNumber || row.ipNo || "",
           totalDays,
           row.daysWorked || 0,
+          row.presentDays || 0,
+          row.woDays || 0,
           row.unpaidLeaves || 0,
           row.otHrs || 0,
           fmt(monthlyBase),
@@ -1862,6 +2085,8 @@ const Payroll = () => {
                     <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[120px]">IP No.</th>
                     <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[90px]">TOTAL_DAYS</th>
                     <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-blue-50 text-blue-900 z-20 border-r border-blue-200 min-w-[90px]">PAID_DAYS</th>
+                    <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-emerald-50 text-emerald-900 z-20 border-r border-emerald-200 min-w-[95px]">PRESENT_DAYS</th>
+                    <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-purple-50 text-purple-900 z-20 border-r border-purple-200 min-w-[75px]">WO</th>
                     <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-rose-50 text-rose-900 z-20 border-r border-rose-200 min-w-[95px]">ABSENT_DAYS</th>
                     <th rowSpan={2} className="py-3 px-3 text-center sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[75px]">OT HRS</th>
                     <th rowSpan={2} className="py-3 px-3 text-right sticky top-0 bg-slate-50 z-20 border-r border-gray-200 min-w-[105px]">BASIC+DA</th>
@@ -1946,10 +2171,24 @@ const Payroll = () => {
                         {row.periodDays || currentPeriodDays}
                       </td>
 
-                      {/* 7. PAID_DAYS - Read-only: from attendance */}
+                      {/* 7. PAID_DAYS - Read-only: from attendance + earned WOs */}
                       <td className="py-2.5 px-3 text-center border-r border-gray-100">
                         <span className="inline-block w-14 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5 text-center text-xs font-semibold font-mono text-blue-900 select-none">
                           {row.daysWorked ?? ""}
+                        </span>
+                      </td>
+
+                      {/* 7a. PRESENT_DAYS - Actual distinct dates physically present */}
+                      <td className="py-2.5 px-3 text-center border-r border-gray-100">
+                        <span className="inline-block w-14 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 text-center text-xs font-bold font-mono text-emerald-800 select-none">
+                          {row.presentDays ?? 0}
+                        </span>
+                      </td>
+
+                      {/* 7b. WO - Weekly Off (Eligible/Earned with Proximity Rule) */}
+                      <td className="py-2.5 px-3 text-center border-r border-gray-100">
+                        <span className="inline-block w-12 bg-purple-50 border border-purple-200 rounded px-1.5 py-0.5 text-center text-xs font-bold font-mono text-purple-800 select-none">
+                          {row.woDays ?? 0}
                         </span>
                       </td>
 
@@ -1960,9 +2199,9 @@ const Payroll = () => {
                         </span>
                       </td>
 
-                      {/* 9. OT HRS - Read-only: from approved OT requests */}
-                      <td className="py-2.5 px-3 text-center font-mono text-xs text-gray-600 border-r border-gray-100">
-                        <span className="inline-block w-12 bg-gray-50 border border-gray-200 rounded px-1 py-0.5 text-center text-xs font-mono text-gray-700 select-none">
+                      {/* 9. OT HRS - Auto-calculated from Holiday work (8 hrs/holiday) */}
+                      <td className="py-2.5 px-3 text-center border-r border-gray-100">
+                        <span className="inline-block w-12 bg-gray-50 border border-gray-200 rounded px-1 py-0.5 text-center text-xs font-semibold font-mono text-gray-700 select-none">
                           {row.otHrs ?? 0}
                         </span>
                       </td>

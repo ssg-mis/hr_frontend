@@ -21,7 +21,7 @@ const fmtDate = (d) => {
   if (!d) return '—';
   if (typeof d === 'string' && d.includes('-') && !d.includes('T')) {
     const [y, m, day] = d.split('-').map(Number);
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${String(day).padStart(2, '0')} ${months[(m || 1) - 1]} ${y}`;
   }
   const dateObj = new Date(d);
@@ -56,14 +56,36 @@ const AttendanceDashboard = () => {
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   };
 
-  const [startDate] = useState(getStartOfMonth());
-  const [endDate] = useState(getTodayStr());
+  const [startDate, setStartDate] = useState(getStartOfMonth());
+  const [endDate, setEndDate] = useState(getTodayStr());
+
+  // Controlled inputs for date picker (only applied on button click)
+  const [filterFrom, setFilterFrom] = useState(getStartOfMonth());
+  const [filterTo, setFilterTo] = useState(getTodayStr());
 
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [todayRecords, setTodayRecords] = useState([]);
+  const [holidaysList, setHolidaysList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedEmployeeLogs, setSelectedEmployeeLogs] = useState(null);
+
+  // Holidays set for fast lookup
+  const holidaysSet = React.useMemo(() => {
+    const set = new Set();
+    const pad = (n) => String(n).padStart(2, '0');
+    holidaysList.forEach(h => {
+      if (h.type === 'holiday' && h.date) {
+        const d = new Date(h.date);
+        if (!isNaN(d.getTime())) {
+          set.add(`${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`);
+          set.add(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+          if (typeof h.date === 'string') set.add(h.date.slice(0, 10));
+        }
+      }
+    });
+    return set;
+  }, [holidaysList]);
 
   // Selected employee session timeline modal
   const [selectedSessionTimeline, setSelectedSessionTimeline] = useState(null);
@@ -104,6 +126,7 @@ const AttendanceDashboard = () => {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ startDate, endDate }),
+
       });
       const result = await res.json();
       if (result.success) {
@@ -147,12 +170,21 @@ const AttendanceDashboard = () => {
   const fetchAttendanceData = async (start, end) => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/attendance/sessions?startDate=${start}&endDate=${end}`);
+      const [res, calRes] = await Promise.all([
+        fetch(`${API_URL}/attendance/sessions?startDate=${start}&endDate=${end}`),
+        fetch(`${API_URL}/calendar`).catch(() => null),
+      ]);
       const result = await safeJson(res);
       if (result.success) {
         setAttendanceRecords(result.data || []);
       } else {
         throw new Error(result.message || "Failed to fetch attendance sessions");
+      }
+      if (calRes) {
+        const calJson = await safeJson(calRes);
+        if (calJson.success && Array.isArray(calJson.data)) {
+          setHolidaysList(calJson.data);
+        }
       }
       await fetchTodayRecords();
     } catch (err) {
@@ -161,6 +193,16 @@ const AttendanceDashboard = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const applyDateFilter = () => {
+    if (!filterFrom || !filterTo) return;
+    if (filterFrom > filterTo) {
+      toast.error("'From' date cannot be after 'To' date.");
+      return;
+    }
+    setStartDate(filterFrom);
+    setEndDate(filterTo);
   };
 
   useEffect(() => {
@@ -174,10 +216,19 @@ const AttendanceDashboard = () => {
       // Step 1: Load existing DB data immediately — no waiting for BioTime
       setLoading(true);
       try {
-        const res = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
+        const [res, calRes] = await Promise.all([
+          fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`),
+          fetch(`${API_URL}/calendar`).catch(() => null),
+        ]);
+
+        // Parse BOTH before any setState so React batches them in one render
+        // This ensures holidaysSet is populated when OT is computed
         const result = await safeJson(res);
-        if (isCurrent && result.success) {
-          setAttendanceRecords(result.data || []);
+        const calJson = calRes ? await safeJson(calRes) : null;
+
+        if (isCurrent) {
+          if (result.success) setAttendanceRecords(result.data || []);
+          if (calJson && calJson.success && Array.isArray(calJson.data)) setHolidaysList(calJson.data);
         }
 
         const today = new Date();
@@ -270,6 +321,57 @@ const AttendanceDashboard = () => {
       toast.error("Failed to fetch session details");
     } finally {
       setTimelineLoading(false);
+    }
+  };
+
+  const handleDailyOtChange = async (day, val) => {
+    const otHours = parseFloat(val) || 0;
+    const otMinutes = Math.round(otHours * 60);
+
+    setSelectedEmployeeLogs((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        days: prev.days.map((d) =>
+          d.sessionId === day.sessionId || (d.employeeId === day.employeeId && d.workDate === day.workDate)
+            ? { ...d, customOtHours: val, effectiveOtMinutes: otMinutes, overtimeMinutes: otMinutes }
+            : d
+        ),
+      };
+    });
+
+    setAttendanceRecords((prev) =>
+      prev.map((d) =>
+        d.sessionId === day.sessionId || (d.employeeId === day.employeeId && d.workDate === day.workDate)
+          ? { ...d, customOtHours: val, effectiveOtMinutes: otMinutes, overtimeMinutes: otMinutes }
+          : d
+      )
+    );
+
+    try {
+      const token = localStorage.getItem("token");
+      const dateStr = typeof day.workDate === "string" ? day.workDate.slice(0, 10) : new Date(day.workDate).toISOString().slice(0, 10);
+      const res = await fetch(`${API_URL}/attendance/overtime`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          employeeId: day.employeeId,
+          date: dateStr,
+          sessionSeq: day.sessionSeq || 1,
+          overtimeHours: otHours,
+          overtimeMinutes: otMinutes,
+        }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        toast.success("Overtime updated successfully");
+      }
+    } catch (err) {
+      console.error("Failed to save overtime:", err);
+      toast.error("Failed to save overtime");
     }
   };
 
@@ -442,14 +544,23 @@ const AttendanceDashboard = () => {
     const isLeave = statusLower === "leave";
     const isWeekoff = record.isWeeklyOff === true || statusLower === "weekoff" || statusLower === "wo";
     const isUpcoming = statusLower === "upcoming";
+    const recordDateStr = typeof record.workDate === 'string' ? record.workDate.slice(0, 10) : new Date(record.workDate).toISOString().slice(0, 10);
+    const isHoliday = holidaysSet.has(recordDateStr);
+    let dayOtMinutes = 0;
+    if (record.overtimeMinutes !== undefined && record.overtimeMinutes !== null && Number(record.overtimeMinutes) > 0) {
+      dayOtMinutes = Number(record.overtimeMinutes);
+    } else if (isHoliday && isPresent) {
+      dayOtMinutes = 480; // 8 hours for working on company holiday
+    }
+    record.effectiveOtMinutes = dayOtMinutes;
+    emp.overtimeMinutes += dayOtMinutes;
 
     if (isPresent) {
       emp.presentDays++;
       emp.workingMinutes += calcMinutes;
-      // Overtime calculation disabled as per requirement (set to 0)
-      // emp.overtimeMinutes += Math.max(0, calcMinutes - expShiftMins);
-      emp.overtimeMinutes = 0;
-      if (calcMinutes > 0 && calcMinutes < halfShiftThreshold) {
+      if (isWeekoff) {
+        emp.payableDays += 1.0;
+      } else if (calcMinutes > 0 && calcMinutes < halfShiftThreshold) {
         emp.halfDays++;
         emp.payableDays += 0.5;
       } else {
@@ -499,19 +610,48 @@ const AttendanceDashboard = () => {
           <h1 className="text-2xl font-bold text-gray-900">Attendance Dashboard</h1>
           <p className="text-sm text-gray-500">Monitor and log employee daily attendance (HR Mode)</p>
         </div>
-        <div className="mt-4 md:mt-0 flex items-center gap-3">
+        <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-2">
+          {/* From – To date range filter */}
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-sm">
+            <Calendar size={14} className="text-indigo-500 shrink-0" />
+            <span className="text-xs font-semibold text-gray-500">From</span>
+            <input
+              type="date"
+              id="att-filter-from"
+              value={filterFrom}
+              max={filterTo}
+              onChange={(e) => setFilterFrom(e.target.value)}
+              className="text-xs border-0 outline-none bg-transparent text-gray-700 font-medium cursor-pointer"
+            />
+          </div>
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-sm">
+            <Calendar size={14} className="text-indigo-500 shrink-0" />
+            <span className="text-xs font-semibold text-gray-500">To</span>
+            <input
+              type="date"
+              id="att-filter-to"
+              value={filterTo}
+              min={filterFrom}
+              onChange={(e) => setFilterTo(e.target.value)}
+              className="text-xs border-0 outline-none bg-transparent text-gray-700 font-medium cursor-pointer"
+            />
+          </div>
+          <button
+            id="att-filter-apply"
+            onClick={applyDateFilter}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm cursor-pointer"
+          >
+            <Search size={13} />
+            Apply
+          </button>
           <button
             onClick={handleSyncBiometricData}
             disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-sm transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+            className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
           >
-            <RefreshCw size={16} className={syncing ? "animate-spin" : ""} />
-            <span>{syncing ? "Syncing..." : "Sync Biometric Logs"}</span>
+            <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
+            <span>{syncing ? "Syncing..." : "Sync Biometric"}</span>
           </button>
-          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-semibold text-gray-600 shadow-sm">
-            <Calendar size={15} className="text-indigo-600 shrink-0" />
-            <span>{fmtDate(startDate)} – Today ({fmtDate(endDate)})</span>
-          </div>
         </div>
       </div>
 
@@ -644,7 +784,7 @@ const AttendanceDashboard = () => {
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">{emp.halfDays}</td>
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold text-red-600">{emp.absentDays}</td>
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold text-blue-600">{emp.leaveDays}</td>
-                      <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">0</td>
+                      <td className="px-6 py-4 text-sm text-center font-bold text-emerald-600">{(emp.overtimeMinutes / 60).toFixed(1)}</td>
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-bold text-indigo-600 bg-indigo-50/30">{emp.payableDays.toFixed(1)}</td>
                       <td className="px-6 py-4 text-right">
                         <button
@@ -717,8 +857,8 @@ const AttendanceDashboard = () => {
 
       {/* Selected Employee Logs Modal */}
       {selectedEmployeeLogs && (
-        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-2xl max-w-4xl w-full mx-4 shadow-xl border border-gray-200 overflow-hidden transform transition-all duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-2xl w-full max-w-6xl mx-auto shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[90vh]">
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
               <div>
@@ -735,19 +875,20 @@ const AttendanceDashboard = () => {
               </button>
             </div>
 
-            {/* Modal Content */}
-            <div className="p-6 max-h-[60vh] overflow-y-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 z-20 shadow-sm bg-gray-50 border-b border-gray-200">
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Date</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Shift</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Status</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-purple-500 sticky top-0 bg-gray-50 z-20">WO</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Check In</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Check Out</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 sticky top-0 bg-gray-50 z-20">Duration</th>
-                    <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 text-right sticky top-0 bg-gray-50 z-20">Raw Punches</th>
+            {/* Modal Content — fixed height scroll area */}
+            <div className="overflow-auto flex-1" style={{maxHeight: 'calc(90vh - 130px)'}}>
+              <table className="w-full text-left border-collapse" style={{minWidth: '900px'}}>
+                <thead className="sticky top-0 z-20 bg-gray-50 border-b border-gray-200 shadow-sm">
+                  <tr>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Date</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Shift</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Status</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-purple-500 whitespace-nowrap">WO</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Check In</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Check Out</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Duration</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-amber-600 text-center whitespace-nowrap">OT (HRS)</th>
+                    <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 text-right whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-150">
@@ -775,8 +916,8 @@ const AttendanceDashboard = () => {
                       const isSinglePunch = isPresent && (!day.punchIn || !day.punchOut);
 
                       return (
-                        <tr key={`${day.workDate}-${day.sessionId || 'none'}`} className="hover:bg-gray-50/50 transition duration-150">
-                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                        <tr key={`${day.workDate}-${day.sessionId || 'none'}`} className="hover:bg-gray-50/50 transition duration-150 border-b border-gray-100">
+                          <td className="px-3 py-2.5 text-sm font-semibold text-gray-900 whitespace-nowrap">
                             {fmtDate(day.workDate)}
                             {/* Show session suffix for multi-session days (sessionSeq > 1) */}
                             {day.sessionSeq > 1 && (
@@ -785,7 +926,7 @@ const AttendanceDashboard = () => {
                               </span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-xs font-medium">
+                          <td className="px-3 py-2.5 text-xs font-medium whitespace-nowrap">
                             <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold capitalize bg-indigo-50 text-indigo-700 border border-indigo-200">
                               {day.shiftName === 'general' ? 'General' : `Shift ${day.shiftName?.toUpperCase()}`} ({day.startTime}-{day.endTime})
                             </span>
@@ -814,9 +955,7 @@ const AttendanceDashboard = () => {
                               </span>
                             )}
                           </td>
-
-                          {/* WO Column - shows WO badge if this is the employee's assigned weekly off day */}
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-2.5">
                             {day.isWeeklyOff ? (
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
                                 WO
@@ -825,9 +964,21 @@ const AttendanceDashboard = () => {
                               <span className="text-gray-300 text-sm">—</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 font-medium">{formatPunchTime(day.punchIn)}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600 font-medium">{formatPunchTime(day.punchOut)}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600 font-semibold">{isPresent ? formatMinutes(mins) : "—"}</td>
+                          <td className="px-3 py-2.5 text-sm text-gray-600 font-medium whitespace-nowrap">{formatPunchTime(day.punchIn)}</td>
+                          <td className="px-3 py-2.5 text-sm text-gray-600 font-medium whitespace-nowrap">{formatPunchTime(day.punchOut)}</td>
+                          <td className="px-3 py-2.5 text-sm text-gray-600 font-semibold whitespace-nowrap">{isPresent ? formatMinutes(mins) : "—"}</td>
+
+                          {/* OT (HRS) Column - Editable by Admin */}
+                          <td className="px-4 py-3 text-center">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={day.customOtHours !== undefined ? day.customOtHours : (day.effectiveOtMinutes !== undefined ? (day.effectiveOtMinutes / 60) : (day.overtimeMinutes ? (day.overtimeMinutes / 60) : 0))}
+                              onChange={(e) => handleDailyOtChange(day, e.target.value)}
+                              className="w-16 bg-white border border-gray-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded px-1.5 py-0.5 text-center text-xs font-semibold font-mono text-gray-800 shadow-sm"
+                            />
+                          </td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">
                               {day.isRecorded ? (
@@ -854,7 +1005,6 @@ const AttendanceDashboard = () => {
                       );
                     })}
                 </tbody>
-
               </table>
             </div>
 
