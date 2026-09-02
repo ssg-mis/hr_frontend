@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
 import {
   Users, UserCheck, UserX, Calendar, Search, Eye, X, Plus, Clock, RefreshCw,
-  User, Mail, Phone, MapPin, CreditCard, DollarSign, Briefcase, Building, Hash, FileText
+  User, Mail, Phone, MapPin, CreditCard, DollarSign, Briefcase, Building, Hash, FileText, Download
 } from "lucide-react";
 import toast from "react-hot-toast";
+import ExcelJS from "exceljs";
 
 const Avatar = ({ name, size = "md" }) => {
   const initials = (name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
@@ -490,7 +491,7 @@ const AttendanceDashboard = () => {
   };
 
 
-  // Group daily logs by employee for range summaries
+  // Group daily logs by employee for range summaries (using exact Payroll calculation logic)
   const employeesSummaryMap = {};
   attendanceRecords.forEach((record) => {
     const empId = record.employeeId;
@@ -499,83 +500,200 @@ const AttendanceDashboard = () => {
         employeeId: empId,
         employeeCode: record.employeeCode,
         employeeName: record.employeeName,
-        // Assigned shift (from employee_shifts) — constant per employee,
-        // shown here regardless of what shift was auto-detected on any given day.
         assignedShiftName: record.assignedShiftName,
         assignedShiftStartTime: record.assignedShiftStartTime,
         assignedShiftEndTime: record.assignedShiftEndTime,
-        presentDays: 0,
-        halfDays: 0,
-        absentDays: 0,
-        leaveDays: 0,
-        workingMinutes: 0,
-        overtimeMinutes: 0,
-        payableDays: 0.0,
+        weeklyOffDay: (record.weeklyOffDay || "SUN").toUpperCase(),
         days: [],
       };
     }
+    employeesSummaryMap[empId].days.push(record);
+    if (record.weeklyOffDay) {
+      employeesSummaryMap[empId].weeklyOffDay = record.weeklyOffDay.toUpperCase();
+    }
+  });
 
-    const emp = employeesSummaryMap[empId];
-    emp.days.push(record);
+  const dayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  const pad = (n) => String(n).padStart(2, "0");
 
-    let calcMinutes = record.workMinutes || 0;
-    if (!calcMinutes && record.punchIn && record.punchOut) {
-      const inTime = new Date(record.punchIn).getTime();
-      const outTime = new Date(record.punchOut).getTime();
-      if (!isNaN(inTime) && !isNaN(outTime) && outTime > inTime) {
-        let diff = (outTime - inTime) / (1000 * 60);
-        if (diff < 0) diff += 24 * 60;
-        calcMinutes = Math.round(diff);
+  const toDateKey = (d) => {
+    if (!d) return "";
+    if (typeof d === "string") return d.slice(0, 10);
+    if (d instanceof Date) {
+      return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+    }
+    return "";
+  };
+
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+  let totalRangeDays = 0;
+  let rangeDates = [];
+  if (startDate && endDate) {
+    const [sy, sm, sd] = startDate.split("-").map(Number);
+    const [ey, em, ed] = endDate.split("-").map(Number);
+    const sDt = new Date(Date.UTC(sy, sm - 1, sd));
+    const eDt = new Date(Date.UTC(ey, em - 1, ed));
+    totalRangeDays = Math.max(0, Math.round((eDt.getTime() - sDt.getTime()) / (24 * 60 * 60 * 1000)) + 1);
+    for (let i = 0; i < totalRangeDays; i++) {
+      const cur = new Date(Date.UTC(sy, sm - 1, sd + i));
+      rangeDates.push({
+        dateStr: `${cur.getUTCFullYear()}-${pad(cur.getUTCMonth() + 1)}-${pad(cur.getUTCDate())}`,
+        dayName: dayNames[cur.getUTCDay()],
+        dt: cur,
+      });
+    }
+  }
+
+  Object.values(employeesSummaryMap).forEach((emp) => {
+    const presentDates = new Set();
+    const paidLeavesDates = new Set();
+    const halfDayDates = new Set();
+    let totalWorkingMinutes = 0;
+    let totalOvertimeMinutes = 0;
+
+    emp.days.forEach((record) => {
+      const dateKey = toDateKey(record.workDate);
+      const statusLower = (record.status || "").toLowerCase();
+      const hasPunches = Boolean(record.punchIn) || Boolean(record.punchOut);
+      const isPresent = hasPunches || (statusLower === "present" && !record.isWeeklyOff);
+      const isLeave = statusLower === "leave";
+
+      let calcMinutes = record.workMinutes || 0;
+      if (!calcMinutes && record.punchIn && record.punchOut) {
+        const inTime = new Date(record.punchIn).getTime();
+        const outTime = new Date(record.punchOut).getTime();
+        if (!isNaN(inTime) && !isNaN(outTime) && outTime > inTime) {
+          let diff = (outTime - inTime) / (1000 * 60);
+          if (diff < 0) diff += 24 * 60;
+          calcMinutes = Math.round(diff);
+        }
       }
-    }
 
-    const sStart = record.startTime || "08:45";
-    const sEnd = record.endTime || "17:35";
-    const [sH = 8, sM = 45] = sStart.split(":").map(Number);
-    const [eH = 17, eM = 35] = sEnd.split(":").map(Number);
-    const shiftStartMins = sH * 60 + sM;
-    const shiftEndMins = eH * 60 + eM;
-    const isNightShift = shiftEndMins < shiftStartMins;
-    const expShiftMins = isNightShift ? (1440 - shiftStartMins) + shiftEndMins : shiftEndMins - shiftStartMins;
-    const halfShiftThreshold = Math.floor(expShiftMins / 2);
+      const sStart = record.startTime || "08:45";
+      const sEnd = record.endTime || "17:35";
+      const [sH = 8, sM = 45] = sStart.split(":").map(Number);
+      const [eH = 17, eM = 35] = sEnd.split(":").map(Number);
+      const shiftStartMins = sH * 60 + sM;
+      const shiftEndMins = eH * 60 + eM;
+      const isNightShift = shiftEndMins < shiftStartMins;
+      const expShiftMins = isNightShift ? (1440 - shiftStartMins) + shiftEndMins : shiftEndMins - shiftStartMins;
+      const halfShiftThreshold = Math.floor(expShiftMins / 2);
 
-    const statusLower = (record.status || "").toLowerCase();
-    const isPresent = statusLower === "present" || Boolean(record.punchIn) || Boolean(record.punchOut);
-    const isLeave = statusLower === "leave";
-    const isWeekoff = record.isWeeklyOff === true || statusLower === "weekoff" || statusLower === "wo";
-    const isUpcoming = statusLower === "upcoming";
-    const recordDateStr = typeof record.workDate === 'string' ? record.workDate.slice(0, 10) : new Date(record.workDate).toISOString().slice(0, 10);
-    const isHoliday = holidaysSet.has(recordDateStr);
-    let dayOtMinutes = 0;
-    if (record.overtimeMinutes !== undefined && record.overtimeMinutes !== null && Number(record.overtimeMinutes) > 0) {
-      dayOtMinutes = Number(record.overtimeMinutes);
-    } else if (isHoliday && isPresent) {
-      dayOtMinutes = 480; // 8 hours for working on company holiday
-    }
-    record.effectiveOtMinutes = dayOtMinutes;
-    emp.overtimeMinutes += dayOtMinutes;
-
-    if (isPresent) {
-      emp.presentDays++;
-      emp.workingMinutes += calcMinutes;
-      if (isWeekoff) {
-        emp.payableDays += 1.0;
-      } else if (calcMinutes > 0 && calcMinutes < halfShiftThreshold) {
-        emp.halfDays++;
-        emp.payableDays += 0.5;
-      } else {
-        emp.payableDays += 1.0;
+      const isHoliday = holidaysSet.has(dateKey);
+      let dayOtMinutes = 0;
+      if (record.overtimeMinutes !== undefined && record.overtimeMinutes !== null && Number(record.overtimeMinutes) > 0) {
+        dayOtMinutes = Number(record.overtimeMinutes);
+      } else if (isHoliday && isPresent && (record.punchIn || record.punchOut)) {
+        // Only credit 8 hrs OT if employee actually punched in/out on the holiday
+        dayOtMinutes = 480;
       }
-    } else if (isLeave) {
-      emp.leaveDays++;
-      emp.payableDays += 1.0;
-    } else if (isUpcoming) {
-      // Future date - do not count as absent or present
-    } else if (isWeekoff) {
-      emp.payableDays += 1.0;
-    } else {
-      emp.absentDays++;
-    }
+      record.effectiveOtMinutes = dayOtMinutes;
+      totalOvertimeMinutes += dayOtMinutes;
+
+      if (isPresent) {
+        if (dateKey) presentDates.add(dateKey);
+        totalWorkingMinutes += calcMinutes;
+        const isWeekoffDay = record.isWeeklyOff === true;
+        if (!isWeekoffDay && (statusLower === "halfday" || statusLower === "half_day" || statusLower === "half day")) {
+          halfDayDates.add(dateKey);
+        }
+      } else if (isLeave) {
+        if (dateKey) paidLeavesDates.add(dateKey);
+      }
+    });
+
+    const targetWo = (emp.weeklyOffDay || "SUN").toUpperCase();
+    let workedWoCount = 0;
+    let unworkedEarnedWoCount = 0;
+    let disallowedWo = 0;
+    let workedHolidayCount = 0;
+    let unworkedEarnedHolidayCount = 0;
+    let disallowedHolidayCount = 0;
+    let elapsedDaysInPeriod = 0;
+
+    rangeDates.forEach(({ dateStr, dayName, dt }) => {
+      if (dateStr <= todayKey) {
+        elapsedDaysInPeriod++;
+      }
+
+      const isWo = dayName === targetWo;
+      const isHoliday = holidaysSet.has(dateStr);
+
+      if (isWo) {
+        if (presentDates.has(dateStr)) {
+          workedWoCount++;
+          return;
+        }
+        if (paidLeavesDates.has(dateStr)) {
+          unworkedEarnedWoCount++;
+          return;
+        }
+
+        // Check 1 day before (WO - 1)
+        const prevDt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate() - 1));
+        const prevDateStr = `${prevDt.getUTCFullYear()}-${pad(prevDt.getUTCMonth() + 1)}-${pad(prevDt.getUTCDate())}`;
+        const isPrevPresent = presentDates.has(prevDateStr) || paidLeavesDates.has(prevDateStr);
+
+        // Check 1 day after (WO + 1)
+        const nextDt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate() + 1));
+        const nextDateStr = `${nextDt.getUTCFullYear()}-${pad(nextDt.getUTCMonth() + 1)}-${pad(nextDt.getUTCDate())}`;
+        const isNextPresent = presentDates.has(nextDateStr) || paidLeavesDates.has(nextDateStr);
+
+        if (isPrevPresent || isNextPresent) {
+          unworkedEarnedWoCount++;
+        } else {
+          disallowedWo++;
+        }
+      } else if (isHoliday) {
+        // Holiday falling on a working day (e.g. 15 Aug Saturday)
+        if (presentDates.has(dateStr)) {
+          workedHolidayCount++;
+          return;
+        }
+        if (paidLeavesDates.has(dateStr)) {
+          unworkedEarnedHolidayCount++;
+          return;
+        }
+
+        // Check 1 day before (Holiday - 1)
+        const prevDt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate() - 1));
+        const prevDateStr = `${prevDt.getUTCFullYear()}-${pad(prevDt.getUTCMonth() + 1)}-${pad(prevDt.getUTCDate())}`;
+        const isPrevPresent = presentDates.has(prevDateStr) || paidLeavesDates.has(prevDateStr);
+
+        // Check 1 day after (Holiday + 1)
+        const nextDt = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate() + 1));
+        const nextDateStr = `${nextDt.getUTCFullYear()}-${pad(nextDt.getUTCMonth() + 1)}-${pad(nextDt.getUTCDate())}`;
+        const isNextPresent = presentDates.has(nextDateStr) || paidLeavesDates.has(nextDateStr);
+
+        if (isPrevPresent || isNextPresent) {
+          unworkedEarnedHolidayCount++;
+        } else {
+          disallowedHolidayCount++;
+        }
+      }
+    });
+
+    const totalEarnedWo = workedWoCount + unworkedEarnedWoCount;
+    const halfDaysCount = halfDayDates.size;
+    const presentDaysCount = presentDates.size;
+    const paidLeavesCount = paidLeavesDates.size;
+
+    // Exact Payroll Calculation:
+    // Payable Days = Present (physically worked) + Paid Leaves + Earned unworked WOs + Earned unworked Holidays - (half-day penalty)
+    const payableDays = presentDaysCount + paidLeavesCount + unworkedEarnedWoCount + unworkedEarnedHolidayCount - (halfDaysCount * 0.5);
+    const absentDays = Math.max(0, Math.round(elapsedDaysInPeriod - (presentDaysCount + paidLeavesCount + unworkedEarnedWoCount + unworkedEarnedHolidayCount)));
+
+    // Standard Display: Present includes physical work + earned holidays:
+    emp.presentDays = Math.max(0, (presentDaysCount - workedWoCount) + unworkedEarnedHolidayCount);
+    emp.halfDays = halfDaysCount;
+    emp.absentDays = absentDays;
+    emp.weekoffDays = totalEarnedWo;
+    emp.leaveDays = paidLeavesCount;
+    emp.payableDays = payableDays;
+    emp.workingMinutes = totalWorkingMinutes;
+    emp.overtimeMinutes = totalOvertimeMinutes;
   });
 
   const employeesSummaryList = Object.values(employeesSummaryMap);
@@ -600,6 +718,232 @@ const AttendanceDashboard = () => {
   const absentCount = todayRecords.filter(
     (r) => (r.status || "").toLowerCase() === "absent" && !r.punchIn
   ).length;
+
+  // Filter-wise Attendance Excel Export using ExcelJS
+  const exportAttendanceToExcel = async () => {
+    try {
+      if (!filteredSummaryList || filteredSummaryList.length === 0) {
+        toast.error("No attendance data available to export for current filters.");
+        return;
+      }
+
+      toast.loading("Generating Attendance Excel...", { id: "att-export" });
+
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "HR FMS System";
+      workbook.lastModifiedBy = "HR Admin";
+      workbook.created = new Date();
+      workbook.modified = new Date();
+
+      const worksheet = workbook.addWorksheet("Attendance Summary", {
+        views: [{ showGridLines: true }]
+      });
+
+      // 1. Title Banner (Merged A1:K1)
+      worksheet.mergeCells("A1:K1");
+      const titleCell = worksheet.getCell("A1");
+      titleCell.value = "EMPLOYEE ATTENDANCE SUMMARY REPORT";
+      titleCell.font = { name: "Calibri", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+      titleCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF1E3A8A" } // Dark Navy Blue
+      };
+      titleCell.alignment = { horizontal: "center", vertical: "middle" };
+      worksheet.getRow(1).height = 28;
+
+      // 2. Filter Subtitle (Merged A2:K2)
+      worksheet.mergeCells("A2:K2");
+      const subtitleCell = worksheet.getCell("A2");
+      const searchNote = searchTerm ? ` | Search: "${searchTerm}"` : "";
+      subtitleCell.value = `Period: ${filterFrom} to ${filterTo} | Total Records: ${filteredSummaryList.length}${searchNote} | Generated: ${new Date().toLocaleDateString("en-IN")}`;
+      subtitleCell.font = { name: "Calibri", size: 9, italic: true, color: { argb: "FF334155" } };
+      subtitleCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFF1F5F9" } // Slate 100
+      };
+      subtitleCell.alignment = { horizontal: "center", vertical: "middle" };
+      worksheet.getRow(2).height = 20;
+
+      // Blank Row 3
+      worksheet.getRow(3).height = 10;
+
+      // 3. Header Row (Row 4)
+      const headers = [
+        "Sr. No.",
+        "Emp Code",
+        "Employee Name",
+        "Assigned Shift",
+        "Present Days",
+        "Half Day",
+        "Absent Days",
+        "Weekly Off (WO)",
+        "On Leave",
+        "Overtime (Hrs)",
+        "Payable Days"
+      ];
+
+      const headerRow = worksheet.getRow(4);
+      headers.forEach((h, idx) => {
+        const cell = headerRow.getCell(idx + 1);
+        cell.value = h;
+        cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF4338CA" } // Indigo 700
+        };
+        cell.alignment = {
+          horizontal: idx >= 4 ? "center" : idx === 0 ? "center" : "left",
+          vertical: "middle"
+        };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFCBD5E1" } },
+          left: { style: "thin", color: { argb: "FFCBD5E1" } },
+          bottom: { style: "medium", color: { argb: "FF1E1B4B" } },
+          right: { style: "thin", color: { argb: "FFCBD5E1" } }
+        };
+      });
+      headerRow.height = 24;
+
+      // 4. Data Rows (Row 5 onwards)
+      let totalPresent = 0;
+      let totalHalf = 0;
+      let totalAbsent = 0;
+      let totalWo = 0;
+      let totalLeave = 0;
+      let totalOtHrs = 0;
+      let totalPayable = 0;
+
+      filteredSummaryList.forEach((emp, index) => {
+        const rowIdx = index + 5;
+        const row = worksheet.getRow(rowIdx);
+        const isEven = index % 2 === 0;
+
+        const shiftStr = `${emp.assignedShiftName || "General"} (${emp.assignedShiftStartTime || "08:45"}-${emp.assignedShiftEndTime || "17:35"})`;
+        const otHrs = Number((emp.overtimeMinutes / 60).toFixed(1));
+        const payable = Number(emp.payableDays.toFixed(1));
+
+        totalPresent += (emp.presentDays || 0);
+        totalHalf += (emp.halfDays || 0);
+        totalAbsent += (emp.absentDays || 0);
+        totalWo += (emp.weekoffDays || 0);
+        totalLeave += (emp.leaveDays || 0);
+        totalOtHrs += otHrs;
+        totalPayable += payable;
+
+        const rowValues = [
+          index + 1,
+          emp.employeeCode,
+          emp.employeeName,
+          shiftStr,
+          emp.presentDays ?? 0,
+          emp.halfDays ?? 0,
+          emp.absentDays ?? 0,
+          emp.weekoffDays ?? 0,
+          emp.leaveDays ?? 0,
+          otHrs,
+          payable
+        ];
+
+        rowValues.forEach((val, cIdx) => {
+          const cell = row.getCell(cIdx + 1);
+          cell.value = val;
+          cell.font = { name: "Calibri", size: 10, color: { argb: "FF1E293B" } };
+          cell.alignment = {
+            horizontal: cIdx >= 4 ? "center" : cIdx === 0 ? "center" : "left",
+            vertical: "middle"
+          };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: isEven ? "FFFFFFFF" : "FFF8FAFC" }
+          };
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFE2E8F0" } },
+            left: { style: "thin", color: { argb: "FFE2E8F0" } },
+            bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+            right: { style: "thin", color: { argb: "FFE2E8F0" } }
+          };
+        });
+        row.height = 20;
+      });
+
+      // 5. Total Row
+      const totalRowIdx = filteredSummaryList.length + 5;
+      const totalRow = worksheet.getRow(totalRowIdx);
+      const totalValues = [
+        "",
+        "TOTAL",
+        `(${filteredSummaryList.length} Employees)`,
+        "",
+        totalPresent,
+        totalHalf,
+        totalAbsent,
+        totalWo,
+        totalLeave,
+        Number(totalOtHrs.toFixed(1)),
+        Number(totalPayable.toFixed(1))
+      ];
+
+      totalValues.forEach((val, cIdx) => {
+        const cell = totalRow.getCell(cIdx + 1);
+        cell.value = val;
+        cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FF0F172A" } };
+        cell.alignment = {
+          horizontal: cIdx >= 4 ? "center" : cIdx === 1 ? "center" : "left",
+          vertical: "middle"
+        };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFEF08A" } // Soft Amber / Yellow
+        };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFCBD5E1" } },
+          left: { style: "thin", color: { argb: "FFCBD5E1" } },
+          bottom: { style: "double", color: { argb: "FF0F172A" } },
+          right: { style: "thin", color: { argb: "FFCBD5E1" } }
+        };
+      });
+      totalRow.height = 22;
+
+      // 6. Column Widths
+      worksheet.columns = [
+        { width: 8 },  // Sr. No.
+        { width: 14 }, // Emp Code
+        { width: 26 }, // Employee Name
+        { width: 24 }, // Assigned Shift
+        { width: 14 }, // Present Days
+        { width: 12 }, // Half Day
+        { width: 14 }, // Absent Days
+        { width: 16 }, // Weekly Off
+        { width: 12 }, // On Leave
+        { width: 16 }, // Overtime (Hrs)
+        { width: 16 }  // Payable Days
+      ];
+
+      // 7. Write to Buffer & Trigger Browser Download
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      });
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `Attendance_Summary_${filterFrom}_to_${filterTo}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(url);
+
+      toast.success("Attendance summary exported successfully!", { id: "att-export" });
+    } catch (err) {
+      console.error("Export Excel error:", err);
+      toast.error("Failed to export Excel. Please try again.", { id: "att-export" });
+    }
+  };
 
 
   return (
@@ -643,6 +987,14 @@ const AttendanceDashboard = () => {
           >
             <Search size={13} />
             Apply
+          </button>
+          <button
+            onClick={exportAttendanceToExcel}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm cursor-pointer"
+            title="Export filtered attendance summary to Excel"
+          >
+            <Download size={13} />
+            <span>Export Excel</span>
           </button>
           <button
             onClick={handleSyncBiometricData}
@@ -759,6 +1111,7 @@ const AttendanceDashboard = () => {
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Present</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Half Day</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Absent</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-purple-600 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">WO</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">On Leave</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Overtime (Hrs)</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500 text-center sticky top-0 bg-gray-50 z-20 border-b border-gray-200">Payable Days</th>
@@ -783,6 +1136,7 @@ const AttendanceDashboard = () => {
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">{emp.presentDays}</td>
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold">{emp.halfDays}</td>
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold text-red-600">{emp.absentDays}</td>
+                      <td className="px-6 py-4 text-sm text-center font-bold text-purple-700">{emp.weekoffDays}</td>
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-semibold text-blue-600">{emp.leaveDays}</td>
                       <td className="px-6 py-4 text-sm text-center font-bold text-emerald-600">{(emp.overtimeMinutes / 60).toFixed(1)}</td>
                       <td className="px-6 py-4 text-sm text-gray-700 text-center font-bold text-indigo-600 bg-indigo-50/30">{emp.payableDays.toFixed(1)}</td>
@@ -876,8 +1230,8 @@ const AttendanceDashboard = () => {
             </div>
 
             {/* Modal Content — fixed height scroll area */}
-            <div className="overflow-auto flex-1" style={{maxHeight: 'calc(90vh - 130px)'}}>
-              <table className="w-full text-left border-collapse" style={{minWidth: '900px'}}>
+            <div className="overflow-auto flex-1" style={{ maxHeight: 'calc(90vh - 130px)' }}>
+              <table className="w-full text-left border-collapse" style={{ minWidth: '900px' }}>
                 <thead className="sticky top-0 z-20 bg-gray-50 border-b border-gray-200 shadow-sm">
                   <tr>
                     <th className="px-3 py-3 text-xs font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">Date</th>
@@ -909,11 +1263,29 @@ const AttendanceDashboard = () => {
                           mins = Math.round(diff);
                         }
                       }
-                      const isPresent = (day.status || "").toLowerCase() === "present" || Boolean(day.punchIn) || Boolean(day.punchOut);
-                      const isLeave = (day.status || "").toLowerCase() === "leave" && !day.punchIn && !day.punchOut;
-                      const isWeekoff = (day.status || "").toLowerCase() === "weekoff" || (day.status || "").toLowerCase() === "wo";
-                      const isUpcoming = (day.status || "").toLowerCase() === "upcoming";
-                      const isSinglePunch = isPresent && (!day.punchIn || !day.punchOut);
+                      const dateKey = typeof day.workDate === 'string' ? day.workDate.slice(0, 10) : new Date(day.workDate).toISOString().slice(0, 10);
+                      const isHoliday = day.isHoliday || holidaysSet.has(dateKey);
+                      const isPhysicalPresent = Boolean(day.punchIn) || Boolean(day.punchOut);
+                      const isWeekoff = Boolean(day.isWeeklyOff) || (day.status || '').toLowerCase() === 'weekoff' || (day.status || '').toLowerCase() === 'wo';
+
+                      // Proximity check for holiday without punches:
+                      const prevDayRecord = selectedEmployeeLogs?.days?.find((d) => {
+                        const dKey = typeof d.workDate === 'string' ? d.workDate.slice(0, 10) : new Date(d.workDate).toISOString().slice(0, 10);
+                        const diff = Math.round((new Date(dateKey).getTime() - new Date(dKey).getTime()) / (24 * 60 * 60 * 1000));
+                        return diff === 1 && ((d.status || '').toLowerCase() === 'present' || Boolean(d.punchIn) || Boolean(d.punchOut) || (d.status || '').toLowerCase() === 'leave');
+                      });
+                      const nextDayRecord = selectedEmployeeLogs?.days?.find((d) => {
+                        const dKey = typeof d.workDate === 'string' ? d.workDate.slice(0, 10) : new Date(d.workDate).toISOString().slice(0, 10);
+                        const diff = Math.round((new Date(dKey).getTime() - new Date(dateKey).getTime()) / (24 * 60 * 60 * 1000));
+                        return diff === 1 && ((d.status || '').toLowerCase() === 'present' || Boolean(d.punchIn) || Boolean(d.punchOut) || (d.status || '').toLowerCase() === 'leave');
+                      });
+                      const isHolidayEarned = isHoliday && (isPhysicalPresent || Boolean(prevDayRecord) || Boolean(nextDayRecord) || day.isHolidayPaid);
+                      const isWoEarned = isWeekoff && (isPhysicalPresent || Boolean(prevDayRecord) || Boolean(nextDayRecord) || day.isWeekoffPaid);
+
+                      const isPresent = isPhysicalPresent || (day.status || '').toLowerCase() === 'present' || isHolidayEarned || isWoEarned;
+                      const isLeave = (day.status || '').toLowerCase() === 'leave' && !isPhysicalPresent;
+                      const isUpcoming = (day.status || '').toLowerCase() === 'upcoming';
+                      const isSinglePunch = isPhysicalPresent && (!day.punchIn || !day.punchOut);
 
                       return (
                         <tr key={`${day.workDate}-${day.sessionId || 'none'}`} className="hover:bg-gray-50/50 transition duration-150 border-b border-gray-100">
@@ -931,11 +1303,16 @@ const AttendanceDashboard = () => {
                               {day.shiftName === 'general' ? 'General' : `Shift ${day.shiftName?.toUpperCase()}`} ({day.startTime}-{day.endTime})
                             </span>
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-2.5">
                             {isPresent ? (
                               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 border border-green-200">
                                 <span>Present</span>
-                                {isSinglePunch && (
+                                {isHoliday && (
+                                  <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-1.5 py-0.2 rounded-full border border-purple-200" title={day.holidayTitle || "National Holiday"}>
+                                    NL
+                                  </span>
+                                )}
+                                {isSinglePunch && !isHoliday && (
                                   <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded-full border border-amber-200" title={!day.punchIn ? "Missing Check-in" : "Missing Check-out"}>
                                     Single Punch
                                   </span>
@@ -949,9 +1326,18 @@ const AttendanceDashboard = () => {
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500 border border-gray-200">
                                 Upcoming
                               </span>
+                            ) : day.isWeeklyOff || isWeekoff ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
+                                Weekoff
+                              </span>
                             ) : (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200">
-                                Absent
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200">
+                                <span>Absent</span>
+                                {isHoliday && (
+                                  <span className="text-[10px] font-bold bg-red-200 text-red-900 px-1 py-0.2 rounded" title="Missed adjacent days - Holiday Disallowed">
+                                    NL
+                                  </span>
+                                )}
                               </span>
                             )}
                           </td>
@@ -966,7 +1352,7 @@ const AttendanceDashboard = () => {
                           </td>
                           <td className="px-3 py-2.5 text-sm text-gray-600 font-medium whitespace-nowrap">{formatPunchTime(day.punchIn)}</td>
                           <td className="px-3 py-2.5 text-sm text-gray-600 font-medium whitespace-nowrap">{formatPunchTime(day.punchOut)}</td>
-                          <td className="px-3 py-2.5 text-sm text-gray-600 font-semibold whitespace-nowrap">{isPresent ? formatMinutes(mins) : "—"}</td>
+                          <td className="px-3 py-2.5 text-sm text-gray-600 font-semibold whitespace-nowrap">{isPhysicalPresent ? formatMinutes(mins) : "—"}</td>
 
                           {/* OT (HRS) Column - Editable by Admin */}
                           <td className="px-4 py-3 text-center">
@@ -974,7 +1360,7 @@ const AttendanceDashboard = () => {
                               type="number"
                               min="0"
                               step="0.5"
-                              value={day.customOtHours !== undefined ? day.customOtHours : (day.effectiveOtMinutes !== undefined ? (day.effectiveOtMinutes / 60) : (day.overtimeMinutes ? (day.overtimeMinutes / 60) : 0))}
+                              value={day.customOtHours !== undefined ? day.customOtHours : (day.effectiveOtMinutes !== undefined ? (day.effectiveOtMinutes / 60) : (isHoliday && isPhysicalPresent ? 8 : (day.overtimeMinutes ? (day.overtimeMinutes / 60) : 0)))}
                               onChange={(e) => handleDailyOtChange(day, e.target.value)}
                               className="w-16 bg-white border border-gray-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded px-1.5 py-0.5 text-center text-xs font-semibold font-mono text-gray-800 shadow-sm"
                             />
