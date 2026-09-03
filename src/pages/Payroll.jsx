@@ -700,17 +700,13 @@ const Payroll = () => {
         const esicDeduction = run.status === "Draft" ? liveEsicDeduction : parseFloat(run.esicDeduction || 0);
 
         const lwfDeduction = parseFloat(run.lwfDeduction || 0);
-        const liveLeaveAdjustment = (absentDays > 0 && activeMode === "Monthly" && currentPeriodDays > 0)
-          ? parseFloat(((grossTotal / currentPeriodDays) * absentDays).toFixed(2))
-          : (absentDays > 0 && activeMode === "Daily" ? parseFloat(((grossTotal / 30) * absentDays).toFixed(2)) : 0);
-        const leaveAdjustment = (run.status === "Draft" || parseFloat(run.leaveAdjustment || 0) < liveLeaveAdjustment)
-          ? liveLeaveAdjustment
-          : parseFloat(run.leaveAdjustment || 0);
+        // ABSENT price/cut disabled: absent amount is always 0.00 and not added to total deductions
+        const leaveAdjustment = 0;
         const emiDeduction = parseFloat(run.emiDeduction || 0);
         const otherDeductions = parseFloat(run.otherDeductions || 0);
 
         const totalDeductions = parseFloat(
-          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + otherDeductions + leaveAdjustment).toFixed(2)
+          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + otherDeductions).toFixed(2)
         );
         const netSalary = parseFloat(Math.max(0, earnGross - totalDeductions).toFixed(2));
         const diwaliBonus = parseFloat(run.diwaliBonus || 0);
@@ -1002,12 +998,8 @@ const Payroll = () => {
 
       const grossTotal = parseFloat((monthlyBase + monthlyAllowance).toFixed(2));
       const totalEarn = grossTotal;
-      let leaveAdjustment = 0;
-      if (activeMode === "Monthly" && absentDays > 0 && daysInPeriod > 0) {
-        leaveAdjustment = parseFloat(((grossTotal / daysInPeriod) * absentDays).toFixed(2));
-      } else if (activeMode === "Daily" && absentDays > 0) {
-        leaveAdjustment = parseFloat(((grossTotal / 30) * absentDays).toFixed(2));
-      }
+      // ABSENT price/cut disabled: absent amount is 0 and not added to total deductions
+      const leaveAdjustment = 0;
 
       // Fetch canteen deductions
       const canteenDeduction = getLiveCanteenDeductionForEmployee(emp.id);
@@ -1059,7 +1051,7 @@ const Payroll = () => {
       const lwfDeduction = 0;
       const otherDeductions = 0;
       const totalDeductions = parseFloat(
-        (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + canteenDeduction + otherDeductions + leaveAdjustment).toFixed(2)
+        (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + canteenDeduction + otherDeductions).toFixed(2)
       );
       const netSalary = parseFloat(Math.max(0, earnGross - totalDeductions).toFixed(2));
       const diwaliBonus = 0;
@@ -1238,11 +1230,7 @@ const Payroll = () => {
         }
         const unpLeaves = Math.max(0, elapsedDays - pDays);
         updatedRow.unpaidLeaves = unpLeaves;
-        if (activeMode === "Monthly" && curPeriodDays > 0) {
-          updatedRow.leaveAdjustment = parseFloat(((grossTotal / curPeriodDays) * unpLeaves).toFixed(2));
-        } else if (activeMode === "Daily") {
-          updatedRow.leaveAdjustment = parseFloat(((grossTotal / 30) * unpLeaves).toFixed(2));
-        }
+        updatedRow.leaveAdjustment = 0;
 
         // Daily EMI Pro-rate
         if (activeMode === "Daily") {
@@ -1259,10 +1247,10 @@ const Payroll = () => {
         const penalty = updatedRow.otherDeductions !== undefined ? updatedRow.otherDeductions : (row.otherDeductions || 0);
         const canteen = updatedRow.canteenDeduction || 0;
 
-        const absentCut = updatedRow.leaveAdjustment !== undefined ? updatedRow.leaveAdjustment : (row.leaveAdjustment || 0);
+        const absentCut = 0;
 
         const totalDeductions = parseFloat(
-          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + penalty + absentCut + canteen).toFixed(2)
+          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + penalty + canteen).toFixed(2)
         );
         updatedRow.totalDeductions = totalDeductions;
 
@@ -1302,7 +1290,7 @@ const Payroll = () => {
         basicPay: row.basicPay.toString(),
         allowance: row.allowance.toString(),
         compensation: row.compensation.toString(),
-        leaveAdjustment: row.leaveAdjustment.toString(),
+        leaveAdjustment: "0.00",
         grossSalary: row.grossSalary.toString(),
         pfDeduction: row.pfDeduction.toString(),
         esicDeduction: row.esicDeduction.toString(),
@@ -1562,9 +1550,9 @@ const Payroll = () => {
         const esicDeduction = Number(row.esicDeduction) || 0;
         const emiDeduction = Number(row.emiDeduction) || 0;
         const penalty = Number(row.otherDeductions) || 0;
-        const absentCut = Number(row.leaveAdjustment) || 0;
+        const absentCut = 0;
         const canteen = Number(row.canteenDeduction) || 0;
-        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + absentCut + canteen).toFixed(2));
+        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + canteen).toFixed(2));
         const netSalary = Number(row.netSalary) || Math.max(0, Number((earnGross - totalDeductions).toFixed(2)));
         const diwaliBonus = Number(row.diwaliBonus) || 0;
         const netPayAmount = Number(row.netPayAmount) || Number((netSalary + diwaliBonus).toFixed(2));
@@ -1757,7 +1745,7 @@ const Payroll = () => {
           fmt(row.esicDeduction),
           fmt(row.emiDeduction),
           fmt(row.otherDeductions),
-          fmt(row.leaveAdjustment),
+          fmt(0),
           fmt(row.canteenDeduction),
           fmt(row.totalDeductions),
           fmt(row.netSalary),
@@ -2386,7 +2374,7 @@ const Payroll = () => {
 
                       {/* 24. ABSENT DEDUCTION */}
                       <td className="py-2.5 px-3 text-right font-mono text-xs text-rose-700 border-r border-gray-100 bg-rose-50/20 font-semibold">
-                        {(Number(row.leaveAdjustment || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        0.00
                       </td>
 
                       {/* 25. Canteen */}
