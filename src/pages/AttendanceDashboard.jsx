@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   Users, UserCheck, UserX, Calendar, Search, Eye, X, Plus, Clock, RefreshCw,
-  User, Mail, Phone, MapPin, CreditCard, DollarSign, Briefcase, Building, Hash, FileText, Download
+  User, Mail, Phone, MapPin, CreditCard, DollarSign, Briefcase, Building, Hash, FileText, Download, Trash2, Edit3
 } from "lucide-react";
 import toast from "react-hot-toast";
 import ExcelJS from "exceljs";
@@ -103,11 +103,20 @@ const AttendanceDashboard = () => {
 
   // Record Event modal for HR
   const [recordModalEmp, setRecordModalEmp] = useState(null);
-  const [eventForm, setEventForm] = useState({
+  const [modalTab, setModalTab] = useState("add"); // "add" | "edit"
+  const [addForm, setAddForm] = useState({
     eventType: "CHECK_IN",
     eventTime: "",
   });
+  const [editForm, setEditForm] = useState({
+    checkIn: "",
+    checkOut: "",
+    status: "Present",
+    remarks: "",
+    hasExistingPunches: false,
+  });
   const [submittingEvent, setSubmittingEvent] = useState(false);
+  const [deletingPunch, setDeletingPunch] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
@@ -405,26 +414,61 @@ const AttendanceDashboard = () => {
     return formatTime(dateStr);
   };
 
-  const handleOpenRecordEventModal = (record) => {
-    const now = new Date();
+  const handleOpenRecordEventModal = (record, preferredTab = null) => {
     const pad = (n) => String(n).padStart(2, "0");
+    const toDtLocal = (dVal) => {
+      if (!dVal) return "";
+      const d = new Date(dVal);
+      if (isNaN(d.getTime())) return "";
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+
+    const workDateKey = typeof record.workDate === "string" 
+      ? record.workDate.slice(0, 10) 
+      : (record.workDate ? new Date(record.workDate).toISOString().slice(0, 10) : startDate);
+
+    const hasPunchIn = Boolean(record.punchIn);
+    const hasPunchOut = Boolean(record.punchOut);
+    const hasPunches = hasPunchIn || hasPunchOut || Boolean(record.isRecorded);
+
+    // Populate Old Add Form
+    const now = new Date();
     const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    setEventForm({
-      eventType: "CHECK_IN",
-      eventTime: `${startDate}T${timeStr}`,
+    setAddForm({
+      eventType: hasPunchIn && !hasPunchOut ? "CHECK_OUT" : "CHECK_IN",
+      eventTime: `${workDateKey}T${timeStr}`,
     });
-    setRecordModalEmp(record);
+
+    // Populate Edit Form
+    setEditForm({
+      checkIn: hasPunchIn ? toDtLocal(record.punchIn) : (hasPunches ? "" : `${workDateKey}T08:45`),
+      checkOut: hasPunchOut ? toDtLocal(record.punchOut) : "",
+      status: record.status || "Present",
+      remarks: record.remarks || "",
+      hasExistingPunches: hasPunches,
+    });
+
+    const activeTab = preferredTab || (hasPunches ? "edit" : "add");
+    setModalTab(activeTab);
+
+    setRecordModalEmp({
+      ...record,
+      employeeId: record.employeeId || selectedEmployeeLogs?.employeeId,
+      employeeName: record.employeeName || selectedEmployeeLogs?.employeeName,
+      employeeCode: record.employeeCode || selectedEmployeeLogs?.employeeCode,
+    });
   };
 
-  // target: "db" logs to our DB only; "biotime" pushes the punch into BioTime
-  // first (real biometric system of record), then mirrors it locally.
-  const handleRecordEventSubmit = async (e, target = "db") => {
+  // 1. Old Add Event submit handler (POST /attendance/events)
+  const handleAddEventSubmit = async (e, target = "db") => {
     e.preventDefault();
-    if (!recordModalEmp || !eventForm.eventTime) return;
+    if (!recordModalEmp || !addForm.eventTime) return;
     setSubmittingEvent(true);
     try {
       const token = localStorage.getItem("token");
+      const targetEmpId = recordModalEmp.employeeId || selectedEmployeeLogs?.employeeId;
       const endpoint = target === "biotime" ? "/attendance/events/biotime" : "/attendance/events";
+
       const res = await fetch(`${API_URL}${endpoint}`, {
         method: "POST",
         headers: {
@@ -432,16 +476,23 @@ const AttendanceDashboard = () => {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          employeeId: recordModalEmp.employeeId,
-          eventType: eventForm.eventType,
-          eventTime: eventForm.eventTime,
+          employeeId: targetEmpId,
+          eventType: addForm.eventType,
+          eventTime: addForm.eventTime,
         }),
       });
+
       const result = await res.json();
       if (result.success) {
         toast.success(target === "biotime" ? "Punch pushed to BioTime and logged" : "Attendance event logged successfully");
         setRecordModalEmp(null);
-        fetchAttendanceData(startDate, endDate);
+
+        // Refetch sessions from backend to update UI
+        const refetchRes = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
+        const refetchResult = await refetchRes.json();
+        if (refetchResult.success) {
+          setAttendanceRecords(refetchResult.data || []);
+        }
       } else {
         throw new Error(result.message || "Failed to log event");
       }
@@ -450,6 +501,111 @@ const AttendanceDashboard = () => {
       toast.error(err.message || "Failed to log event");
     } finally {
       setSubmittingEvent(false);
+    }
+  };
+
+  // 2. Edit / Update Punch handler (PUT /attendance/events)
+  const handleUpdatePunchSubmit = async (e) => {
+    e.preventDefault();
+    if (!recordModalEmp) return;
+    setSubmittingEvent(true);
+    try {
+      const token = localStorage.getItem("token");
+      const workDateStr = typeof recordModalEmp.workDate === "string" 
+        ? recordModalEmp.workDate.slice(0, 10) 
+        : new Date(recordModalEmp.workDate).toISOString().slice(0, 10);
+
+      const targetEmpId = recordModalEmp.employeeId || selectedEmployeeLogs?.employeeId;
+
+      const payload = {
+        employeeId: targetEmpId,
+        date: workDateStr,
+        checkIn: editForm.checkIn ? new Date(editForm.checkIn).toISOString() : null,
+        checkOut: editForm.checkOut ? new Date(editForm.checkOut).toISOString() : null,
+        status: editForm.status,
+        remarks: editForm.remarks || "Manual punch update by Admin",
+      };
+
+      const res = await fetch(`${API_URL}/attendance/events`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        toast.success("Attendance punch updated successfully");
+        setRecordModalEmp(null);
+
+        // Refetch sessions from backend to update UI
+        const refetchRes = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
+        const refetchResult = await refetchRes.json();
+        if (refetchResult.success) {
+          setAttendanceRecords(refetchResult.data || []);
+        }
+      } else {
+        throw new Error(result.message || "Failed to update attendance");
+      }
+    } catch (err) {
+      console.error("Error saving attendance punch:", err);
+      toast.error(err.message || "Failed to update attendance");
+    } finally {
+      setSubmittingEvent(false);
+    }
+  };
+
+  // 3. Delete Punch handler (DELETE /attendance/events)
+  const handleDeletePunch = async () => {
+    if (!recordModalEmp) return;
+    const workDateStr = typeof recordModalEmp.workDate === "string" 
+      ? recordModalEmp.workDate.slice(0, 10) 
+      : new Date(recordModalEmp.workDate).toISOString().slice(0, 10);
+
+    const empName = recordModalEmp.employeeName || selectedEmployeeLogs?.employeeName || "Employee";
+
+    if (!window.confirm(`Are you sure you want to delete attendance punches for ${empName} on ${fmtDate(workDateStr)}? The day will revert to Absent.`)) {
+      return;
+    }
+
+    setDeletingPunch(true);
+    try {
+      const token = localStorage.getItem("token");
+      const targetEmpId = recordModalEmp.employeeId || selectedEmployeeLogs?.employeeId;
+
+      const res = await fetch(`${API_URL}/attendance/events`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          employeeId: targetEmpId,
+          date: workDateStr,
+        }),
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        toast.success("Attendance punch deleted successfully");
+        setRecordModalEmp(null);
+
+        // Refetch sessions from backend to update UI
+        const refetchRes = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
+        const refetchResult = await refetchRes.json();
+        if (refetchResult.success) {
+          setAttendanceRecords(refetchResult.data || []);
+        }
+      } else {
+        throw new Error(result.message || "Failed to delete punch");
+      }
+    } catch (err) {
+      console.error("Error deleting attendance punch:", err);
+      toast.error(err.message || "Failed to delete punch");
+    } finally {
+      setDeletingPunch(false);
     }
   };
 
@@ -1210,7 +1366,9 @@ const AttendanceDashboard = () => {
       </div>
 
       {/* Selected Employee Logs Modal */}
-      {selectedEmployeeLogs && (
+      {selectedEmployeeLogs && (() => {
+        const activeEmp = employeesSummaryMap[selectedEmployeeLogs.employeeId] || selectedEmployeeLogs;
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="bg-white rounded-2xl w-full max-w-6xl mx-auto shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[90vh]">
             {/* Modal Header */}
@@ -1218,7 +1376,7 @@ const AttendanceDashboard = () => {
               <div>
                 <h3 className="font-bold text-gray-950 text-lg">Daily Attendance Logs</h3>
                 <p className="text-sm text-gray-500 mt-0.5">
-                  Employee: <strong className="text-gray-700">{selectedEmployeeLogs.employeeName}</strong> ({selectedEmployeeLogs.employeeCode})
+                  Employee: <strong className="text-gray-700">{activeEmp.employeeName}</strong> ({activeEmp.employeeCode})
                 </p>
               </div>
               <button
@@ -1246,7 +1404,7 @@ const AttendanceDashboard = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-150">
-                  {[...selectedEmployeeLogs.days]
+                  {[...activeEmp.days]
                     .sort((a, b) => {
                       const dDiff = new Date(a.workDate) - new Date(b.workDate);
                       if (dDiff !== 0) return dDiff;
@@ -1405,7 +1563,8 @@ const AttendanceDashboard = () => {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Session Timeline Detail Modal */}
       {selectedSessionTimeline && (
@@ -1511,7 +1670,7 @@ const AttendanceDashboard = () => {
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
               <h3 className="font-bold text-gray-950 flex items-center gap-2">
                 <Clock size={20} className="text-emerald-600" />
-                <span>Log Attendance Event</span>
+                <span>Manage Attendance Punch</span>
               </h3>
               <button
                 onClick={() => setRecordModalEmp(null)}
@@ -1521,73 +1680,196 @@ const AttendanceDashboard = () => {
               </button>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleRecordEventSubmit}>
-              <div className="p-6 space-y-4">
-                <div className="bg-gray-50 border border-gray-150 rounded-xl p-3 text-center">
-                  <span className="text-xs text-gray-400 font-bold uppercase tracking-wider">Employee</span>
+            <div className="p-6 space-y-4">
+              {/* Employee & Date Banner */}
+              <div className="bg-gray-50 border border-gray-150 rounded-xl p-3 flex justify-between items-center">
+                <div>
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Employee</span>
                   <p className="font-bold text-gray-800 text-sm mt-0.5">
                     {recordModalEmp.employeeName} ({recordModalEmp.employeeCode})
                   </p>
                 </div>
-
-                {/* Event Type select */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">Event Type *</label>
-                  <select
-                    value={eventForm.eventType}
-                    onChange={(e) => setEventForm({ ...eventForm, eventType: e.target.value })}
-                    required
-                    className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none bg-white font-medium"
-                  >
-                    <option value="CHECK_IN">Check In</option>
-                    <option value="CHECK_OUT">Check Out</option>
-                  </select>
-                </div>
-
-                {/* Time picker */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">Event Date & Time *</label>
-                  <input
-                    type="datetime-local"
-                    value={eventForm.eventTime}
-                    onChange={(e) => setEventForm({ ...eventForm, eventTime: e.target.value })}
-                    required
-                    className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none font-medium"
-                  />
-                  <p className="text-[11px] text-gray-400">
-                    "Log Event" only updates our records. "Push to Biometric Device" also creates a real
-                    punch in BioTime itself, as if scanned at the terminal.
+                <div className="text-right">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Date</span>
+                  <p className="font-semibold text-gray-700 text-xs mt-0.5">
+                    {fmtDate(recordModalEmp.workDate)}
                   </p>
                 </div>
               </div>
 
-              {/* Modal Footer */}
-              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex flex-wrap justify-end gap-3">
+              {/* Tab Selector: Add Event (Old) vs Edit / Update Punch */}
+              <div className="flex p-1 bg-gray-100 rounded-xl">
                 <button
                   type="button"
-                  onClick={() => setRecordModalEmp(null)}
-                  className="bg-white border border-gray-300 text-gray-700 font-semibold text-sm px-4 py-2 rounded-xl hover:bg-gray-50 transition duration-200 cursor-pointer"
+                  onClick={() => setModalTab("add")}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    modalTab === "add"
+                      ? "bg-white text-emerald-700 shadow-sm"
+                      : "text-gray-500 hover:text-gray-800"
+                  }`}
                 >
-                  Cancel
+                  <Plus size={13} />
+                  <span>Add Punch</span>
                 </button>
-                {/* <button
-                  type="button"
-                  disabled={submittingEvent}
-                  onClick={(e) => handleRecordEventSubmit(e, "biotime")}
-                  className="bg-white border border-amber-300 text-amber-700 font-semibold text-sm px-4 py-2 rounded-xl shadow-sm hover:bg-amber-50 transition duration-200 cursor-pointer disabled:opacity-55"
-                >
-                  {submittingEvent ? "Pushing..." : "Push to Biometric Device"}
-                </button> */}
                 <button
-                  type="submit"
-                  disabled={submittingEvent}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm px-4 py-2 rounded-xl shadow-md transition duration-200 cursor-pointer disabled:opacity-55"
+                  type="button"
+                  onClick={() => setModalTab("edit")}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    modalTab === "edit"
+                      ? "bg-white text-indigo-700 shadow-sm"
+                      : "text-gray-500 hover:text-gray-800"
+                  }`}
                 >
-                  {submittingEvent ? "Logging..." : "Log Event"}
+                  <Edit3 size={13} />
+                  <span>Edit / Delete</span>
                 </button>
               </div>
-            </form>
+
+              {/* TAB 1: ADD EVENT (EXACT OLD FORM) */}
+              {modalTab === "add" && (
+                <form onSubmit={handleAddEventSubmit} className="space-y-4">
+                  {/* Event Type select */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">Event Type *</label>
+                    <select
+                      value={addForm.eventType}
+                      onChange={(e) => setAddForm({ ...addForm, eventType: e.target.value })}
+                      required
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none bg-white font-medium"
+                    >
+                      <option value="CHECK_IN">Check In</option>
+                      <option value="CHECK_OUT">Check Out</option>
+                    </select>
+                  </div>
+
+                  {/* Time picker */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">Event Date & Time *</label>
+                    <input
+                      type="datetime-local"
+                      value={addForm.eventTime}
+                      onChange={(e) => setAddForm({ ...addForm, eventTime: e.target.value })}
+                      required
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none font-medium"
+                    />
+                    <p className="text-[11px] text-gray-400">
+                      "Log Event" updates our records for this employee.
+                    </p>
+                  </div>
+
+                  {/* Modal Footer for Add */}
+                  <div className="pt-2 flex justify-end gap-3 border-t border-gray-100">
+                    <button
+                      type="button"
+                      onClick={() => setRecordModalEmp(null)}
+                      className="bg-white border border-gray-300 text-gray-700 font-semibold text-sm px-4 py-2 rounded-xl hover:bg-gray-50 transition duration-200 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submittingEvent}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm px-5 py-2 rounded-xl shadow-md transition duration-200 cursor-pointer disabled:opacity-55 flex items-center gap-1.5"
+                    >
+                      <Plus size={14} />
+                      <span>{submittingEvent ? "Logging..." : "Log Event"}</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* TAB 2: EDIT / UPDATE PUNCH */}
+              {modalTab === "edit" && (
+                <form onSubmit={handleUpdatePunchSubmit} className="space-y-4">
+                  {/* Check In Date & Time */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      Check-In Date & Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={editForm.checkIn}
+                      onChange={(e) => setEditForm({ ...editForm, checkIn: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* Check Out Date & Time */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      Check-Out Date & Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={editForm.checkOut}
+                      onChange={(e) => setEditForm({ ...editForm, checkOut: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none font-medium"
+                    />
+                  </div>
+
+                  {/* Status selector */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">Status</label>
+                    <select
+                      value={editForm.status}
+                      onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none bg-white font-medium capitalize"
+                    >
+                      <option value="Present">Present</option>
+                      <option value="Absent">Absent</option>
+                      <option value="leave">On Leave</option>
+                    </select>
+                  </div>
+
+                  {/* Remarks */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">Remarks / Reason (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Punch corrected by Admin"
+                      value={editForm.remarks}
+                      onChange={(e) => setEditForm({ ...editForm, remarks: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none font-medium text-gray-700"
+                    />
+                  </div>
+
+                  {/* Modal Footer for Edit */}
+                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+                    <div>
+                      {editForm.hasExistingPunches && (
+                        <button
+                          type="button"
+                          disabled={deletingPunch || submittingEvent}
+                          onClick={handleDeletePunch}
+                          className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-semibold text-xs px-3.5 py-2 rounded-xl transition duration-200 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                        >
+                          <Trash2 size={14} />
+                          <span>{deletingPunch ? "Deleting..." : "Delete Punch"}</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setRecordModalEmp(null)}
+                        className="bg-white border border-gray-300 text-gray-700 font-semibold text-sm px-4 py-2 rounded-xl hover:bg-gray-50 transition duration-200 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submittingEvent || deletingPunch}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-4 py-2 rounded-xl shadow-md transition duration-200 cursor-pointer disabled:opacity-55 flex items-center gap-1.5"
+                      >
+                        <Edit3 size={14} />
+                        <span>{submittingEvent ? "Saving..." : "Update Punch"}</span>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
+            </div>
           </div>
         </div>
       )}
