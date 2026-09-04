@@ -443,318 +443,321 @@ const Payroll = () => {
     return days;
   }, [activeMode, selectedMonth, startDate, endDate]);
 
+  // Helper to map and enrich a saved payroll record with attendance, leaves, and calculated columns
+  const mapSavedPayrollRunToRow = (run) => {
+    const empRecord = employeeById.get(Number(run.employeeId)) || {};
+    const salRecord = salaryByEmployeeId.get(Number(run.employeeId)) || {};
+    const pfRecord = pfByEmployeeId.get(Number(run.employeeId)) || {};
+    const esicRecord = esicByEmployeeId.get(Number(run.employeeId)) || {};
+
+    const monthlyBase = Number(salRecord.baseSalary || run.basicPay || 0);
+    const monthlyAllowance = Number(salRecord.allowanceSalary || run.allowance || 0);
+    const grossTotal = parseFloat((monthlyBase + monthlyAllowance).toFixed(2));
+    const { compSum: liveOtAmount, otHours: liveOtHrs } = getApprovedCompensationDetails(run.employeeId, grossTotal);
+
+    // Washing allowance (compensation) is independent
+    const finalComp = parseFloat(run.compensation || 0);
+
+    // Merge live canteen deduction if saved canteen is less than live canteen, or if status is Draft
+    const liveCanteen = getLiveCanteenDeductionForEmployee(run.employeeId);
+    const finalCanteen = (run.status === "Draft" || parseFloat(run.canteenDeduction || 0) < liveCanteen)
+      ? liveCanteen
+      : parseFloat(run.canteenDeduction || 0);
+
+    // Compute live attendance days from biometric logs
+    const empAtt = attendanceByEmployeeId.get(Number(run.employeeId)) || [];
+    let livePresentDays = 0;
+    let absentDays = 0;
+    // Helper: extract wall-clock YYYY-MM-DD from any date value WITHOUT re-applying UTC offset
+    const toDateKey = (d) => {
+      if (!d) return '';
+      if (typeof d === 'string') return d.slice(0, 10); // Wall-clock string - safe slice
+      if (d instanceof Date) {
+        // Use UTC methods since we store wall-clock as UTC in DB
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+      }
+      return '';
+    };
+
+    const presentDates = new Set();
+    if (empAtt.length > 0) {
+      const presentLogs = empAtt.filter(a => a.status === "Present" || a.punchIn || a.firstCheckIn);
+      presentLogs.forEach(a => {
+        const k = toDateKey(a.workDate || a.date || a.attendanceDate);
+        if (k) presentDates.add(k);
+      });
+      livePresentDays = presentDates.size;
+
+      const absentLogs = empAtt.filter(a => a.status === "Absent" && !a.punchIn && !a.firstCheckIn);
+      const absentDates = new Set(
+        absentLogs.map(a => toDateKey(a.workDate || a.date || a.attendanceDate))
+      );
+      absentDates.delete('');
+      // Remove any date that also appears in presentDates (double-session days)
+      for (const p of presentDates) absentDates.delete(p);
+      absentDays = absentDates.size;
+    }
+
+    // Calculate leaves for saved run to ensure paid and unpaid leaves are properly accounted for
+    const empLeaves = leavesByEmployeeId.get(Number(run.employeeId)) || [];
+    let lwpDays = 0;
+    let paidLeaveDays = 0;
+    const paidLeavesDates = new Set();
+
+    if (activeMode === "Monthly") {
+      const [yearStr, monthStr] = selectedMonth.split("-").map(Number);
+      const firstOfMonth = new Date(yearStr, monthStr - 1, 1);
+      const lastOfMonth = new Date(yearStr, monthStr, 0);
+
+      empLeaves.forEach(l => {
+        const lStart = new Date(l.startDate);
+        const lEnd = new Date(l.endDate);
+        const overlapStart = lStart > firstOfMonth ? lStart : firstOfMonth;
+        const overlapEnd = lEnd < lastOfMonth ? lEnd : lastOfMonth;
+
+        if (overlapStart <= overlapEnd) {
+          const diff = Math.abs(overlapEnd.getTime() - overlapStart.getTime());
+          const daysCount = Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
+          const code = (l.leaveCode || '').toUpperCase();
+          const typeStr = (l.leaveType || '').toLowerCase();
+          if (code === "LWP" || typeStr.includes("without pay") || code.includes("UNPAID")) {
+            lwpDays += daysCount;
+          } else {
+            paidLeaveDays += daysCount;
+            // Add leave dates to set for proximity check
+            let curL = new Date(overlapStart);
+            while (curL <= overlapEnd) {
+              paidLeavesDates.add(toDateKey(curL));
+              curL.setDate(curL.getDate() + 1);
+            }
+          }
+        }
+      });
+    }
+
+    // Evaluate Weekly Offs (WO) with 1-day before / after presence check (Adjacent-Day Proximity Rule)
+    let workedWoCount = 0;
+    let unworkedEarnedWoCount = 0;
+    let disallowedWo = 0;
+    let workedHolidayCount = 0;
+    let unworkedEarnedHolidayCount = 0;
+    let disallowedHoliday = 0;
+
+    if (activeMode === "Monthly" && selectedMonth) {
+      const [y, m] = selectedMonth.split("-").map(Number);
+      const dayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+      const targetWo = (empRecord?.weeklyOffDay || "SUN").toUpperCase();
+      const pad = (n) => String(n).padStart(2, '0');
+
+      for (let d = 1; d <= currentPeriodDays; d++) {
+        const curDateStr = `${y}-${pad(m)}-${pad(d)}`;
+        const dt = new Date(Date.UTC(y, m - 1, d));
+        const dayName = dayNames[dt.getUTCDay()];
+        const isWo = dayName === targetWo;
+        const isHoliday = holidaysSet.has(curDateStr);
+
+        if (isWo) {
+          if (presentDates.has(curDateStr)) {
+            workedWoCount++;
+            continue;
+          }
+          if (paidLeavesDates.has(curDateStr)) {
+            unworkedEarnedWoCount++;
+            continue;
+          }
+
+          // Check 1 day before (WO - 1)
+          const prevDt = new Date(Date.UTC(y, m - 1, d - 1));
+          const prevDateStr = `${prevDt.getUTCFullYear()}-${pad(prevDt.getUTCMonth() + 1)}-${pad(prevDt.getUTCDate())}`;
+          const isPrevPresent = presentDates.has(prevDateStr) || paidLeavesDates.has(prevDateStr);
+
+          // Check 1 day after (WO + 1)
+          const nextDt = new Date(Date.UTC(y, m - 1, d + 1));
+          const nextDateStr = `${nextDt.getUTCFullYear()}-${pad(nextDt.getUTCMonth() + 1)}-${pad(nextDt.getUTCDate())}`;
+          const isNextPresent = presentDates.has(nextDateStr) || paidLeavesDates.has(nextDateStr);
+
+          if (isPrevPresent || isNextPresent) {
+            unworkedEarnedWoCount++;
+          } else {
+            disallowedWo++;
+          }
+        } else if (isHoliday) {
+          if (presentDates.has(curDateStr)) {
+            workedHolidayCount++;
+            continue;
+          }
+          if (paidLeavesDates.has(curDateStr)) {
+            unworkedEarnedHolidayCount++;
+            continue;
+          }
+
+          // Check 1 day before (Holiday - 1)
+          const prevDt = new Date(Date.UTC(y, m - 1, d - 1));
+          const prevDateStr = `${prevDt.getUTCFullYear()}-${pad(prevDt.getUTCMonth() + 1)}-${pad(prevDt.getUTCDate())}`;
+          const isPrevPresent = presentDates.has(prevDateStr) || paidLeavesDates.has(prevDateStr);
+
+          // Check 1 day after (Holiday + 1)
+          const nextDt = new Date(Date.UTC(y, m - 1, d + 1));
+          const nextDateStr = `${nextDt.getUTCFullYear()}-${pad(nextDt.getUTCMonth() + 1)}-${pad(nextDt.getUTCDate())}`;
+          const isNextPresent = presentDates.has(nextDateStr) || paidLeavesDates.has(nextDateStr);
+
+          if (isPrevPresent || isNextPresent) {
+            unworkedEarnedHolidayCount++;
+          } else {
+            disallowedHoliday++;
+          }
+        }
+      }
+    }
+
+    const totalEarnedWo = workedWoCount + unworkedEarnedWoCount;
+    // livePaidDays includes worked days + paid leaves + earned unworked weekly offs + earned unworked holidays
+    const livePaidDays = livePresentDays + paidLeaveDays + unworkedEarnedWoCount + (unworkedEarnedHolidayCount || 0);
+
+    // Calculate elapsed days in the period (do not count future dates as absent in ongoing/current month)
+    let elapsedDaysInPeriod = currentPeriodDays;
+    if (activeMode === "Monthly" && selectedMonth) {
+      const [selY, selM] = selectedMonth.split("-").map(Number);
+      const now = new Date();
+      const curY = now.getFullYear();
+      const curM = now.getMonth() + 1;
+      const curD = now.getDate();
+
+      if (selY > curY || (selY === curY && selM > curM)) {
+        elapsedDaysInPeriod = 0;
+      } else if (selY === curY && selM === curM) {
+        elapsedDaysInPeriod = Math.min(currentPeriodDays, curD);
+      } else {
+        elapsedDaysInPeriod = currentPeriodDays;
+      }
+    }
+
+    const totalUnpaidLeaves = Math.max(0, elapsedDaysInPeriod - livePaidDays);
+
+    const paidDays = (run.status === "Draft" && empAtt.length > 0)
+      ? livePaidDays
+      : parseFloat(run.daysWorked != null ? run.daysWorked : (currentPeriodDays - totalUnpaidLeaves));
+
+    const finalAbsentDays = (run.status === "Draft" && empAtt.length > 0)
+      ? totalUnpaidLeaves
+      : (run.unpaidLeaves != null ? parseFloat(run.unpaidLeaves) : (empAtt.length === 0 ? Math.max(0, elapsedDaysInPeriod - paidDays) : totalUnpaidLeaves));
+    absentDays = finalAbsentDays;
+
+    const liveEarnBasic = (currentPeriodDays > 0 && paidDays < currentPeriodDays)
+      ? parseFloat(((monthlyBase / currentPeriodDays) * paidDays).toFixed(2))
+      : monthlyBase;
+    const liveEarnAllowance = (currentPeriodDays > 0 && paidDays < currentPeriodDays)
+      ? parseFloat(((monthlyAllowance / currentPeriodDays) * paidDays).toFixed(2))
+      : monthlyAllowance;
+
+    const earnBasic = run.status === "Draft" ? liveEarnBasic : parseFloat(run.basicPay || 0);
+    const earnAllowance = run.status === "Draft" ? liveEarnAllowance : parseFloat(run.allowance || 0);
+    const basicPay = earnBasic;
+    const allowance = earnAllowance;
+    const totalEarn = grossTotal;
+
+    // Auto calculate OT from Company Holidays based on GROSS TOTAL: only holiday days where employee actually worked count as OT (8 hrs per holiday worked)
+    const holidayWorkedDates = Array.from(
+      new Set(
+        empAtt
+          .filter(a => {
+            const dKey = toDateKey(a.workDate || a.date || a.attendanceDate);
+            const hasPunches = Boolean(a.punchIn || a.punchOut || a.firstCheckIn || a.lastCheckOut);
+            return holidaysSet.has(dKey) && (a.isHolidayWorked === true || hasPunches);
+          })
+          .map(a => toDateKey(a.workDate || a.date || a.attendanceDate))
+          .filter(Boolean)
+      )
+    );
+    const autoHolidayOtHrs = holidayWorkedDates.length * 8;
+    const hourlyRate = (grossTotal > 0 && currentPeriodDays > 0) ? (grossTotal / (currentPeriodDays * 8)) : 0;
+    const autoHolidayOtAmount = parseFloat((autoHolidayOtHrs * hourlyRate).toFixed(2));
+
+    const finalOtHrs = (run.status === "Draft" || run.otHrs == null)
+      ? autoHolidayOtHrs
+      : parseFloat(run.otHrs || 0);
+    // Overtime amount calculated on GROSS TOTAL:
+    const otAmount = (finalOtHrs > 0 && hourlyRate > 0)
+      ? parseFloat((finalOtHrs * hourlyRate).toFixed(2))
+      : ((run.status === "Draft" || run.otAmount == null) ? autoHolidayOtAmount : parseFloat(run.otAmount || 0));
+
+    const earnGross = parseFloat(((earnBasic + earnAllowance) + finalComp + otAmount).toFixed(2));
+    const grossSalary = earnGross;
+    const epfWages = Math.min(15000, earnBasic);
+
+    const isPfOptedIn = pfRecord?.isOptedIn != null ? pfRecord.isOptedIn : (grossTotal <= 15000);
+    const livePfDeduction = isPfOptedIn ? parseFloat((epfWages * 0.12).toFixed(2)) : 0;
+    const pfDeduction = run.status === "Draft" ? livePfDeduction : parseFloat(run.pfDeduction || 0);
+
+    const isEsicOptedIn = esicRecord?.isOptedIn != null ? esicRecord.isOptedIn : (grossTotal <= 21000);
+    const liveEsicDeduction = (isEsicOptedIn && grossTotal <= 21000) ? parseFloat((earnGross * 0.0075).toFixed(2)) : 0;
+    const esicDeduction = run.status === "Draft" ? liveEsicDeduction : parseFloat(run.esicDeduction || 0);
+
+    const lwfDeduction = parseFloat(run.lwfDeduction || 0);
+    // ABSENT price/cut disabled: absent amount is always 0.00 and not added to total deductions
+    const leaveAdjustment = 0;
+    const emiDeduction = parseFloat(run.emiDeduction || 0);
+    const otherDeductions = parseFloat(run.otherDeductions || 0);
+
+    const totalDeductions = parseFloat(
+      (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + otherDeductions).toFixed(2)
+    );
+    const netSalary = parseFloat(Math.max(0, earnGross - totalDeductions).toFixed(2));
+    const diwaliBonus = parseFloat(run.diwaliBonus || 0);
+    const netPayAmount = parseFloat((netSalary + diwaliBonus).toFixed(2));
+
+    return {
+      ...run,
+      branchName: run.branchName || empRecord?.branchName || "—",
+      branchAddress: run.branchAddress || empRecord?.branchAddress || "",
+      paymentMode: (run.paymentMode || empRecord?.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH",
+      bankAccountNo: ((run.paymentMode || empRecord?.payMode || "CASH").toUpperCase().includes("BANK") ? (empRecord?.bankAccountNo || "—") : "—"),
+      ifscCode: ((run.paymentMode || empRecord?.payMode || "CASH").toUpperCase().includes("BANK") ? (empRecord?.ifscCode || "—") : "—"),
+      uanNo: pfRecord.uanNo || empRecord.pfNo || empRecord.uanNo || "—",
+      ipNo: esicRecord.esicNumber || esicRecord.ipNo || empRecord.esicNo || empRecord.ipNo || "—",
+      periodDays: currentPeriodDays,
+      daysWorked: paidDays,
+      presentDays: Math.max(0, livePresentDays - workedWoCount),
+      woDays: totalEarnedWo,
+      paidLeaves: paidLeaveDays,
+      unpaidLeaves: absentDays,
+      basicRate: monthlyBase,
+      earnBasic,
+      allowanceRate: monthlyAllowance,
+      earnAllowance,
+      grossTotal,
+      totalEarn,
+      earnGross,
+      basicPay,
+      allowance,
+      compensation: finalComp,
+      otAmount,
+      otHrs: finalOtHrs,
+      leaveAdjustment,
+      grossSalary,
+      epfWages,
+      pfDeduction,
+      lwfDeduction,
+      esicDeduction,
+      emiDeduction,
+      canteenDeduction: finalCanteen,
+      otherDeductions,
+      totalDeductions,
+      netSalary,
+      diwaliBonus,
+      netPayAmount,
+      isSaved: true
+    };
+  };
+
   // Trigger recalculations when base data or period data updates
   useEffect(() => {
     if (employees.length === 0) return;
 
     // If we have saved payroll records in the DB for this period, load them directly.
     if (savedPayrollRuns.length > 0) {
-      const rows = savedPayrollRuns.map(run => {
-        const empRecord = employeeById.get(Number(run.employeeId)) || {};
-        const salRecord = salaryByEmployeeId.get(Number(run.employeeId)) || {};
-        const pfRecord = pfByEmployeeId.get(Number(run.employeeId)) || {};
-        const esicRecord = esicByEmployeeId.get(Number(run.employeeId)) || {};
-
-        const monthlyBase = Number(salRecord.baseSalary || run.basicPay || 0);
-        const monthlyAllowance = Number(salRecord.allowanceSalary || run.allowance || 0);
-        const grossTotal = parseFloat((monthlyBase + monthlyAllowance).toFixed(2));
-        const { compSum: liveOtAmount, otHours: liveOtHrs } = getApprovedCompensationDetails(run.employeeId, grossTotal);
-
-        // Washing allowance (compensation) is independent
-        const finalComp = parseFloat(run.compensation || 0);
-
-        // Merge live canteen deduction if saved canteen is less than live canteen, or if status is Draft
-        const liveCanteen = getLiveCanteenDeductionForEmployee(run.employeeId);
-        const finalCanteen = (run.status === "Draft" || parseFloat(run.canteenDeduction || 0) < liveCanteen)
-          ? liveCanteen
-          : parseFloat(run.canteenDeduction || 0);
-
-        // Compute live attendance days from biometric logs
-        const empAtt = attendanceByEmployeeId.get(Number(run.employeeId)) || [];
-        let livePresentDays = 0;
-        let absentDays = 0;
-        // Helper: extract wall-clock YYYY-MM-DD from any date value WITHOUT re-applying UTC offset
-        const toDateKey = (d) => {
-          if (!d) return '';
-          if (typeof d === 'string') return d.slice(0, 10); // Wall-clock string - safe slice
-          if (d instanceof Date) {
-            // Use UTC methods since we store wall-clock as UTC in DB
-            const pad = (n) => String(n).padStart(2, '0');
-            return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-          }
-          return '';
-        };
-
-        const presentDates = new Set();
-        if (empAtt.length > 0) {
-          const presentLogs = empAtt.filter(a => a.status === "Present" || a.punchIn || a.firstCheckIn);
-          presentLogs.forEach(a => {
-            const k = toDateKey(a.workDate || a.date || a.attendanceDate);
-            if (k) presentDates.add(k);
-          });
-          livePresentDays = presentDates.size;
-
-          const absentLogs = empAtt.filter(a => a.status === "Absent" && !a.punchIn && !a.firstCheckIn);
-          const absentDates = new Set(
-            absentLogs.map(a => toDateKey(a.workDate || a.date || a.attendanceDate))
-          );
-          absentDates.delete('');
-          // Remove any date that also appears in presentDates (double-session days)
-          for (const p of presentDates) absentDates.delete(p);
-          absentDays = absentDates.size;
-        }
-
-        // Calculate leaves for saved run to ensure paid and unpaid leaves are properly accounted for
-        const empLeaves = leavesByEmployeeId.get(Number(run.employeeId)) || [];
-        let lwpDays = 0;
-        let paidLeaveDays = 0;
-        const paidLeavesDates = new Set();
-
-        if (activeMode === "Monthly") {
-          const [yearStr, monthStr] = selectedMonth.split("-").map(Number);
-          const firstOfMonth = new Date(yearStr, monthStr - 1, 1);
-          const lastOfMonth = new Date(yearStr, monthStr, 0);
-
-          empLeaves.forEach(l => {
-            const lStart = new Date(l.startDate);
-            const lEnd = new Date(l.endDate);
-            const overlapStart = lStart > firstOfMonth ? lStart : firstOfMonth;
-            const overlapEnd = lEnd < lastOfMonth ? lEnd : lastOfMonth;
-
-            if (overlapStart <= overlapEnd) {
-              const diff = Math.abs(overlapEnd.getTime() - overlapStart.getTime());
-              const daysCount = Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
-              const code = (l.leaveCode || '').toUpperCase();
-              const typeStr = (l.leaveType || '').toLowerCase();
-              if (code === "LWP" || typeStr.includes("without pay") || code.includes("UNPAID")) {
-                lwpDays += daysCount;
-              } else {
-                paidLeaveDays += daysCount;
-                // Add leave dates to set for proximity check
-                let curL = new Date(overlapStart);
-                while (curL <= overlapEnd) {
-                  paidLeavesDates.add(toDateKey(curL));
-                  curL.setDate(curL.getDate() + 1);
-                }
-              }
-            }
-          });
-        }
-
-        // Evaluate Weekly Offs (WO) with 1-day before / after presence check (Adjacent-Day Proximity Rule)
-        let workedWoCount = 0;
-        let unworkedEarnedWoCount = 0;
-        let disallowedWo = 0;
-        let workedHolidayCount = 0;
-        let unworkedEarnedHolidayCount = 0;
-        let disallowedHoliday = 0;
-
-        if (activeMode === "Monthly" && selectedMonth) {
-          const [y, m] = selectedMonth.split("-").map(Number);
-          const dayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-          const targetWo = (empRecord?.weeklyOffDay || "SUN").toUpperCase();
-          const pad = (n) => String(n).padStart(2, '0');
-
-          for (let d = 1; d <= currentPeriodDays; d++) {
-            const curDateStr = `${y}-${pad(m)}-${pad(d)}`;
-            const dt = new Date(Date.UTC(y, m - 1, d));
-            const dayName = dayNames[dt.getUTCDay()];
-            const isWo = dayName === targetWo;
-            const isHoliday = holidaysSet.has(curDateStr);
-
-            if (isWo) {
-              if (presentDates.has(curDateStr)) {
-                workedWoCount++;
-                continue;
-              }
-              if (paidLeavesDates.has(curDateStr)) {
-                unworkedEarnedWoCount++;
-                continue;
-              }
-
-              // Check 1 day before (WO - 1)
-              const prevDt = new Date(Date.UTC(y, m - 1, d - 1));
-              const prevDateStr = `${prevDt.getUTCFullYear()}-${pad(prevDt.getUTCMonth() + 1)}-${pad(prevDt.getUTCDate())}`;
-              const isPrevPresent = presentDates.has(prevDateStr) || paidLeavesDates.has(prevDateStr);
-
-              // Check 1 day after (WO + 1)
-              const nextDt = new Date(Date.UTC(y, m - 1, d + 1));
-              const nextDateStr = `${nextDt.getUTCFullYear()}-${pad(nextDt.getUTCMonth() + 1)}-${pad(nextDt.getUTCDate())}`;
-              const isNextPresent = presentDates.has(nextDateStr) || paidLeavesDates.has(nextDateStr);
-
-              if (isPrevPresent || isNextPresent) {
-                unworkedEarnedWoCount++;
-              } else {
-                disallowedWo++;
-              }
-            } else if (isHoliday) {
-              if (presentDates.has(curDateStr)) {
-                workedHolidayCount++;
-                continue;
-              }
-              if (paidLeavesDates.has(curDateStr)) {
-                unworkedEarnedHolidayCount++;
-                continue;
-              }
-
-              // Check 1 day before (Holiday - 1)
-              const prevDt = new Date(Date.UTC(y, m - 1, d - 1));
-              const prevDateStr = `${prevDt.getUTCFullYear()}-${pad(prevDt.getUTCMonth() + 1)}-${pad(prevDt.getUTCDate())}`;
-              const isPrevPresent = presentDates.has(prevDateStr) || paidLeavesDates.has(prevDateStr);
-
-              // Check 1 day after (Holiday + 1)
-              const nextDt = new Date(Date.UTC(y, m - 1, d + 1));
-              const nextDateStr = `${nextDt.getUTCFullYear()}-${pad(nextDt.getUTCMonth() + 1)}-${pad(nextDt.getUTCDate())}`;
-              const isNextPresent = presentDates.has(nextDateStr) || paidLeavesDates.has(nextDateStr);
-
-              if (isPrevPresent || isNextPresent) {
-                unworkedEarnedHolidayCount++;
-              } else {
-                disallowedHoliday++;
-              }
-            }
-          }
-        }
-
-        const totalEarnedWo = workedWoCount + unworkedEarnedWoCount;
-        // livePaidDays includes worked days + paid leaves + earned unworked weekly offs + earned unworked holidays
-        const livePaidDays = livePresentDays + paidLeaveDays + unworkedEarnedWoCount + (unworkedEarnedHolidayCount || 0);
-
-        // Calculate elapsed days in the period (do not count future dates as absent in ongoing/current month)
-        let elapsedDaysInPeriod = currentPeriodDays;
-        if (activeMode === "Monthly" && selectedMonth) {
-          const [selY, selM] = selectedMonth.split("-").map(Number);
-          const now = new Date();
-          const curY = now.getFullYear();
-          const curM = now.getMonth() + 1;
-          const curD = now.getDate();
-
-          if (selY > curY || (selY === curY && selM > curM)) {
-            elapsedDaysInPeriod = 0;
-          } else if (selY === curY && selM === curM) {
-            elapsedDaysInPeriod = Math.min(currentPeriodDays, curD);
-          } else {
-            elapsedDaysInPeriod = currentPeriodDays;
-          }
-        }
-
-        const totalUnpaidLeaves = Math.max(0, elapsedDaysInPeriod - livePaidDays);
-
-        const paidDays = (run.status === "Draft" && empAtt.length > 0)
-          ? livePaidDays
-          : parseFloat(run.daysWorked != null ? run.daysWorked : (currentPeriodDays - totalUnpaidLeaves));
-
-        const finalAbsentDays = (run.status === "Draft" && empAtt.length > 0)
-          ? totalUnpaidLeaves
-          : (run.unpaidLeaves != null ? parseFloat(run.unpaidLeaves) : (empAtt.length === 0 ? Math.max(0, elapsedDaysInPeriod - paidDays) : totalUnpaidLeaves));
-        absentDays = finalAbsentDays;
-
-        const liveEarnBasic = (currentPeriodDays > 0 && paidDays < currentPeriodDays)
-          ? parseFloat(((monthlyBase / currentPeriodDays) * paidDays).toFixed(2))
-          : monthlyBase;
-        const liveEarnAllowance = (currentPeriodDays > 0 && paidDays < currentPeriodDays)
-          ? parseFloat(((monthlyAllowance / currentPeriodDays) * paidDays).toFixed(2))
-          : monthlyAllowance;
-
-        const earnBasic = run.status === "Draft" ? liveEarnBasic : parseFloat(run.basicPay || 0);
-        const earnAllowance = run.status === "Draft" ? liveEarnAllowance : parseFloat(run.allowance || 0);
-        const basicPay = earnBasic;
-        const allowance = earnAllowance;
-        const totalEarn = grossTotal;
-
-        // Auto calculate OT from Company Holidays based on GROSS TOTAL: only holiday days where employee actually worked count as OT (8 hrs per holiday worked)
-        const holidayWorkedDates = Array.from(
-          new Set(
-            empAtt
-              .filter(a => {
-                const dKey = toDateKey(a.workDate || a.date || a.attendanceDate);
-                const hasPunches = Boolean(a.punchIn || a.punchOut || a.firstCheckIn || a.lastCheckOut);
-                return holidaysSet.has(dKey) && (a.isHolidayWorked === true || hasPunches);
-              })
-              .map(a => toDateKey(a.workDate || a.date || a.attendanceDate))
-              .filter(Boolean)
-          )
-        );
-        const autoHolidayOtHrs = holidayWorkedDates.length * 8;
-        const hourlyRate = (grossTotal > 0 && currentPeriodDays > 0) ? (grossTotal / (currentPeriodDays * 8)) : 0;
-        const autoHolidayOtAmount = parseFloat((autoHolidayOtHrs * hourlyRate).toFixed(2));
-
-        const finalOtHrs = (run.status === "Draft" || run.otHrs == null)
-          ? autoHolidayOtHrs
-          : parseFloat(run.otHrs || 0);
-        // Overtime amount calculated on GROSS TOTAL:
-        const otAmount = (finalOtHrs > 0 && hourlyRate > 0)
-          ? parseFloat((finalOtHrs * hourlyRate).toFixed(2))
-          : ((run.status === "Draft" || run.otAmount == null) ? autoHolidayOtAmount : parseFloat(run.otAmount || 0));
-
-        const earnGross = parseFloat(((earnBasic + earnAllowance) + finalComp + otAmount).toFixed(2));
-        const grossSalary = earnGross;
-        const epfWages = Math.min(15000, earnBasic);
-
-        const isPfOptedIn = pfRecord?.isOptedIn != null ? pfRecord.isOptedIn : (grossTotal <= 15000);
-        const livePfDeduction = isPfOptedIn ? parseFloat((epfWages * 0.12).toFixed(2)) : 0;
-        const pfDeduction = run.status === "Draft" ? livePfDeduction : parseFloat(run.pfDeduction || 0);
-
-        const isEsicOptedIn = esicRecord?.isOptedIn != null ? esicRecord.isOptedIn : (grossTotal <= 21000);
-        const liveEsicDeduction = (isEsicOptedIn && grossTotal <= 21000) ? parseFloat((earnGross * 0.0075).toFixed(2)) : 0;
-        const esicDeduction = run.status === "Draft" ? liveEsicDeduction : parseFloat(run.esicDeduction || 0);
-
-        const lwfDeduction = parseFloat(run.lwfDeduction || 0);
-        // ABSENT price/cut disabled: absent amount is always 0.00 and not added to total deductions
-        const leaveAdjustment = 0;
-        const emiDeduction = parseFloat(run.emiDeduction || 0);
-        const otherDeductions = parseFloat(run.otherDeductions || 0);
-
-        const totalDeductions = parseFloat(
-          (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + finalCanteen + otherDeductions).toFixed(2)
-        );
-        const netSalary = parseFloat(Math.max(0, earnGross - totalDeductions).toFixed(2));
-        const diwaliBonus = parseFloat(run.diwaliBonus || 0);
-        const netPayAmount = parseFloat((netSalary + diwaliBonus).toFixed(2));
-
-        return {
-          ...run,
-          branchName: run.branchName || empRecord?.branchName || "—",
-          branchAddress: run.branchAddress || empRecord?.branchAddress || "",
-          paymentMode: (run.paymentMode || empRecord?.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH",
-          bankAccountNo: ((run.paymentMode || empRecord?.payMode || "CASH").toUpperCase().includes("BANK") ? (empRecord?.bankAccountNo || "—") : "—"),
-          ifscCode: ((run.paymentMode || empRecord?.payMode || "CASH").toUpperCase().includes("BANK") ? (empRecord?.ifscCode || "—") : "—"),
-          uanNo: pfRecord.uanNo || empRecord.pfNo || empRecord.uanNo || "—",
-          ipNo: esicRecord.esicNumber || esicRecord.ipNo || empRecord.esicNo || empRecord.ipNo || "—",
-          periodDays: currentPeriodDays,
-          daysWorked: paidDays,
-          presentDays: Math.max(0, livePresentDays - workedWoCount),
-          woDays: totalEarnedWo,
-          paidLeaves: paidLeaveDays,
-          unpaidLeaves: absentDays,
-          basicRate: monthlyBase,
-          earnBasic,
-          allowanceRate: monthlyAllowance,
-          earnAllowance,
-          grossTotal,
-          totalEarn,
-          earnGross,
-          basicPay,
-          allowance,
-          compensation: finalComp,
-          otAmount,
-          otHrs: finalOtHrs,
-          leaveAdjustment,
-          grossSalary,
-          epfWages,
-          pfDeduction,
-          lwfDeduction,
-          esicDeduction,
-          emiDeduction,
-          canteenDeduction: finalCanteen,
-          otherDeductions,
-          totalDeductions,
-          netSalary,
-          diwaliBonus,
-          netPayAmount,
-          isSaved: true
-        };
-      });
+      const rows = savedPayrollRuns.map(mapSavedPayrollRunToRow);
       setPayrollRows(rows);
       return;
     }
@@ -1341,7 +1344,7 @@ const Payroll = () => {
         const res = await api.get(`/salaries/payroll?${params.toString()}`);
         const exportList = res.data?.data || (Array.isArray(res.data) ? res.data : []);
         toast.dismiss(toastId);
-        return exportList;
+        return exportList.map(mapSavedPayrollRunToRow);
       } catch (err) {
         toast.dismiss(toastId);
         console.error("Export fetch error:", err);
@@ -1419,75 +1422,103 @@ const Payroll = () => {
       await wb.xlsx.load(templateBuf);
       const ws = wb.getWorksheet("POWER") || wb.worksheets[0];
 
-      // 4. Center top 2 title lines across the table width
-      const periodSubtitle = activeMode === "Monthly"
-        ? `Salary Register For Month : ${getDynamicPeriodLabel()}`
-        : `Salary Register For Period : ${getDynamicPeriodLabel()}`;
-
-      const cellA1 = ws.getCell("A1");
-      cellA1.alignment = { horizontal: "center", vertical: "middle" };
-
-      const cellA2 = ws.getCell("A2");
-      cellA2.value = periodSubtitle;
-      cellA2.alignment = { horizontal: "center", vertical: "middle" };
-
-      // Update Column 14 (N3) and Column 17 (Q3) header titles
-      const cellN3 = ws.getCell("N3");
-      if (cellN3) cellN3.value = "GROSS TOTAL";
-      const cellQ3 = ws.getCell("Q3");
-      if (cellQ3) cellQ3.value = "EARN GROSS";
-
-      // Ensure merges and headers exist for A1:AG1, A2:AG2, and S3:Z3 (DEDUCTION)
-      try { ws.mergeCells("A1:AG1"); } catch (e) { }
-      try { ws.mergeCells("A2:AG2"); } catch (e) { }
-      try { ws.unMergeCells("S3:Y3"); } catch (e) { }
-      try { ws.mergeCells("S3:Z3"); } catch (e) { }
-      const cellS3 = ws.getCell("S3");
-      if (cellS3) {
-        cellS3.value = "DEDUCTION";
-        cellS3.alignment = { horizontal: "center", vertical: "middle" };
+      // Unmerge existing template merges to rebuild the complete 36-column layout
+      const existingMerges = [...(ws.model.merges || [])];
+      for (const m of existingMerges) {
+        try { ws.unMergeCells(m); } catch (e) { }
       }
 
-      // Explicitly set Row 4 sub-headers for DEDUCTION and trailing columns
-      const headersMap = {
-        19: "PF",
-        20: "LABOUR WELFARE FUND",
-        21: "ESIC",
-        22: "ADV",
-        23: "Penalty",
-        24: "ABSENT",
-        25: "Canteen",
-        26: "TOTAL DEDUCTION",
+      // 4. Set top 2 title lines across all 36 columns (A1:AJ1 and A2:AJ2)
+      ws.mergeCells("A1:AJ1");
+      const cellA1 = ws.getCell("A1");
+      cellA1.value = "SHRI SHYAM WAREHOUSING & POWER PVT. LTD.";
+      cellA1.alignment = { horizontal: "center", vertical: "middle" };
+      cellA1.font = { name: "Calibri", size: 14, bold: true };
+
+      ws.mergeCells("A2:AJ2");
+      const cellA2 = ws.getCell("A2");
+      cellA2.value = activeMode === "Monthly"
+        ? `Salary Register For Month : ${getDynamicPeriodLabel()}`
+        : `Salary Register For Period : ${getDynamicPeriodLabel()}`;
+      cellA2.alignment = { horizontal: "center", vertical: "middle" };
+      cellA2.font = { name: "Calibri", size: 11, bold: true };
+
+      // Complete 36 columns matching the exact Payroll Creation table
+      const colHeaders = [
+        { col: 1, title: "Sr. No.", isDeduction: false },
+        { col: 2, title: "EMPCODE", isDeduction: false },
+        { col: 3, title: "NAME", isDeduction: false },
+        { col: 4, title: "UAN NO.", isDeduction: false },
+        { col: 5, title: "IP No.", isDeduction: false },
+        { col: 6, title: "TOTAL_DAYS", isDeduction: false },
+        { col: 7, title: "PAID_DAYS", isDeduction: false },
+        { col: 8, title: "PRESENT_DAYS", isDeduction: false },
+        { col: 9, title: "WO", isDeduction: false },
+        { col: 10, title: "ABSENT_DAYS", isDeduction: false },
+        { col: 11, title: "LEAVE", isDeduction: false },
+        { col: 12, title: "OT HRS", isDeduction: false },
+        { col: 13, title: "BASIC+DA", isDeduction: false },
+        { col: 14, title: "EARN BASIC+DA", isDeduction: false },
+        { col: 15, title: "ALLOW_RATE(TA,MOB,HRA,CON.)", isDeduction: false },
+        { col: 16, title: "EARN ALLOW (TA,MOB,HRA,CON.)", isDeduction: false },
+        { col: 17, title: "GROSS TOTAL", isDeduction: false },
+        { col: 18, title: "WASHING ALL.", isDeduction: false },
+        { col: 19, title: "OT", isDeduction: false },
+        { col: 20, title: "EARN GROSS", isDeduction: false },
+        { col: 21, title: "EPF WAGES", isDeduction: false },
+        // DEDUCTION group (cols 22-29)
+        { col: 22, title: "PF", isDeduction: true },
+        { col: 23, title: "LABOUR WELFARE FUND", isDeduction: true },
+        { col: 24, title: "ESIC", isDeduction: true },
+        { col: 25, title: "ADV", isDeduction: true },
+        { col: 26, title: "Penalty", isDeduction: true },
+        { col: 27, title: "ABSENT", isDeduction: true },
+        { col: 28, title: "Canteen", isDeduction: true },
+        { col: 29, title: "TOTAL DEDUCTION", isDeduction: true },
+        // Trailing cols (30-36)
+        { col: 30, title: "NET SALARY", isDeduction: false },
+        { col: 31, title: "Diwali Bonus", isDeduction: false },
+        { col: 32, title: "NET PAY AMOUNT", isDeduction: false },
+        { col: 33, title: "PAY-MODE", isDeduction: false },
+        { col: 34, title: "BANK A/C NO.", isDeduction: false },
+        { col: 35, title: "IFSC", isDeduction: false },
+        { col: 36, title: "REMARK", isDeduction: false }
+      ];
+
+      const headerBorder = {
+        top: { style: "thin", color: { indexed: 64 } },
+        left: { style: "thin", color: { indexed: 64 } },
+        bottom: { style: "thin", color: { indexed: 64 } },
+        right: { style: "thin", color: { indexed: 64 } }
       };
-      Object.entries(headersMap).forEach(([col, title]) => {
-        const cell = ws.getRow(4).getCell(Number(col));
-        if (cell) {
-          cell.value = title;
+
+      // DEDUCTION grouped header across columns 22 to 29 in Row 3 (V3:AC3)
+      ws.mergeCells(3, 22, 3, 29);
+      const dedCell = ws.getRow(3).getCell(22);
+      dedCell.value = "DEDUCTION";
+      dedCell.alignment = { horizontal: "center", vertical: "middle" };
+      dedCell.font = { name: "Calibri", size: 9, bold: true };
+      for (let c = 22; c <= 29; c++) {
+        ws.getRow(3).getCell(c).border = headerBorder;
+      }
+
+      colHeaders.forEach(h => {
+        if (h.isDeduction) {
+          const cell = ws.getRow(4).getCell(h.col);
+          cell.value = h.title;
           cell.font = { name: "Calibri", size: 8, bold: true };
-          cell.alignment = { horizontal: "center", vertical: "middle" };
+          cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+          cell.border = headerBorder;
+        } else {
+          ws.mergeCells(3, h.col, 4, h.col);
+          const cell = ws.getRow(3).getCell(h.col);
+          cell.value = h.title;
+          cell.font = { name: "Calibri", size: 8.5, bold: true };
+          cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+          ws.getRow(3).getCell(h.col).border = headerBorder;
+          ws.getRow(4).getCell(h.col).border = headerBorder;
         }
       });
-
-      const topHeadersMap = {
-        27: "NET SALARY",
-        28: "Diwali Bonus",
-        29: "NET PAY AMOUNT",
-        30: "PAY-MODE",
-        31: "BANK A/C NO.",
-        32: "IFSC",
-        33: "REMARK",
-      };
-      Object.entries(topHeadersMap).forEach(([col, title]) => {
-        const cell = ws.getRow(3).getCell(Number(col));
-        if (cell) {
-          cell.value = title;
-          cell.font = { name: "Calibri", size: 9, bold: true };
-          cell.alignment = { horizontal: "center", vertical: "middle" };
-        }
-      });
-
-      // Unmerge any old hardcoded template summary row (e.g. A123:E123)
-      try { ws.unMergeCells("A123:E123"); } catch (e) { }
 
       // 5. Calculate total days in period
       let periodDays = 30;
@@ -1496,10 +1527,10 @@ const Payroll = () => {
         if (yStr && mStr) periodDays = new Date(parseInt(yStr, 10), parseInt(mStr, 10), 0).getDate();
       }
 
-      // 6. Clear dummy/old rows from row 5 to 500
-      for (let r = 5; r <= 500; r++) {
+      // 6. Clear old rows from row 5 to 600
+      for (let r = 5; r <= 600; r++) {
         const row = ws.getRow(r);
-        for (let c = 1; c <= 33; c++) {
+        for (let c = 1; c <= 36; c++) {
           row.getCell(c).value = null;
         }
       }
@@ -1512,87 +1543,85 @@ const Payroll = () => {
       };
 
       const startRowIdx = 5; // Row 5 (1-indexed in ExcelJS)
-      const columnSums = {}; // For calculating totals across all numeric columns (6 to 29)
+      const columnSums = {}; // For calculating totals across all numeric columns (6 to 32)
 
       // 7. Populate employee records starting at Row 5 into the provided template
       rows.forEach((row, idx) => {
         const rIdx = idx + startRowIdx;
-        const empId = Number(row.employeeId || row.id);
-        const empRecord = employeeById.get(empId) || {};
-        const salRecord = salaryByEmployeeId.get(empId) || {};
+        const pDays = Number(row.periodDays) || periodDays;
+        const daysWorked = Number(row.daysWorked != null ? row.daysWorked : 0);
+        const presentDays = Number(row.presentDays != null ? row.presentDays : 0);
+        const woDays = Number(row.woDays != null ? row.woDays : 0);
+        const absentDays = Number(row.unpaidLeaves != null ? row.unpaidLeaves : 0);
+        const leaveDays = Number(row.paidLeaves != null ? row.paidLeaves : 0);
+        const otHrs = Number(row.otHrs != null ? row.otHrs : 0);
 
-        // Base salary and allowance monthly rates
-        const basicRate = Number(salRecord.baseSalary || row.basicSalary || row.baseSalary || empRecord.basicSalary || row.basicPay) || 0;
-        const allowanceRate = Number(salRecord.allowanceSalary || row.allowanceSalary || row.allowance) || 0;
+        const basicRate = Number(row.basicRate != null ? row.basicRate : (row.basicPay || 0));
+        const earnBasic = Number(row.earnBasic != null ? row.earnBasic : (row.basicPay || 0));
+        const allowanceRate = Number(row.allowanceRate != null ? row.allowanceRate : (row.allowance || 0));
+        const earnAllowance = Number(row.earnAllowance != null ? row.earnAllowance : (row.allowance || 0));
+        const grossTotal = Number(row.grossTotal != null ? row.grossTotal : (basicRate + allowanceRate));
+        const washingAll = Number(row.compensation != null ? row.compensation : 0);
+        const otAmount = Number(row.otAmount != null ? row.otAmount : 0);
+        const earnGross = Number(row.earnGross != null ? row.earnGross : (row.grossSalary || (earnBasic + earnAllowance + washingAll + otAmount)));
+        const epfWages = Number(row.epfWages != null ? row.epfWages : Math.min(15000, earnBasic));
 
-        // Days
-        const paidDays = Number(row.daysWorked) != null ? Number(row.daysWorked) : (periodDays - (Number(row.unpaidLeaves) || 0));
-        const absentDays = Number(row.unpaidLeaves) != null ? Number(row.unpaidLeaves) : Math.max(0, periodDays - paidDays);
+        const pfDeduction = Number(row.pfDeduction != null ? row.pfDeduction : 0);
+        const lwfDeduction = Number(row.lwfDeduction != null ? row.lwfDeduction : 0);
+        const esicDeduction = Number(row.esicDeduction != null ? row.esicDeduction : 0);
+        const emiDeduction = Number(row.emiDeduction != null ? row.emiDeduction : 0);
+        const penalty = Number(row.otherDeductions != null ? row.otherDeductions : 0);
+        const absentCut = 0.00;
+        const canteen = Number(row.canteenDeduction != null ? row.canteenDeduction : 0);
+        const totalDeductions = Number(row.totalDeductions != null ? row.totalDeductions : (pfDeduction + lwfDeduction + esicDeduction + emiDeduction + penalty + canteen));
+        const netSalary = Number(row.netSalary != null ? row.netSalary : Math.max(0, earnGross - totalDeductions));
+        const diwaliBonus = Number(row.diwaliBonus != null ? row.diwaliBonus : 0);
+        const netPayAmount = Number(row.netPayAmount != null ? row.netPayAmount : (netSalary + diwaliBonus));
 
-        // Pro-rated earned basic and allowances based on paid days
-        let earnBasic = basicRate;
-        let earnAllowance = allowanceRate;
-        if (periodDays > 0 && paidDays < periodDays) {
-          earnBasic = Number(((basicRate / periodDays) * paidDays).toFixed(2));
-          earnAllowance = Number(((allowanceRate / periodDays) * paidDays).toFixed(2));
-        } else if (Number(row.basicPay) > 0 && Number(row.basicPay) !== basicRate) {
-          earnBasic = Number(row.basicPay);
-        }
-
-        const grossTotal = Number((basicRate + allowanceRate).toFixed(2));
-        const washingAll = Number(row.compensation) || 0;
-        const otAmount = Number(row.otAmount) || 0;
-        const earnGross = Number(((earnBasic + earnAllowance) + washingAll + otAmount).toFixed(2));
-        const grossSalary = earnGross;
-        const epfWages = Math.min(15000, earnBasic);
-
-        const pfDeduction = Number(row.pfDeduction) || 0;
-        const esicDeduction = Number(row.esicDeduction) || 0;
-        const emiDeduction = Number(row.emiDeduction) || 0;
-        const penalty = Number(row.otherDeductions) || 0;
-        const absentCut = 0;
-        const canteen = Number(row.canteenDeduction) || 0;
-        const totalDeductions = Number(row.totalDeductions) || Number((pfDeduction + esicDeduction + emiDeduction + penalty + canteen).toFixed(2));
-        const netSalary = Number(row.netSalary) || Math.max(0, Number((earnGross - totalDeductions).toFixed(2)));
-        const diwaliBonus = Number(row.diwaliBonus) || 0;
-        const netPayAmount = Number(row.netPayAmount) || Number((netSalary + diwaliBonus).toFixed(2));
+        const payMode = (row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH";
+        const bankAccountNo = payMode === "BANK" ? (row.bankAccountNo || "—") : "—";
+        const ifscCode = payMode === "BANK" ? (row.ifscCode || "—") : "—";
+        const remarks = row.remarks || "";
 
         const rowValues = [
           idx + 1,                                                                     // 1: Sr. No.
-          row.employeeCode || row.biometricEmployeeCode || empRecord.biometricEmployeeCode || "", // 2: EMPCODE
-          row.employeeName || row.candidateName || empRecord.candidateName || "",                 // 3: NAME
-          row.pfNo || row.uanNo || empRecord.pfNo || "",                                         // 4: UAN NO.
-          row.esicNo || row.ipNo || empRecord.esicNo || "",                                       // 5: IP No.
-          periodDays,                                                                  // 6: TOTAL_DAYS
-          paidDays,                                                                    // 7: PAID_DAYS
-          Number(row.presentDays) || 0,                                                // 7a: PRESENT_DAYS
-          Number(row.woDays) || 0,                                                     // 7b: WO
-          absentDays,                                                                  // 8: ABSENT_DAYS
-          Number(row.otHrs) || 0,                                                      // 9: OT HRS
-          basicRate,                                                                   // 10: BASIC+DA
-          earnBasic,                                                                   // 11: EARN BASIC+DA
-          allowanceRate,                                                               // 12: ALLOW_RATE(TA,MOB,HRA,CON.)
-          earnAllowance,                                                               // 13: EARN ALLOW (TA,MOB,HRA,CON.)
-          grossTotal,                                                                  // 14: GROSS TOTAL
-          washingAll,                                                                  // 15: WASHING ALL.
-          otAmount,                                                                    // 16: OT
-          earnGross,                                                                   // 17: EARN GROSS
-          epfWages,                                                                    // 18: EPF WAGES
-          pfDeduction,                                                                 // 19: PF
-          Number(row.lwfDeduction) || 0,                                              // 20: LABOUR WELFARE FUND
-          esicDeduction,                                                               // 21: ESIC
-          emiDeduction,                                                                // 22: ADV
-          penalty,                                                                     // 23: Penalty
-          absentCut,                                                                   // 24: ABSENT
-          canteen,                                                                     // 25: Canteen
-          totalDeductions,                                                             // 26: TOTAL DEDUCTION
-          netSalary,                                                                   // 27: NET SALARY
-          diwaliBonus,                                                                 // 28: Diwali Bonus
-          netPayAmount,                                                                // 29: NET PAY AMOUNT
-          (row.paymentMode || row.payMode || empRecord.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH",               // 30: PAY-MODE
-          row.bankAccountNo || empRecord.bankAccountNo || "",                            // 31: BANK A/C NO.
-          row.ifscCode || empRecord.ifscCode || "",                                    // 32: IFSC
-          row.remarks || "",                                                           // 33: REMARK
+          row.employeeCode || "",                                                      // 2: EMPCODE
+          row.employeeName || "",                                                      // 3: NAME
+          row.uanNo || "—",                                                            // 4: UAN NO.
+          row.ipNo || "—",                                                             // 5: IP No.
+          pDays,                                                                       // 6: TOTAL_DAYS
+          daysWorked,                                                                  // 7: PAID_DAYS
+          presentDays,                                                                 // 8: PRESENT_DAYS
+          woDays,                                                                      // 9: WO
+          absentDays,                                                                  // 10: ABSENT_DAYS
+          leaveDays,                                                                   // 11: LEAVE
+          otHrs,                                                                       // 12: OT HRS
+          basicRate,                                                                   // 13: BASIC+DA
+          earnBasic,                                                                   // 14: EARN BASIC+DA
+          allowanceRate,                                                               // 15: ALLOW_RATE(TA,MOB,HRA,CON.)
+          earnAllowance,                                                               // 16: EARN ALLOW (TA,MOB,HRA,CON.)
+          grossTotal,                                                                  // 17: GROSS TOTAL
+          washingAll,                                                                  // 18: WASHING ALL.
+          otAmount,                                                                    // 19: OT
+          earnGross,                                                                   // 20: EARN GROSS
+          epfWages,                                                                    // 21: EPF WAGES
+          // DEDUCTION
+          pfDeduction,                                                                 // 22: PF
+          lwfDeduction,                                                                // 23: LABOUR WELFARE FUND
+          esicDeduction,                                                               // 24: ESIC
+          emiDeduction,                                                                // 25: ADV
+          penalty,                                                                     // 26: Penalty
+          absentCut,                                                                   // 27: ABSENT (0.00)
+          canteen,                                                                     // 28: Canteen
+          totalDeductions,                                                             // 29: TOTAL DEDUCTION
+          // Final Pay
+          netSalary,                                                                   // 30: NET SALARY
+          diwaliBonus,                                                                 // 31: Diwali Bonus
+          netPayAmount,                                                                // 32: NET PAY AMOUNT
+          payMode,                                                                     // 33: PAY-MODE
+          bankAccountNo,                                                               // 34: BANK A/C NO.
+          ifscCode,                                                                    // 35: IFSC
+          remarks,                                                                     // 36: REMARK
         ];
 
         const excelRow = ws.getRow(rIdx);
@@ -1601,37 +1630,47 @@ const Payroll = () => {
           const cell = excelRow.getCell(colNum);
           cell.value = val;
           cell.font = { name: "Calibri", size: 9, bold: false };
-          cell.alignment = { horizontal: "left", vertical: "middle" };
           cell.border = normalBorder;
-          if (typeof val === "number" && colNum >= 6 && colNum <= 31) {
+
+          // Alignments matching table display
+          if (colNum === 1 || colNum === 2 || colNum === 4 || colNum === 5 || (colNum >= 6 && colNum <= 12) || colNum === 33) {
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+          } else if (colNum >= 13 && colNum <= 32) {
+            cell.alignment = { horizontal: "right", vertical: "middle" };
+          } else {
+            cell.alignment = { horizontal: "left", vertical: "middle" };
+          }
+
+          if (typeof val === "number" && colNum >= 6 && colNum <= 32) {
             columnSums[colNum] = (columnSums[colNum] || 0) + val;
           }
         });
         excelRow.commit();
       });
 
-      // 8. Place the dynamic TOTAL row at the very bottom of the data
+      // 8. Place the dynamic TOTAL row at the very bottom of the data across all 36 columns
       const totalRowIdx = startRowIdx + rows.length;
-      try { ws.mergeCells(`A${totalRowIdx}:E${totalRowIdx}`); } catch (e) { }
+      ws.mergeCells(totalRowIdx, 1, totalRowIdx, 5);
 
       const totalRow = ws.getRow(totalRowIdx);
-      for (let c = 1; c <= 35; c++) {
+      for (let c = 1; c <= 36; c++) {
         const cell = totalRow.getCell(c);
         cell.border = normalBorder;
-        cell.alignment = { horizontal: "left", vertical: "middle" };
       }
       const cellTotalLabel = totalRow.getCell(1);
       cellTotalLabel.value = "TOTAL";
       cellTotalLabel.alignment = { horizontal: "center", vertical: "middle" };
-      cellTotalLabel.font = { bold: true };
+      cellTotalLabel.font = { name: "Calibri", size: 9, bold: true };
 
       // Set numeric sum totals in bold
-      for (let c = 6; c <= 31; c++) {
+      for (let c = 6; c <= 32; c++) {
         const sumVal = columnSums[c] !== undefined ? columnSums[c] : null;
         const cell = totalRow.getCell(c);
-        cell.value = sumVal !== null ? (Number.isInteger(sumVal) ? sumVal : Number(sumVal.toFixed(2))) : null;
-        cell.font = { bold: true };
-        cell.alignment = { horizontal: "left", vertical: "middle" };
+        cell.value = sumVal !== null
+          ? (c <= 12 ? (Number.isInteger(sumVal) ? sumVal : Number(sumVal.toFixed(1))) : Number(sumVal.toFixed(2)))
+          : null;
+        cell.font = { name: "Calibri", size: 9, bold: true };
+        cell.alignment = c <= 12 ? { horizontal: "center", vertical: "middle" } : { horizontal: "right", vertical: "middle" };
       }
       totalRow.commit();
 
@@ -2020,6 +2059,7 @@ const Payroll = () => {
                       setSelectedMonth(currentMonthStr);
                     } else {
                       setSelectedMonth(val);
+                      setCurrentPage(1);
                     }
                   }}
                   className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
