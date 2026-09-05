@@ -218,7 +218,7 @@ const Payroll = () => {
         api.get("/calendar").catch(() => ({ data: [] })),
       ]);
 
-      const activeEmps = getArrayData(empRes).filter(e => e.status === "Active");
+      const activeEmps = getArrayData(empRes).filter(e => e.status === "Active" && !e.leftDate);
       setEmployees(activeEmps);
       setSalariesList(getArrayData(salRes));
       setPfDetailsList(getArrayData(pfRes));
@@ -711,6 +711,7 @@ const Payroll = () => {
 
     return {
       ...run,
+      branchId: run.branchId || empRecord?.branchId || null,
       branchName: run.branchName || empRecord?.branchName || "—",
       branchAddress: run.branchAddress || empRecord?.branchAddress || "",
       paymentMode: (run.paymentMode || empRecord?.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH",
@@ -1068,6 +1069,7 @@ const Payroll = () => {
         employeeCode: emp.biometricEmployeeCode,
         employeeName: emp.candidateName,
         department: emp.departmentName || "—",
+        branchId: emp.branchId || null,
         branchName: emp.branchName || "—",
         branchAddress: emp.branchAddress || "",
         period: activeMode === "Monthly" ? selectedMonth : `${startDate}:${endDate}`,
@@ -1327,9 +1329,29 @@ const Payroll = () => {
     }
   };
 
+  // Helper to resolve company name and address for exports based on active filters
+  const getExportCompanyDetails = (exportRows = []) => {
+    let name = "SHRI SHYAM WAREHOUSING & POWER PVT. LTD.";
+    let address = "Village - BANARI";
+
+    if (companyFilter && companyFilter !== "All") {
+      const found = companies.find(c => String(c.id) === String(companyFilter) || c.name === companyFilter);
+      if (found?.name) name = found.name;
+      if (found?.address) address = found.address;
+    } else if (exportRows.length > 0) {
+      const uniqueBranches = Array.from(new Set(exportRows.map(r => r.branchName).filter(b => b && b !== "—")));
+      if (uniqueBranches.length === 1) {
+        name = uniqueBranches[0];
+        const matchingRow = exportRows.find(r => r.branchAddress);
+        if (matchingRow?.branchAddress) address = matchingRow.branchAddress;
+      }
+    }
+    return { name, address };
+  };
+
   // Helper to fetch full unpaginated period dataset for exports if currently on paginated view
   const getExportRows = async () => {
-    if (isSavedRun && totalRecords > payrollRows.length) {
+    if (isSavedRun) {
       const toastId = toast.loading("Fetching complete dataset for export...");
       try {
         const periodStr = activeMode === "Monthly" ? selectedMonth : `${startDate}:${endDate}`;
@@ -1430,10 +1452,13 @@ const Payroll = () => {
         try { ws.unMergeCells(m); } catch (e) { }
       }
 
-      // 4. Set top 2 title lines across all 35 columns (A1:AI1 and A2:AI2)
+      // 4. Resolve company name dynamically based on filter or rows data
+      const { name: targetCompanyName } = getExportCompanyDetails(rows);
+
+      // Set top 2 title lines across all 35 columns (A1:AI1 and A2:AI2)
       ws.mergeCells("A1:AI1");
       const cellA1 = ws.getCell("A1");
-      cellA1.value = "SHRI SHYAM WAREHOUSING & POWER PVT. LTD.";
+      cellA1.value = targetCompanyName;
       cellA1.alignment = { horizontal: "center", vertical: "middle" };
       cellA1.font = { name: "Calibri", size: 14, bold: true };
 
@@ -1528,8 +1553,9 @@ const Payroll = () => {
         if (yStr && mStr) periodDays = new Date(parseInt(yStr, 10), parseInt(mStr, 10), 0).getDate();
       }
 
-      // 6. Clear old rows from row 5 to 600 across all 35 columns
-      for (let r = 5; r <= 600; r++) {
+      // 6. Clear old rows across all 35 columns
+      const maxClearRow = Math.max(600, rows.length + 20);
+      for (let r = 5; r <= maxClearRow; r++) {
         const row = ws.getRow(r);
         for (let c = 1; c <= 35; c++) {
           row.getCell(c).value = null;
@@ -1704,14 +1730,17 @@ const Payroll = () => {
       // Use landscape A3 for 32 compliance columns
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
 
+      // Resolve company name and address dynamically
+      const { name: targetCompanyName, address: targetCompanyAddress } = getExportCompanyDetails(rowsToExport);
+
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
-      doc.text("SHRI SHYAM WAREHOUSING AND POWER PVT. LTD.", 14, 12);
+      doc.text(targetCompanyName, 14, 12);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
       const periodStr = activeMode === "Monthly" ? selectedMonth : `${startDate} to ${endDate}`;
-      doc.text(`Village - BANARI  |  ${activeMode} Statutory Payroll Summary Sheet  |  Period: ${periodStr}  |  Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 18);
+      doc.text(`${targetCompanyAddress}  |  ${activeMode} Statutory Payroll Summary Sheet  |  Period: ${periodStr}  |  Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 18);
 
       const tableHeaders = [
         [
