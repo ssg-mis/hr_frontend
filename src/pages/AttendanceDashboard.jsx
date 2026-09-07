@@ -774,6 +774,9 @@ const AttendanceDashboard = () => {
         elapsedDaysInPeriod++;
       }
 
+      // Skip future dates — WOs/Holidays not yet reached should not be counted
+      if (dateStr > todayKey) return;
+
       const isWo = dayName === targetWo;
       const isHoliday = holidaysSet.has(dateStr);
 
@@ -841,8 +844,8 @@ const AttendanceDashboard = () => {
     const payableDays = presentDaysCount + paidLeavesCount + unworkedEarnedWoCount + unworkedEarnedHolidayCount - (halfDaysCount * 0.5);
     const absentDays = Math.max(0, Math.round(elapsedDaysInPeriod - (presentDaysCount + paidLeavesCount + unworkedEarnedWoCount + unworkedEarnedHolidayCount)));
 
-    // Standard Display: Present includes physical work + earned holidays:
-    emp.presentDays = Math.max(0, (presentDaysCount - workedWoCount) + unworkedEarnedHolidayCount);
+    // Standard Display: Present = physical days worked, excluding days where employee worked on WO
+    emp.presentDays = Math.max(0, presentDaysCount - workedWoCount);
     emp.halfDays = halfDaysCount;
     emp.absentDays = absentDays;
     emp.weekoffDays = totalEarnedWo;
