@@ -1759,6 +1759,250 @@ const Payroll = () => {
     }
   };
 
+  // Export: Emp Payment Excel format (Emp Code, Employee Name, Net Salary, Account No, IFSC Code, Attendance / Total Days)
+  const handleExportEmpPaymentExcel = async () => {
+    const toastId = toast.loading("Generating Emp Payment Excel file...");
+    try {
+      const rows = await getExportRows();
+      if (!rows || !rows.length) {
+        toast.dismiss(toastId);
+        toast.error("No payroll data to export for the selected period.");
+        return;
+      }
+
+      const period = activeMode === "Monthly" ? selectedMonth : `${startDate}_to_${endDate}`;
+      const companyDetails = getExportCompanyDetails(rows);
+
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "HR FMS System";
+      wb.lastModifiedBy = user?.username || "HR Admin";
+      wb.created = new Date();
+      wb.modified = new Date();
+
+      const ws = wb.addWorksheet("Emp Payment", {
+        views: [{ showGridLines: true }],
+        pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1 }
+      });
+
+      // 1. Title Block (7 Columns: A to G)
+      ws.mergeCells("A1:G1");
+      const titleCell = ws.getCell("A1");
+      titleCell.value = companyDetails.name.toUpperCase();
+      titleCell.font = { name: "Arial", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+      titleCell.alignment = { horizontal: "center", vertical: "middle" };
+      titleCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF064E3B" } // Dark Emerald Green
+      };
+      ws.getRow(1).height = 28;
+
+      ws.mergeCells("A2:G2");
+      const subtitleCell = ws.getCell("A2");
+      subtitleCell.value = `EMPLOYEE PAYMENT REGISTER (${activeMode.toUpperCase()}) - PERIOD: ${period}`;
+      subtitleCell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+      subtitleCell.alignment = { horizontal: "center", vertical: "middle" };
+      subtitleCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF047857" } // Medium Emerald Green
+      };
+      ws.getRow(2).height = 22;
+
+      // Blank Row 3
+      ws.getRow(3).height = 8;
+
+      // 2. Table Headers (Row 4) - Strictly Requested Fields: empcode, netsalary, account no, ifsccode, attendance (total days)
+      const headers = [
+        { header: "SR. NO.", key: "srNo", width: 9 },
+        { header: "EMP CODE", key: "empCode", width: 14 },
+        { header: "EMPLOYEE NAME", key: "empName", width: 28 },
+        { header: "NET SALARY (₹)", key: "netSalary", width: 18 },
+        { header: "ACCOUNT NO.", key: "accountNo", width: 24 },
+        { header: "IFSC CODE", key: "ifscCode", width: 16 },
+        { header: "ATTENDANCE (TOTAL DAYS)", key: "paidDays", width: 26 },
+      ];
+
+      const headerRow = ws.getRow(4);
+      headers.forEach((h, idx) => {
+        const cell = headerRow.getCell(idx + 1);
+        cell.value = h.header;
+        cell.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+        cell.alignment = {
+          horizontal: ["NET SALARY (₹)"].includes(h.header) ? "right" : "center",
+          vertical: "middle",
+          wrapText: true
+        };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF1E293B" } // Slate 800
+        };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFCBD5E1" } },
+          bottom: { style: "medium", color: { argb: "FF0F172A" } },
+          left: { style: "thin", color: { argb: "FFCBD5E1" } },
+          right: { style: "thin", color: { argb: "FFCBD5E1" } },
+        };
+      });
+      headerRow.height = 26;
+
+      // Set column widths
+      headers.forEach((h, idx) => {
+        ws.getColumn(idx + 1).width = h.width;
+      });
+
+      // 3. Data Rows
+      let totalNetSalary = 0;
+      let totalPaidDays = 0;
+
+      rows.forEach((row, index) => {
+        const rowIdx = index + 5;
+        const dataRow = ws.getRow(rowIdx);
+
+        const empRec = employeeById.get(Number(row.employeeId)) || {};
+        const empCode = row.employeeCode || row.biometricEmployeeCode || "—";
+        const empName = row.employeeName || row.candidateName || "—";
+        const paidDays = Number(row.daysWorked != null ? row.daysWorked : 0);
+        const netSal = Math.round(Number(row.netPayAmount != null ? row.netPayAmount : (row.netSalary || 0)));
+
+        totalNetSalary += netSal;
+        totalPaidDays += paidDays;
+
+        // Resolve account and IFSC cleanly (fallback to employee table if available)
+        const rawAccount = (row.bankAccountNo && row.bankAccountNo !== "—")
+          ? row.bankAccountNo
+          : (empRec.bankAccountNo || "—");
+        const rawIfsc = (row.ifscCode && row.ifscCode !== "—")
+          ? row.ifscCode
+          : (empRec.ifscCode || "—");
+
+        const values = [
+          index + 1,
+          empCode,
+          empName,
+          netSal,
+          rawAccount,
+          rawIfsc,
+          paidDays
+        ];
+
+        values.forEach((val, cIdx) => {
+          const cell = dataRow.getCell(cIdx + 1);
+          cell.value = val;
+          cell.font = { name: "Arial", size: 9.5 };
+
+          if (cIdx === 0) { // SR NO
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+          } else if (cIdx === 1) { // EMP CODE
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+            cell.font = { name: "Arial", size: 9.5, bold: true };
+          } else if (cIdx === 2) { // NAME
+            cell.alignment = { horizontal: "left", vertical: "middle" };
+          } else if (cIdx === 3) { // NET SALARY
+            cell.alignment = { horizontal: "right", vertical: "middle" };
+            cell.numFmt = "#,##0.00";
+            cell.font = { name: "Arial", size: 9.5, bold: true, color: { argb: "FF065F46" } }; // Deep emerald
+          } else if (cIdx === 4) { // ACCOUNT NO
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+            cell.numFmt = "@"; // Text format to preserve full bank account numbers
+          } else if (cIdx === 5) { // IFSC
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+          } else if (cIdx === 6) { // ATTENDANCE (TOTAL DAYS)
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+            cell.font = { name: "Arial", size: 9.5, bold: true };
+          }
+
+          // Zebra striping
+          if (index % 2 === 1) {
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFF8FAFC" } // Slate 50
+            };
+          }
+
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFE2E8F0" } },
+            bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+            left: { style: "thin", color: { argb: "FFE2E8F0" } },
+            right: { style: "thin", color: { argb: "FFE2E8F0" } },
+          };
+        });
+
+        dataRow.height = 20;
+      });
+
+      // 4. Summary / Total Row
+      const totalRowIdx = rows.length + 5;
+      const totalRow = ws.getRow(totalRowIdx);
+      totalRow.height = 24;
+
+      ws.mergeCells(`A${totalRowIdx}:C${totalRowIdx}`);
+      const totalLabelCell = ws.getCell(`A${totalRowIdx}`);
+      totalLabelCell.value = `TOTAL (${rows.length} EMPLOYEES)`;
+      totalLabelCell.font = { name: "Arial", size: 10, bold: true, color: { argb: "FF0F172A" } };
+      totalLabelCell.alignment = { horizontal: "center", vertical: "middle" };
+      totalLabelCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFDCFCE7" } // Emerald 100
+      };
+
+      // Net Salary Sum (Column 4 / D)
+      const totalNetSalaryCell = totalRow.getCell(4);
+      totalNetSalaryCell.value = totalNetSalary;
+      totalNetSalaryCell.numFmt = "#,##0.00";
+      totalNetSalaryCell.font = { name: "Arial", size: 10.5, bold: true, color: { argb: "FF065F46" } };
+      totalNetSalaryCell.alignment = { horizontal: "right", vertical: "middle" };
+      totalNetSalaryCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCFCE7" } };
+
+      // Account & IFSC blanks for total row (Columns 5, 6 / E, F)
+      for (let c = 5; c <= 6; c++) {
+        const cell = totalRow.getCell(c);
+        cell.value = "";
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCFCE7" } };
+      }
+
+      // Attendance Sum (Column 7 / G)
+      const totalPaidDaysCell = totalRow.getCell(7);
+      totalPaidDaysCell.value = totalPaidDays;
+      totalPaidDaysCell.font = { name: "Arial", size: 10, bold: true };
+      totalPaidDaysCell.alignment = { horizontal: "center", vertical: "middle" };
+      totalPaidDaysCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCFCE7" } };
+
+      // Add borders to Total Row
+      for (let c = 1; c <= 7; c++) {
+        const cell = totalRow.getCell(c);
+        cell.border = {
+          top: { style: "medium", color: { argb: "FF0F172A" } },
+          bottom: { style: "double", color: { argb: "FF0F172A" } },
+          left: { style: "thin", color: { argb: "FFCBD5E1" } },
+          right: { style: "thin", color: { argb: "FFCBD5E1" } }
+        };
+      }
+
+      // 5. Trigger download
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `Emp_Payment_${period}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.dismiss(toastId);
+      toast.success(`Emp Payment Excel exported successfully (${rows.length} employees)!`);
+    } catch (err) {
+      toast.dismiss(toastId);
+      console.error("Emp Payment export error:", err);
+      toast.error("Failed to export Emp Payment Excel: " + (err?.message || "Unknown error"));
+    }
+  };
+
   // Export Summary PDF with statutory compliance columns
   const handleExportPDF = async () => {
     try {
@@ -2189,7 +2433,7 @@ const Payroll = () => {
           </div>
 
           {/* Row 2: Company, Pay Mode, Department - 3 Equal Balanced Columns */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1 items-start">
             {/* Company Filter Dropdown */}
             <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3.5 py-2 rounded-xl focus-within:ring-2 focus-within:ring-blue-500 focus-within:bg-white transition-all">
               <Building2 size={16} className="text-gray-500 shrink-0" />
@@ -2223,20 +2467,33 @@ const Payroll = () => {
               </select>
             </div>
 
-            {/* Department Filter Dropdown */}
-            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3.5 py-2 rounded-xl focus-within:ring-2 focus-within:ring-blue-500 focus-within:bg-white transition-all">
-              <Filter size={16} className="text-gray-500 shrink-0" />
-              <span className="text-xs font-semibold text-gray-500 shrink-0">Department:</span>
-              <select
-                value={departmentFilter}
-                onChange={(e) => setDepartmentFilter(e.target.value)}
-                className="w-full bg-transparent border-0 text-xs font-semibold text-gray-800 focus:outline-none cursor-pointer truncate"
+            {/* Department Filter Dropdown & Emp Payment Button */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3.5 py-2 rounded-xl focus-within:ring-2 focus-within:ring-blue-500 focus-within:bg-white transition-all">
+                <Filter size={16} className="text-gray-500 shrink-0" />
+                <span className="text-xs font-semibold text-gray-500 shrink-0">Department:</span>
+                <select
+                  value={departmentFilter}
+                  onChange={(e) => setDepartmentFilter(e.target.value)}
+                  className="w-full bg-transparent border-0 text-xs font-semibold text-gray-800 focus:outline-none cursor-pointer truncate"
+                >
+                  <option value="All">All Departments</option>
+                  {uniqueDepartments.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Emp Payment Excel Download Button */}
+              <button
+                type="button"
+                onClick={handleExportEmpPaymentExcel}
+                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-sm hover:shadow transition-all group"
+                title="Download Emp Payment Excel (Emp Code, Net Salary, Account No, IFSC Code, Attendance / Total Days)"
               >
-                <option value="All">All Departments</option>
-                {uniqueDepartments.map(d => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
+                <Download size={14} className="stroke-[2.5] group-hover:-translate-y-0.5 transition-transform" />
+                <span>Emp Payment</span>
+              </button>
             </div>
           </div>
         </div>
