@@ -481,7 +481,10 @@ const Payroll = () => {
     const empCode = empRecord?.biometricEmployeeCode || run.employeeCode || run.biometricEmployeeCode || '';
     const has2026Allowance = is2026AllowanceCode(empCode);
 
-    const monthlyBase = Number(salRecord.baseSalary || run.basicSalary || run.basicPay || 0);
+    const baseVal = salRecord ? parseFloat(salRecord.baseSalary) : 0;
+    const monthlyBase = (baseVal > 0)
+      ? baseVal
+      : Number(empRecord?.basicSalary || run.basicSalary || run.basicPay || 0);
     const monthlyAllowance = has2026Allowance
       ? get2026AllowanceRate(empCode, selectedMonth, salRecord.allowanceSalary || run.allowanceSalary || run.allowance)
       : 0;
@@ -808,7 +811,8 @@ const Payroll = () => {
       const empCode = emp.biometricEmployeeCode || '';
       const has2026Allowance = is2026AllowanceCode(empCode);
       const salRecord = salaryByEmployeeId.get(Number(emp.id));
-      const monthlyBase = salRecord ? parseFloat(salRecord.baseSalary) : 0;
+      const baseVal = salRecord ? parseFloat(salRecord.baseSalary) : 0;
+      const monthlyBase = (baseVal > 0) ? baseVal : (parseFloat(emp.basicSalary) || 0);
       const monthlyAllowance = has2026Allowance
         ? get2026AllowanceRate(empCode, selectedMonth, salRecord ? parseFloat(salRecord.allowanceSalary) : 0)
         : 0;
@@ -2100,7 +2104,11 @@ const Payroll = () => {
 
         const empCode = row.employeeCode || row.biometricEmployeeCode || '';
         const has2026Allowance = is2026AllowanceCode(empCode);
-        const monthlyBase = salRec ? parseFloat(salRec.baseSalary) : (parseFloat(row.basicRate || row.basicPay || 0));
+        const baseVal = salRec ? parseFloat(salRec.baseSalary) : 0;
+        const empRec = employeeById.get(Number(row.employeeId));
+        const monthlyBase = (baseVal > 0)
+          ? baseVal
+          : (parseFloat(row.basicRate || row.basicPay || empRec?.basicSalary || 0));
         const monthlyAllowance = has2026Allowance
           ? get2026AllowanceRate(empCode, selectedMonth, salRec ? parseFloat(salRec.allowanceSalary) : parseFloat(row.allowanceRate || row.allowance || 0))
           : 0;

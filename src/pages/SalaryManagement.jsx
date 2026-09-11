@@ -59,7 +59,7 @@ const SalaryManagement = () => {
   const [empForm, setEmpForm] = useState({
     employeeId: '',
     incrementType: 'flat', // 'flat' | 'percent'
-    percent: '10',
+    percent: '',
     proposedBaseSalary: '',
     proposedAllowanceSalary: '',
   });
@@ -67,7 +67,7 @@ const SalaryManagement = () => {
   const [deptForm, setDeptForm] = useState({
     departmentId: '',
     incrementType: 'percent', // 'percent' | 'flat'
-    percent: '10',
+    percent: '',
     flatBase: '',
     flatAllowance: '',
   });
@@ -261,7 +261,7 @@ const SalaryManagement = () => {
       if (result.success) {
         toast.success("Salary request created successfully!");
         setShowEmpModal(false);
-        setEmpForm({ employeeId: '', incrementType: 'flat', percent: '10', proposedBaseSalary: '', proposedAllowanceSalary: '' });
+        setEmpForm({ employeeId: '', incrementType: 'flat', percent: '', proposedBaseSalary: '', proposedAllowanceSalary: '' });
         fetchRequests();
       } else {
         toast.error(result.message || "Failed to create request");
@@ -296,40 +296,10 @@ const SalaryManagement = () => {
       if (result.success) {
         toast.success(`Successfully created salary requests for ${result.count || 0} employees!`);
         setShowDeptModal(false);
-        setDeptForm({ departmentId: '', incrementType: 'percent', percent: '10', flatBase: '', flatAllowance: '' });
+        setDeptForm({ departmentId: '', incrementType: 'percent', percent: '', flatBase: '', flatAllowance: '' });
         fetchRequests();
       } else {
         toast.error(result.message || "Failed to create department request");
-      }
-    } catch (error) {
-      toast.error("An error occurred");
-    }
-  };
-
-  // Trigger quick 10% auto-increase request
-  const triggerQuickAutoIncrease = async (employee) => {
-    const curBase = Number(employee.baseSalary);
-    const curAllowance = Number(employee.allowanceSalary);
-    const newBase = (curBase * 1.1).toFixed(2);
-    const newAllowance = (curAllowance * 1.1).toFixed(2);
-
-    try {
-      const res = await fetch(`${API_URL}/salaries/request`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          changeType: "Employee",
-          employeeId: employee.employeeId,
-          proposedBaseSalary: newBase,
-          proposedAllowanceSalary: newAllowance,
-        }),
-      });
-      const result = await res.json();
-      if (result.success) {
-        toast.success(`10% auto-increase request submitted for ${employee.employeeName}`);
-        fetchRequests();
-      } else {
-        toast.error(result.message || "Failed to submit request");
       }
     } catch (error) {
       toast.error("An error occurred");
@@ -342,7 +312,7 @@ const SalaryManagement = () => {
     setEmpForm({
       employeeId: employee.employeeId,
       incrementType: 'flat',
-      percent: '10',
+      percent: '',
       proposedBaseSalary: employee.baseSalary,
       proposedAllowanceSalary: employee.allowanceSalary,
     });
@@ -398,7 +368,7 @@ const SalaryManagement = () => {
           <button
             onClick={() => {
               setSelectedEmp(null);
-              setEmpForm({ employeeId: '', incrementType: 'flat', percent: '10', proposedBaseSalary: '', proposedAllowanceSalary: '' });
+              setEmpForm({ employeeId: '', incrementType: 'flat', percent: '', proposedBaseSalary: '', proposedAllowanceSalary: '' });
               setDialogError('');
               setShowEmpModal(true);
             }}
@@ -1344,7 +1314,7 @@ const SalaryManagement = () => {
                       setEmpForm({
                         employeeId: empId,
                         incrementType: 'flat',
-                        percent: '10',
+                        percent: '',
                         proposedBaseSalary: emp ? emp.baseSalary : '',
                         proposedAllowanceSalary: emp ? emp.allowanceSalary : '',
                       });
