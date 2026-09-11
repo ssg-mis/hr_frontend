@@ -1763,10 +1763,53 @@ const Payroll = () => {
   const handleExportEmpPaymentExcel = async () => {
     const toastId = toast.loading("Generating Emp Payment Excel file...");
     try {
-      const rows = await getExportRows();
-      if (!rows || !rows.length) {
+      const rawRows = await getExportRows();
+      if (!rawRows || !rawRows.length) {
         toast.dismiss(toastId);
         toast.error("No payroll data to export for the selected period.");
+        return;
+      }
+
+      // Strictly ensure rows match currently active filters (Company filter and Pay Mode filter)
+      const selectedCompanyObj = companies.find(c => String(c.id) === String(companyFilter) || c.name === companyFilter);
+
+      const rows = rawRows.filter(row => {
+        const matchesCompany =
+          !companyFilter ||
+          companyFilter === "All" ||
+          (row.branchId && String(row.branchId) === String(companyFilter)) ||
+          (selectedCompanyObj && (
+            (row.branchId && String(row.branchId) === String(selectedCompanyObj.id)) ||
+            (row.branchName && selectedCompanyObj.name && row.branchName.trim().toLowerCase() === selectedCompanyObj.name.trim().toLowerCase())
+          )) ||
+          (row.branchName && row.branchName === companyFilter);
+
+        const rowEffectiveMode = (row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK") ? "BANK" : "CASH";
+        const matchesPayMode =
+          !payModeFilter ||
+          payModeFilter === "All" ||
+          rowEffectiveMode === payModeFilter.toUpperCase() ||
+          (row.paymentMode || "").toUpperCase() === payModeFilter.toUpperCase();
+
+        const matchesDept =
+          !departmentFilter ||
+          departmentFilter === "All" ||
+          row.department === departmentFilter;
+
+        return matchesCompany && matchesPayMode && matchesDept;
+      });
+
+      if (!rows || rows.length === 0) {
+        toast.dismiss(toastId);
+        const filterDesc = [];
+        if (companyFilter && companyFilter !== "All") {
+          filterDesc.push(`Company: ${selectedCompanyObj?.name || companyFilter}`);
+        }
+        if (payModeFilter && payModeFilter !== "All") {
+          filterDesc.push(`Pay Mode: ${payModeFilter}`);
+        }
+        const msg = filterDesc.length > 0 ? ` for ${filterDesc.join(" & ")}` : "";
+        toast.error(`No employees found${msg} to export.`);
         return;
       }
 
@@ -1784,8 +1827,8 @@ const Payroll = () => {
         pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1 }
       });
 
-      // 1. Title Block (7 Columns: A to G)
-      ws.mergeCells("A1:G1");
+      // 1. Title Block (6 Columns: A to F)
+      ws.mergeCells("A1:F1");
       const titleCell = ws.getCell("A1");
       titleCell.value = companyDetails.name.toUpperCase();
       titleCell.font = { name: "Arial", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
@@ -1797,9 +1840,10 @@ const Payroll = () => {
       };
       ws.getRow(1).height = 28;
 
-      ws.mergeCells("A2:G2");
+      ws.mergeCells("A2:F2");
       const subtitleCell = ws.getCell("A2");
-      subtitleCell.value = `EMPLOYEE PAYMENT REGISTER (${activeMode.toUpperCase()}) - PERIOD: ${period}`;
+      const payModeSuffix = (payModeFilter && payModeFilter !== "All") ? ` [${payModeFilter.toUpperCase()} PAYMENTS]` : "";
+      subtitleCell.value = `EMPLOYEE PAYMENT REGISTER (${activeMode.toUpperCase()})${payModeSuffix} - PERIOD: ${period}`;
       subtitleCell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
       subtitleCell.alignment = { horizontal: "center", vertical: "middle" };
       subtitleCell.fill = {
@@ -1812,7 +1856,7 @@ const Payroll = () => {
       // Blank Row 3
       ws.getRow(3).height = 8;
 
-      // 2. Table Headers (Row 4) - Strictly Requested Fields: empcode, netsalary, account no, ifsccode, attendance (total days)
+      // 2. Table Headers (Row 4) - Strictly Requested Fields: empcode, employee name, netsalary, account no, ifsccode
       const headers = [
         { header: "SR. NO.", key: "srNo", width: 9 },
         { header: "EMP CODE", key: "empCode", width: 14 },
@@ -1820,7 +1864,6 @@ const Payroll = () => {
         { header: "NET SALARY (₹)", key: "netSalary", width: 18 },
         { header: "ACCOUNT NO.", key: "accountNo", width: 24 },
         { header: "IFSC CODE", key: "ifscCode", width: 16 },
-        { header: "ATTENDANCE (TOTAL DAYS)", key: "paidDays", width: 26 },
       ];
 
       const headerRow = ws.getRow(4);
@@ -1854,7 +1897,6 @@ const Payroll = () => {
 
       // 3. Data Rows
       let totalNetSalary = 0;
-      let totalPaidDays = 0;
 
       rows.forEach((row, index) => {
         const rowIdx = index + 5;
@@ -1863,11 +1905,9 @@ const Payroll = () => {
         const empRec = employeeById.get(Number(row.employeeId)) || {};
         const empCode = row.employeeCode || row.biometricEmployeeCode || "—";
         const empName = row.employeeName || row.candidateName || "—";
-        const paidDays = Number(row.daysWorked != null ? row.daysWorked : 0);
         const netSal = Math.round(Number(row.netPayAmount != null ? row.netPayAmount : (row.netSalary || 0)));
 
         totalNetSalary += netSal;
-        totalPaidDays += paidDays;
 
         // Resolve account and IFSC cleanly (fallback to employee table if available)
         const rawAccount = (row.bankAccountNo && row.bankAccountNo !== "—")
@@ -1884,7 +1924,6 @@ const Payroll = () => {
           netSal,
           rawAccount,
           rawIfsc,
-          paidDays
         ];
 
         values.forEach((val, cIdx) => {
@@ -1908,9 +1947,6 @@ const Payroll = () => {
             cell.numFmt = "@"; // Text format to preserve full bank account numbers
           } else if (cIdx === 5) { // IFSC
             cell.alignment = { horizontal: "center", vertical: "middle" };
-          } else if (cIdx === 6) { // ATTENDANCE (TOTAL DAYS)
-            cell.alignment = { horizontal: "center", vertical: "middle" };
-            cell.font = { name: "Arial", size: 9.5, bold: true };
           }
 
           // Zebra striping
@@ -1964,15 +2000,8 @@ const Payroll = () => {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCFCE7" } };
       }
 
-      // Attendance Sum (Column 7 / G)
-      const totalPaidDaysCell = totalRow.getCell(7);
-      totalPaidDaysCell.value = totalPaidDays;
-      totalPaidDaysCell.font = { name: "Arial", size: 10, bold: true };
-      totalPaidDaysCell.alignment = { horizontal: "center", vertical: "middle" };
-      totalPaidDaysCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCFCE7" } };
-
-      // Add borders to Total Row
-      for (let c = 1; c <= 7; c++) {
+      // Add borders to Total Row (6 Columns: A to F)
+      for (let c = 1; c <= 6; c++) {
         const cell = totalRow.getCell(c);
         cell.border = {
           top: { style: "medium", color: { argb: "FF0F172A" } },
@@ -1988,14 +2017,33 @@ const Payroll = () => {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `Emp_Payment_${period}.xlsx`);
+
+      let filename = `Emp_Payment`;
+      if (companyFilter && companyFilter !== "All") {
+        const compSlug = (selectedCompanyObj?.name || "Company").replace(/[^a-zA-Z0-9]/g, "_").slice(0, 25);
+        filename += `_${compSlug}`;
+      }
+      if (payModeFilter && payModeFilter !== "All") {
+        filename += `_${payModeFilter.toUpperCase()}`;
+      }
+      filename += `_${period}.xlsx`;
+      link.setAttribute("download", filename);
+
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
       toast.dismiss(toastId);
-      toast.success(`Emp Payment Excel exported successfully (${rows.length} employees)!`);
+      const filterSummary = [];
+      if (companyFilter && companyFilter !== "All") {
+        filterSummary.push(selectedCompanyObj?.name || "Filtered Company");
+      }
+      if (payModeFilter && payModeFilter !== "All") {
+        filterSummary.push(`${payModeFilter.toUpperCase()} Mode`);
+      }
+      const summaryText = filterSummary.length > 0 ? ` [${filterSummary.join(", ")}]` : "";
+      toast.success(`Emp Payment Excel exported successfully (${rows.length} employees)${summaryText}!`);
     } catch (err) {
       toast.dismiss(toastId);
       console.error("Emp Payment export error:", err);
@@ -2165,6 +2213,8 @@ const Payroll = () => {
     if (isSavedRun) {
       return payrollRows; // Already filtered & paginated by server
     }
+    const selectedCompanyObj = companies.find(c => String(c.id) === String(companyFilter) || c.name === companyFilter);
+
     return payrollRows.filter(row => {
       const matchesSearch =
         !searchTerm ||
@@ -2176,17 +2226,23 @@ const Payroll = () => {
 
       const matchesCompany =
         !companyFilter || companyFilter === "All" ||
-        String(row.branchId) === String(companyFilter) ||
-        row.branchName === companyFilter;
+        (row.branchId && String(row.branchId) === String(companyFilter)) ||
+        (selectedCompanyObj && (
+          (row.branchId && String(row.branchId) === String(selectedCompanyObj.id)) ||
+          (row.branchName && selectedCompanyObj.name && row.branchName.trim().toLowerCase() === selectedCompanyObj.name.trim().toLowerCase())
+        )) ||
+        (row.branchName && row.branchName === companyFilter);
 
+      const rowMode = ((row.paymentMode || row.payMode || "CASH").toUpperCase().includes("BANK")) ? "BANK" : "CASH";
       const matchesPayMode =
         !payModeFilter || payModeFilter === "All" ||
+        rowMode === payModeFilter.toUpperCase() ||
         (row.paymentMode || "").toUpperCase() === payModeFilter.toUpperCase() ||
         (row.payMode || "").toUpperCase() === payModeFilter.toUpperCase();
 
       return matchesSearch && matchesDept && matchesCompany && matchesPayMode;
     });
-  }, [isSavedRun, payrollRows, searchTerm, departmentFilter, companyFilter, payModeFilter]);
+  }, [isSavedRun, payrollRows, searchTerm, departmentFilter, companyFilter, payModeFilter, companies]);
 
   const displayTotalRecords = isSavedRun ? totalRecords : filteredRows.length;
   const totalPages = isSavedRun
@@ -2489,10 +2545,10 @@ const Payroll = () => {
                 type="button"
                 onClick={handleExportEmpPaymentExcel}
                 className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-sm hover:shadow transition-all group"
-                title="Download Emp Payment Excel (Emp Code, Net Salary, Account No, IFSC Code, Attendance / Total Days)"
+                title={`Download Emp Payment Excel (${companyFilter !== "All" ? "Company Filtered, " : ""}${payModeFilter !== "All" ? `${payModeFilter} Mode` : "All Modes"})`}
               >
                 <Download size={14} className="stroke-[2.5] group-hover:-translate-y-0.5 transition-transform" />
-                <span>Emp Payment</span>
+                <span>Emp Payment{payModeFilter && payModeFilter !== "All" ? ` (${payModeFilter})` : ""}</span>
               </button>
             </div>
           </div>
