@@ -5,6 +5,8 @@ import {
   Award, Building, ChevronLeft, ChevronRight, Users, CheckCircle, Sliders
 } from 'lucide-react';
 import api from '../lib/api';
+import SearchableEmployeeSelect from '../components/SearchableEmployeeSelect';
+
 
 const ITEMS_PER_PAGE = 20;
 
@@ -26,6 +28,8 @@ const Settings = () => {
     role: 'Employee',
     employee_id: ''
   });
+  const [employeeSelectError, setEmployeeSelectError] = useState(false);
+
 
   // Top Tab Navigation state ('credentials' | 'hod' | 'roles')
   const [activeTab, setActiveTab] = useState('credentials');
@@ -101,6 +105,7 @@ const Settings = () => {
     });
     setIsEditing(false);
     setShowPassword(false);
+    setEmployeeSelectError(false);
     setShowModal(true);
   };
 
@@ -120,6 +125,7 @@ const Settings = () => {
 
   const handleCloseModal = () => {
     setShowModal(false);
+    setEmployeeSelectError(false);
   };
 
   const handleInputChange = (e) => {
@@ -132,6 +138,12 @@ const Settings = () => {
 
   const handleSubmitUser = async (e) => {
     e.preventDefault();
+    if (!isEditing && !currentUser.employee_id) {
+      setEmployeeSelectError(true);
+      toast.error('Please search and select an active employee');
+      return;
+    }
+    setEmployeeSelectError(false);
     try {
       if (isEditing) {
         await api.put(`/users/${currentUser.id}`, currentUser);
@@ -500,8 +512,8 @@ const Settings = () => {
 
       {/* ── TAB 2: Department HOD Assignment Setup Panel ─────────────── */}
       {activeTab === 'hod' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden max-w-4xl mx-auto">
-          <div className="p-6 border-b border-gray-200 bg-gray-50/50">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 max-w-4xl mx-auto">
+          <div className="p-6 border-b border-gray-200 bg-gray-50/50 rounded-t-2xl">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <Building size={20} className="text-indigo-600" />
               Department HOD Setup
@@ -529,19 +541,14 @@ const Settings = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Select HOD Employee</label>
-                  <select
-                    value={selectedHodEmpId}
-                    onChange={(e) => setSelectedHodEmpId(e.target.value)}
-                    className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-medium"
-                    required
-                  >
-                    <option value="">-- Select HOD Employee --</option>
-                    {employees.map(emp => (
-                      <option key={emp.employee_id} value={emp.employee_id}>
-                        {emp.name_as_per_aadhar} ({emp.employee_code})
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableEmployeeSelect
+                    employees={employees}
+                    selectedEmployeeId={selectedHodEmpId}
+                    onSelect={(emp) => {
+                      setSelectedHodEmpId(emp ? emp.employee_id.toString() : '');
+                    }}
+                    placeholder="Type name or code to search HOD..."
+                  />
                 </div>
               </div>
 
@@ -589,8 +596,8 @@ const Settings = () => {
 
       {/* ── TAB 3: Employee Role Management Panel ─────────────────────── */}
       {activeTab === 'roles' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden max-w-4xl mx-auto">
-          <div className="p-6 border-b border-gray-200 bg-gray-50/50">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 max-w-4xl mx-auto">
+          <div className="p-6 border-b border-gray-200 bg-gray-50/50 rounded-t-2xl">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <Award size={20} className="text-indigo-600" />
               Employee Role Management
@@ -603,22 +610,16 @@ const Settings = () => {
               <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">
                 Select Employee to Manage Role
               </label>
-              <select
-                value={selectedEmpId}
-                onChange={(e) => {
-                  const empId = e.target.value;
+              <SearchableEmployeeSelect
+                employees={employees}
+                selectedEmployeeId={selectedEmpId}
+                onSelect={(emp) => {
+                  const empId = emp ? emp.employee_id.toString() : '';
                   setSelectedEmpId(empId);
                   fetchEmployeeRoles(empId);
                 }}
-                className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-medium"
-              >
-                <option value="">-- Choose Employee --</option>
-                {employees.map(emp => (
-                  <option key={emp.employee_id} value={emp.employee_id}>
-                    {emp.name_as_per_aadhar} ({emp.employee_code})
-                  </option>
-                ))}
-              </select>
+                placeholder="Type name or code to search employee..."
+              />
             </div>
 
             {selectedEmpId ? (
@@ -676,8 +677,8 @@ const Settings = () => {
       {showModal && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={handleCloseModal}></div>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative z-10 overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="p-5 border-b border-gray-100 bg-indigo-600 text-white flex items-center justify-between">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative z-10 animate-in fade-in zoom-in duration-200">
+            <div className="p-5 border-b border-gray-100 bg-indigo-600 text-white flex items-center justify-between rounded-t-2xl">
               <h3 className="font-bold text-base flex items-center gap-2">
                 {isEditing ? <Edit2 size={18} /> : <UserPlus size={18} />}
                 {isEditing ? 'Edit User Credentials' : 'Create User Credentials'}
@@ -690,29 +691,23 @@ const Settings = () => {
             <form onSubmit={handleSubmitUser} className="p-6 space-y-4">
               {!isEditing && (
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">Select Employee</label>
-                  <select
-                    name="employee_id"
-                    value={currentUser.employee_id}
-                    onChange={(e) => {
-                      const empId = e.target.value;
-                      const emp = employees.find(item => item.employee_id.toString() === empId);
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+                    Select Employee
+                  </label>
+                  <SearchableEmployeeSelect
+                    employees={employees}
+                    selectedEmployeeId={currentUser.employee_id}
+                    onSelect={(emp) => {
                       setCurrentUser(prev => ({
                         ...prev,
-                        employee_id: empId,
+                        employee_id: emp ? emp.employee_id.toString() : '',
                         name: emp ? emp.name_as_per_aadhar : prev.name
                       }));
+                      if (emp) setEmployeeSelectError(false);
                     }}
-                    className="w-full border border-gray-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                    required
-                  >
-                    <option value="">-- Choose Active Employee --</option>
-                    {employees.map(emp => (
-                      <option key={emp.employee_id} value={emp.employee_id}>
-                        {emp.name_as_per_aadhar} ({emp.employee_code})
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Type name or employee code to search..."
+                    error={employeeSelectError}
+                  />
                 </div>
               )}
 
