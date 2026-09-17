@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { getDefaultPagesForRole } from '../data/pagePermissions';
 
 const useAuthStore = create(
   persist(
@@ -56,9 +57,13 @@ const useAuthStore = create(
             !isAdmin &&
             !isCanteenManager;
 
+          // Normalize allowedPages
+          const allowedPages = userObj?.allowedPages || userObj?.allowed_pages || [];
+          const normalizedUser = { ...userObj, allowedPages, allowed_pages: allowedPages };
+
           set({
             isAuthenticated: true,
-            user: userObj,
+            user: normalizedUser,
             isAdmin,
             isHR,
             isHOD,
@@ -89,6 +94,40 @@ const useAuthStore = create(
           const userRoles = (user?.roles || []).map(r => r.toLowerCase().replace(/[^a-z0-9]/g, ""));
           const targetRole = role.toLowerCase().replace(/[^a-z0-9]/g, "");
           return userRoles.includes(targetRole);
+        },
+
+        /** Returns true if the current user has access to the specified page path */
+        hasPageAccess: (path) => {
+          const state = get();
+          if (!state.isAuthenticated || !state.user) return false;
+          // Admin has access to all pages
+          if (state.isAdmin) return true;
+
+          const user = state.user;
+          const userAllowedPages = user.allowedPages || user.allowed_pages;
+
+          // If custom allowedPages array is set on user record
+          if (Array.isArray(userAllowedPages) && userAllowedPages.length > 0) {
+            return userAllowedPages.includes(path);
+          }
+
+          // Fallback to role presets
+          const role = user.role || (user.roles && user.roles[0]) || 'Employee';
+          const defaultPages = getDefaultPagesForRole(role);
+          return defaultPages.includes(path);
+        },
+
+        setUserAllowedPages: (allowedPages) => {
+          const currentUser = get().user;
+          if (currentUser) {
+            const updated = { ...currentUser, allowedPages, allowed_pages: allowedPages };
+            try {
+              localStorage.setItem('user', JSON.stringify(updated));
+            } catch (e) {
+              console.error('Failed to sync updated user to localStorage:', e);
+            }
+            set({ user: updated });
+          }
         },
       };
     },
