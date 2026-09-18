@@ -49,8 +49,11 @@ const Sidebar = ({ onClose }) => {
   const [isResignationOpen, setIsResignationOpen] = useState(false);
   const [isSalaryOpen, setIsSalaryOpen] = useState(false);
   const [isLeaveOpen, setIsLeaveOpen] = useState(false);
+  const [isCanteenOpen, setIsCanteenOpen] = useState(false);
 
-  const user = useAuthStore(state => state.user);
+  const user = useAuthStore((state) => state.user);
+  const isAdmin = useAuthStore((state) => state.isAdmin);
+  const hasPageAccess = useAuthStore((state) => state.hasPageAccess);
 
   const handleLogout = () => {
     logout();
@@ -97,6 +100,7 @@ const Sidebar = ({ onClose }) => {
       toggle: () => setIsAttendanceOpen(!isAttendanceOpen),
       items: [
         { path: "/attendance-dashboard", label: "Attendance Dashboard" },
+        { path: "/attendance-logs", label: "Attendance Logs" },
         { path: "/shift-management", label: "Shift Management" },
         { path: "/overtime-management", label: "Overtime (OT) Request" },
       ],
@@ -130,23 +134,15 @@ const Sidebar = ({ onClose }) => {
     },
     { path: "/gate-pass", icon: Ticket, label: "Gate Pass Management" },
     { path: "/canteen", icon: Utensils, label: "Canteen Management" },
+    { path: "/report", icon: FileCheck, label: "Reports & Analytics" },
     { path: "/master-data", icon: Database, label: "Master Data Management" },
     { path: "/settings", icon: Settings, label: "Settings" },
   ];
 
-
   const getMenuItems = () => {
     if (!user) return [];
 
-    const roles = user.roles ?? (user.role ? [user.role] : []);
-
-    const hasRole = (r) => roles.some(role => role.toLowerCase() === r.toLowerCase());
-    const isAdmin = hasRole('admin');
-    const isHR = hasRole('hr');
-    const isHOD = hasRole('hod');
-    const isCanteenManager = hasRole('canteenmanager');
-    const isEmployeeOnly = !isAdmin && !isHR && !isHOD && !isCanteenManager;
-
+    // Administrator always gets the entire full navigation suite
     if (isAdmin) {
       return adminMenuItems;
     }
@@ -162,161 +158,163 @@ const Sidebar = ({ onClose }) => {
       }
     };
 
-    // Dashboard — all privileged users see it
-    if (isHR || isHOD) {
+    // 1. Dashboard
+    if (hasPageAccess('/')) {
       addItem({ path: '/', icon: LayoutDashboard, label: 'Dashboard' });
     }
 
-    // HOD Recruitment items
-    if (isHOD && !isHR) {
+    // 2. Recruitment Module
+    const recruitmentSubItems = [
+      { path: '/vacancy', label: 'Vacancy' },
+      { path: '/vacancy-approval', label: 'Vacancy Approval' },
+      { path: '/job-application', label: 'Job Application' },
+      { path: '/call-tracker', label: 'Call Tracker' },
+      { path: '/interview-management', label: 'Interview Management' },
+      { path: '/selection-process', label: 'Selection Process' },
+      { path: '/offer-management', label: 'Offer Management' },
+      { path: '/document-verification', label: 'Document Verification' },
+      { path: '/joining', label: 'Joining' },
+    ].filter((item) => hasPageAccess(item.path));
+
+    if (recruitmentSubItems.length > 0) {
       addItem({
         type: 'dropdown',
         icon: NotebookPen,
         label: 'Recruitment Module',
         isOpen: isRecruitmentOpen,
         toggle: () => setIsRecruitmentOpen(!isRecruitmentOpen),
-        items: [{ path: '/vacancy-approval', label: 'Vacancy Approval' }],
+        items: recruitmentSubItems,
       });
     }
 
-    // HR Recruitment items
-    if (isHR) {
-      addItem({
-        type: 'dropdown',
-        icon: NotebookPen,
-        label: 'Recruitment Module',
-        isOpen: isRecruitmentOpen,
-        toggle: () => setIsRecruitmentOpen(!isRecruitmentOpen),
-        items: [
-          { path: '/vacancy', label: 'Vacancy' },
-          { path: '/vacancy-approval', label: 'Vacancy Approval' },
-          { path: '/job-application', label: 'Job Application' },
-          { path: '/call-tracker', label: 'Call Tracker' },
-          { path: '/interview-management', label: 'Interview Management' },
-          { path: '/selection-process', label: 'Selection Process' },
-          { path: '/offer-management', label: 'Offer Management' },
-          { path: '/document-verification', label: 'Document Verification' },
-          { path: '/joining', label: 'Joining' },
-        ],
-      });
-    }
+    // 3. Resignation Module
+    const resignationSubItems = [
+      { path: '/resignation-module', label: 'Resignation Requests' },
+      { path: '/after-leaving-work', label: 'After Leaving Work' },
+      { path: '/leaving', label: 'Exit Clearance' },
+    ].filter((item) => hasPageAccess(item.path));
 
-    // Resignation module
-    if (isHR || isHOD) {
-      const items = isHR
-        ? [
-            { path: '/resignation-module', label: 'Resignation Requests' },
-            { path: '/after-leaving-work', label: 'After Leaving Work' },
-            { path: '/leaving', label: 'Exit Clearance' },
-          ]
-        : [{ path: '/leaving', label: 'Exit Clearance' }];
+    if (resignationSubItems.length > 0) {
       addItem({
         type: 'dropdown',
         icon: UserX,
         label: 'Resignation Module',
         isOpen: isResignationOpen,
         toggle: () => setIsResignationOpen(!isResignationOpen),
-        items,
+        items: resignationSubItems,
       });
     }
 
-    // Attendance module
-    if (isHR || isHOD) {
+    // 4. Attendance Module
+    const attendanceSubItems = [
+      { path: '/attendance-dashboard', label: 'Attendance Dashboard' },
+      { path: '/attendance-logs', label: 'Attendance Logs' },
+      { path: '/shift-management', label: 'Shift Management' },
+      { path: '/overtime-management', label: 'Overtime (OT) Request' },
+      { path: '/my-attendance', label: 'My Attendance' },
+    ].filter((item) => hasPageAccess(item.path));
+
+    if (attendanceSubItems.length > 0) {
       addItem({
         type: 'dropdown',
         icon: Clock,
         label: 'Attendance Module',
         isOpen: isAttendanceOpen,
         toggle: () => setIsAttendanceOpen(!isAttendanceOpen),
-        items: [
-          { path: '/attendance-dashboard', label: 'Attendance Dashboard' },
-          { path: '/shift-management', label: 'Shift Management' },
-          { path: '/overtime-management', label: 'Overtime (OT) Request' },
-        ],
+        items: attendanceSubItems,
       });
     }
 
-    if (isHR || isHOD) addItem({ path: '/employee', icon: Users, label: isHOD && !isHR ? 'Employee Info' : 'Employee' });
-    
-    if (isHR || isHOD) {
+    // 5. Employee Directory & Profile
+    if (hasPageAccess('/employee')) {
+      addItem({ path: '/employee', icon: Users, label: 'Employee' });
+    }
+    if (hasPageAccess('/my-profile')) {
+      addItem({ path: '/my-profile', icon: User, label: 'My Profile' });
+    }
+
+    // 6. Leave Module
+    const leaveSubItems = [
+      { path: '/leave-policy', label: 'Leave Record' },
+      { path: '/leave-management', label: 'Leave Management' },
+      { path: '/leave-request', label: 'Request Leave' },
+      { path: '/company-calendar', label: 'Company Calendar' },
+    ].filter((item) => hasPageAccess(item.path));
+
+    if (leaveSubItems.length > 0) {
       addItem({
         type: 'dropdown',
         icon: CalendarClock,
         label: 'Leave Module',
         isOpen: isLeaveOpen,
         toggle: () => setIsLeaveOpen(!isLeaveOpen),
-        items: [
-          { path: '/leave-policy', label: 'Leave Record' },
-          { path: '/leave-management', label: 'Leave Management' },
-        ],
+        items: leaveSubItems,
       });
     }
 
-    if (isHR || isHOD) {
+    // 7. Salary Module
+    const salarySubItems = [
+      { path: '/salary', label: 'Salary Master' },
+      { path: '/payroll', label: 'Payroll Creation' },
+      { path: '/emi-management', label: 'EMI Management' },
+      { path: '/compensation', label: 'Compensation' },
+      { path: '/pf-management', label: 'PF Management' },
+      { path: '/esic-management', label: 'ESIC Management' },
+      { path: '/my-salary', label: 'My Salary' },
+    ].filter((item) => hasPageAccess(item.path));
+
+    if (salarySubItems.length > 0) {
       addItem({
         type: 'dropdown',
         icon: IndianRupee,
         label: 'Salary Module',
         isOpen: isSalaryOpen,
         toggle: () => setIsSalaryOpen(!isSalaryOpen),
-        items: [
-          { path: "/salary", label: "Salary" },
-          { path: "/payroll", label: "Payroll Creation" },
-          { path: "/emi-management", label: "EMI Management" },
-          { path: "/compensation", label: "Compensation" },
-          { path: "/pf-management", label: "PF Management" },
-          { path: "/esic-management", label: "ESIC Management" },
-        ],
+        items: salarySubItems,
       });
     }
 
-    if (isHR || isHOD) addItem({ path: '/gate-pass', icon: Ticket, label: 'Gate Pass Management' });
-    if (isHR) addItem({ path: '/canteen', icon: Utensils, label: 'Canteen Management' });
-
-
-    if (menuItems.length > 0) return menuItems;
-
-    // Canteen manager
-    if (isCanteenManager) {
-      return [{ path: '/canteen', icon: Utensils, label: 'Canteen Management' }];
+    // 8. Gate Pass
+    if (hasPageAccess('/gate-pass')) {
+      addItem({ path: '/gate-pass', icon: Ticket, label: 'Gate Pass Management' });
     }
 
-    // Pure employee
-    return [
-      { path: '/my-profile', icon: User, label: 'My Profile' },
-      { path: '/my-attendance', icon: Clock, label: 'My Attendance' },
-      { path: '/overtime-management', icon: Clock, label: 'Overtime (OT) Request' },
-      {
+    // 9. Canteen
+    const canteenSubItems = [
+      { path: '/canteen', label: 'Canteen Dashboard' },
+      { path: '/canteen/scan', label: 'Canteen Scanner' },
+    ].filter((item) => hasPageAccess(item.path));
+
+    if (canteenSubItems.length === 1 && canteenSubItems[0].path === '/canteen') {
+      addItem({ path: '/canteen', icon: Utensils, label: 'Canteen Management' });
+    } else if (canteenSubItems.length > 0) {
+      addItem({
         type: 'dropdown',
-        icon: CalendarClock,
-        label: 'Leave Module',
-        isOpen: isLeaveOpen,
-        toggle: () => setIsLeaveOpen(!isLeaveOpen),
-        items: [
-          { path: '/leave-policy', label: 'Leave Record' },
-          { path: '/leave-request', label: 'Request Leave' },
-        ],
-      },
-      {
-        type: 'dropdown',
-        icon: IndianRupee,
-        label: 'Salary Module',
-        isOpen: isSalaryOpen,
-        toggle: () => setIsSalaryOpen(!isSalaryOpen),
-        items: [
-          { path: '/my-salary', label: 'My Salary' },
-          { path: '/emi-management', label: 'My EMI' },
-          { path: '/compensation', label: 'Compensation' },
-          { path: '/pf-management', label: 'PF Management' },
-          { path: '/esic-management', label: 'ESIC Management' },
-        ],
-      },
-      { path: '/gate-pass', icon: Ticket, label: 'Gate Pass Request' },
-      { path: '/canteen', icon: Utensils, label: 'Canteen Info' },
-      { path: '/resignation-module', icon: UserMinus, label: 'Resignation' },
-    ];
+        icon: Utensils,
+        label: 'Canteen Management',
+        isOpen: isCanteenOpen,
+        toggle: () => setIsCanteenOpen(!isCanteenOpen),
+        items: canteenSubItems,
+      });
+    }
+
+    // 10. Reports & Analytics
+    if (hasPageAccess('/report')) {
+      addItem({ path: '/report', icon: FileCheck, label: 'Reports & Analytics' });
+    }
+
+    // 11. Master Data
+    if (hasPageAccess('/master-data')) {
+      addItem({ path: '/master-data', icon: Database, label: 'Master Data Management' });
+    }
+
+    // 12. Settings
+    if (hasPageAccess('/settings')) {
+      addItem({ path: '/settings', icon: Settings, label: 'Settings' });
+    }
+
+    return menuItems;
   };
-
 
   const menuItems = getMenuItems();
 
