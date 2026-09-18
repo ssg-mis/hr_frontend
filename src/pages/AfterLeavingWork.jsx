@@ -183,6 +183,13 @@ const AfterLeavingWork = () => {
   };
 
   const markRelieved = async () => {
+    const checklist = settling?.clearanceChecklist || {};
+    const isHodApproved = checklist.handoverStatus === 'Approved' || checklist.handover === true;
+    if (!isHodApproved) {
+      toast.error('Cannot mark as relieved: Task handover has not been approved by the HOD yet.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       await resignationApi.update(settling.id, {

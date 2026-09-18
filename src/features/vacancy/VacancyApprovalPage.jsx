@@ -1,11 +1,19 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Search, Check, X, Briefcase, Calendar, MapPin, IndianRupee, Users, Award, Layers, Info, Link } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Check, X, Briefcase, Calendar, MapPin, IndianRupee, Users, Award, Layers, Info, Link, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { vacancyApi } from './vacancy.api';
 import { departmentApi } from '../department/department.api';
+import { designationApi } from '../designation/designation.api';
+import useAuthStore from '../../store/authStore';
 
 const VacancyApprovalPage = () => {
-  const [activeTab, setActiveTab] = useState('Pending'); // 'Pending' | 'Approved' | 'Rejected'
+  const user = useAuthStore((state) => state.user);
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const isAdmin = userRoles.some((r) => r.toLowerCase() === 'admin');
+  const isHR = userRoles.some((r) => r.toLowerCase() === 'hr');
+  const isHOD = userRoles.some((r) => r.toLowerCase() === 'hod');
+
+  const [activeTab, setActiveTab] = useState('Pending'); // 'Pending' (HOD) | 'Pending HR' | 'Approved' | 'Rejected'
   const [vacancyData, setVacancyData] = useState([]);
   const [tableLoading, setTableLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,21 +50,27 @@ const VacancyApprovalPage = () => {
   });
 
   const [departments, setDepartments] = useState([]);
+  const [designations, setDesignations] = useState([]);
   const [deptFilter, setDeptFilter] = useState('');
 
   useEffect(() => {
-    loadDepartments();
+    loadMasters();
   }, []);
 
   useEffect(() => {
     fetchVacancyData(1);
   }, [searchTerm, activeTab]);
 
-  const loadDepartments = async () => {
+  const loadMasters = async () => {
     try {
-      setDepartments((await departmentApi.list()) || []);
+      const [depts, desigs] = await Promise.all([
+        departmentApi.list(),
+        designationApi.list()
+      ]);
+      setDepartments(depts || []);
+      setDesignations(desigs || []);
     } catch (error) {
-      console.error('Error fetching departments:', error);
+      console.error('Error fetching masters:', error);
     }
   };
 
@@ -69,9 +83,12 @@ const VacancyApprovalPage = () => {
         search: searchTerm,
       });
       // Backend returns camelCase; filter to the active approval tab client-side.
-      const tabFiltered = (result.data || []).filter(
-        (v) => v.approvalStatus === activeTab
-      );
+      const tabFiltered = (result.data || []).filter((v) => {
+        if (activeTab === 'Pending') {
+          return v.approvalStatus === 'Pending' || v.approvalStatus === 'Pending HR';
+        }
+        return v.approvalStatus === activeTab;
+      });
       setVacancyData(tabFiltered);
       setPagination(
         result.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 }
@@ -90,11 +107,16 @@ const VacancyApprovalPage = () => {
     }
   };
 
-  const handleApprove = async (vacancyNumber) => {
+  const handleApprove = async (vacancyNumber, currentStatus) => {
     try {
       setSubmitting(true);
-      await vacancyApi.setApproval(vacancyNumber, { approvalStatus: 'Approved' });
-      toast.success(`Vacancy ${vacancyNumber} has been approved successfully!`);
+      const nextStatus = currentStatus === 'Pending' ? 'Pending HR' : 'Approved';
+      await vacancyApi.setApproval(vacancyNumber, { approvalStatus: nextStatus });
+      toast.success(
+        currentStatus === 'Pending'
+          ? `Vacancy ${vacancyNumber} approved by HOD, sent to HR`
+          : `Vacancy ${vacancyNumber} approved by HR, released successfully!`
+      );
       setReviewingVacancy(null);
       fetchVacancyData(pagination.page);
     } catch (error) {
@@ -137,7 +159,11 @@ const VacancyApprovalPage = () => {
   };
 
   const filteredData = vacancyData.filter((item) => {
-    if (deptFilter && String(item.departmentId) !== String(deptFilter)) return false;
+    if (deptFilter) {
+      const desig = designations.find(d => String(d.id) === String(item.designationId));
+      const itemDeptId = desig ? String(desig.departmentId) : '';
+      if (itemDeptId !== String(deptFilter)) return false;
+    }
     return true;
   });
 
@@ -146,7 +172,7 @@ const VacancyApprovalPage = () => {
       {/* Review Details and Action Modal */}
       {reviewingVacancy && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-100 flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-300">
 
             {/* Header */}
             <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-indigo-50/20">
@@ -184,7 +210,13 @@ const VacancyApprovalPage = () => {
                     <Layers size={14} />
                     <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Department</span>
                   </div>
-                  <p className="text-sm font-semibold text-gray-800">{reviewingVacancy.departmentName}</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {(() => {
+                      const desig = designations.find(d => String(d.id) === String(reviewingVacancy.designationId));
+                      const dept = desig ? departments.find(d => String(d.id) === String(desig.departmentId)) : null;
+                      return dept ? dept.name : '—';
+                    })()}
+                  </p>
                 </div>
 
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
@@ -216,9 +248,11 @@ const VacancyApprovalPage = () => {
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
                   <div className="flex items-center space-x-2 text-gray-400 mb-1">
                     <MapPin size={14} />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Location</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Branch / Location</span>
                   </div>
-                  <p className="text-sm font-semibold text-gray-800">{reviewingVacancy.preferredLocation || '—'}</p>
+                  <p className="text-sm font-semibold text-gray-800 whitespace-pre-line">
+                    {reviewingVacancy.branchName ? `${reviewingVacancy.branchName}${reviewingVacancy.branchAddress ? ` (${reviewingVacancy.branchAddress})` : ''}` : (reviewingVacancy.preferredLocation || '—')}
+                  </p>
                 </div>
               </div>
 
@@ -231,8 +265,8 @@ const VacancyApprovalPage = () => {
                 </div>
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 block mb-1">Approval Stage</span>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white text-gray-700 border border-gray-200">
-                    {reviewingVacancy.approvalStatus}
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${reviewingVacancy.approvalStatus === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' : reviewingVacancy.approvalStatus === 'Rejected' ? 'bg-red-50 text-red-700 border-red-200' : reviewingVacancy.approvalStatus === 'Pending HR' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                    {reviewingVacancy.approvalStatus === 'Pending' ? 'HOD Pending' : reviewingVacancy.approvalStatus}
                   </span>
                 </div>
               </div>
@@ -342,39 +376,82 @@ const VacancyApprovalPage = () => {
 
             </div>
 
-            {/* Footer buttons (Only active if Status is Pending) */}
+            {/* Footer buttons */}
             <div className="flex justify-end space-x-3 p-6 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
-              {reviewingVacancy.approvalStatus === 'Pending' && !showRejectForm ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setShowRejectForm(true)}
-                    className="px-5 py-2.5 border border-red-200 text-red-600 bg-white rounded-xl font-semibold hover:bg-red-50 transition-colors flex items-center"
-                    disabled={submitting}
-                  >
-                    <X size={16} className="mr-2" />
-                    Reject Request
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApprove(reviewingVacancy.vacancyNumber)}
-                    className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-colors shadow-md shadow-emerald-100 flex items-center"
-                    disabled={submitting}
-                  >
-                    <Check size={16} className="mr-2" />
-                    Approve Vacancy
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setReviewingVacancy(null)}
-                  className="px-5 py-2.5 border border-gray-250 rounded-xl text-gray-700 font-semibold hover:bg-gray-100 transition-colors"
-                  disabled={submitting}
-                >
-                  Close
-                </button>
-              )}
+              {(() => {
+                const isPendingHOD = reviewingVacancy.approvalStatus === 'Pending';
+                const isPendingHR = reviewingVacancy.approvalStatus === 'Pending HR';
+
+                const canActHOD = isPendingHOD && (isAdmin || (isHOD && String(user?.departmentId) === String(reviewingVacancy.departmentId)));
+                const canActHR = isPendingHR && (isAdmin || isHR);
+
+                const canTakeAction = (canActHOD || canActHR) && !showRejectForm;
+
+                if (canTakeAction) {
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setShowRejectForm(true)}
+                        className="px-5 py-2.5 border border-red-200 text-red-600 bg-white rounded-xl font-semibold hover:bg-red-50 transition-colors flex items-center"
+                        disabled={submitting}
+                      >
+                        <X size={16} className="mr-2" />
+                        Reject Request
+                      </button>
+
+                      {isPendingHOD ? (
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(reviewingVacancy.vacancyNumber, reviewingVacancy.approvalStatus)}
+                          className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-colors shadow-md shadow-emerald-100 flex items-center"
+                          disabled={submitting}
+                        >
+                          <Check size={16} className="mr-2" />
+                          <span>Approve HOD</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(reviewingVacancy.vacancyNumber, reviewingVacancy.approvalStatus)}
+                          className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-colors shadow-md shadow-emerald-100 flex items-center"
+                          disabled={submitting}
+                        >
+                          <Check size={16} className="mr-2" />
+                          <span>Approve HR</span>
+                        </button>
+                      )}
+                    </>
+                  );
+                }
+
+                if (!showRejectForm) {
+                  return (
+                    <div className="flex items-center space-x-3">
+                      {isPendingHOD && (
+                        <span className="px-4 py-2.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl font-semibold text-xs flex items-center">
+                          <Clock size={14} className="mr-1.5" /> Awaiting HOD Approval
+                        </span>
+                      )}
+                      {isPendingHR && (
+                        <span className="px-4 py-2.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-xl font-semibold text-xs flex items-center">
+                          <Clock size={14} className="mr-1.5" /> Awaiting HR Approval
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setReviewingVacancy(null)}
+                        className="px-5 py-2.5 border border-gray-250 rounded-xl text-gray-700 font-semibold hover:bg-gray-100 transition-colors"
+                        disabled={submitting}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  );
+                }
+
+                return null;
+              })()}
             </div>
           </div>
         </div>
@@ -387,6 +464,7 @@ const VacancyApprovalPage = () => {
         <div className="flex border-b border-gray-250">
           {['Pending', 'Approved', 'Rejected'].map((tab) => {
             const isActive = activeTab === tab;
+            const label = tab === 'Pending' ? 'Pending' : tab;
             return (
               <button
                 key={tab}
@@ -397,7 +475,7 @@ const VacancyApprovalPage = () => {
                 className={`py-2.5 px-6 font-semibold text-sm border-b-2 transition-all ${isActive ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-400 hover:text-gray-700'
                   }`}
               >
-                {tab} Vacancies
+                {label} Vacancies
               </button>
             );
           })}
@@ -448,6 +526,7 @@ const VacancyApprovalPage = () => {
                   <th className="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Openings</th>
                   <th className="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Target Closing</th>
                   <th className="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Priority</th>
+                  <th className="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Approval Status</th>
                   {activeTab === 'Rejected' && (
                     <th className="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Rejection Reason</th>
                   )}
@@ -457,7 +536,7 @@ const VacancyApprovalPage = () => {
               <tbody className="divide-y divide-gray-100 bg-white">
                 {tableLoading ? (
                   <tr>
-                    <td colSpan={activeTab === 'Rejected' ? '8' : '7'} className="px-6 py-16 text-center text-gray-400">
+                    <td colSpan={activeTab === 'Rejected' ? '9' : '8'} className="px-6 py-16 text-center text-gray-400">
                       <div className="flex flex-col items-center justify-center space-y-2">
                         <span className="w-8 h-8 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin" />
                         <span className="text-sm font-semibold">Loading data...</span>
@@ -466,7 +545,7 @@ const VacancyApprovalPage = () => {
                   </tr>
                 ) : filteredData.length === 0 ? (
                   <tr>
-                    <td colSpan={activeTab === 'Rejected' ? '8' : '7'} className="px-6 py-16 text-center text-gray-400 text-sm">
+                    <td colSpan={activeTab === 'Rejected' ? '9' : '8'} className="px-6 py-16 text-center text-gray-400 text-sm">
                       No {activeTab.toLowerCase()} vacancies found.
                     </td>
                   </tr>
@@ -486,7 +565,13 @@ const VacancyApprovalPage = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-semibold text-gray-800">{item.designationName || '—'}</div>
-                        <div className="text-xs text-gray-400 font-medium">{item.departmentName || '—'}</div>
+                        <div className="text-xs text-gray-400 font-medium">
+                          {(() => {
+                            const desig = designations.find(d => String(d.id) === String(item.designationId));
+                            const dept = desig ? departments.find(d => String(d.id) === String(desig.departmentId)) : null;
+                            return dept ? dept.name : '—';
+                          })()}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm font-bold text-gray-800 block">{item.numberOfPosts} Posts</span>
@@ -498,18 +583,32 @@ const VacancyApprovalPage = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium">
                         {item.priority}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${item.approvalStatus === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' : item.approvalStatus === 'Rejected' ? 'bg-red-50 text-red-700 border-red-200' : item.approvalStatus === 'Pending HR' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}
+                        >
+                          {item.approvalStatus === 'Pending' ? 'HOD Pending' : item.approvalStatus}
+                        </span>
+                      </td>
                       {activeTab === 'Rejected' && (
                         <td className="px-6 py-4 text-sm text-red-600 font-medium max-w-[200px] truncate" title={item.rejectionRemark}>
                           {item.rejectionRemark || '—'}
                         </td>
                       )}
                       <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium sticky right-0 bg-white border-l border-gray-200">
-                        <button
-                          onClick={() => openReviewModal(item)}
-                          className="inline-flex items-center justify-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition-all duration-150 shadow-sm shadow-blue-100"
-                        >
-                          {activeTab === 'Pending' ? 'Review & Decision' : 'View'}
-                        </button>
+                        {(() => {
+                          const canActHOD = item.approvalStatus === 'Pending' && (isAdmin || (isHOD && String(user?.departmentId) === String(item.departmentId)));
+                          const canActHR = item.approvalStatus === 'Pending HR' && (isAdmin || isHR);
+                          const canAct = canActHOD || canActHR;
+                          return (
+                            <button
+                              onClick={() => openReviewModal(item)}
+                              className="inline-flex items-center justify-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition-all duration-150 shadow-sm shadow-blue-100"
+                            >
+                              {canAct ? 'Review & Decision' : 'View'}
+                            </button>
+                          );
+                        })()}
                       </td>
                     </tr>
                   ))
