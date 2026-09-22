@@ -48,6 +48,7 @@ export const SYSTEM_MODULES = [
       { id: '/shift-management', label: 'Shift Management', path: '/shift-management', description: 'Configure shifts and assign rosters to staff' },
       { id: '/overtime-management', label: 'Overtime (OT) Request', path: '/overtime-management', description: 'Apply, endorse, and approve overtime claims' },
       { id: '/my-attendance', label: 'My Attendance', path: '/my-attendance', description: 'Personal punch log and monthly calendar' },
+      { id: '/my-attendance/monthly', label: 'Monthly Attendance View (Self)', path: '/my-attendance/monthly', description: 'Let employee pick any month/year on My Attendance; off = employee sees only a simple last-7-days view with no controls' },
     ],
   },
   {
@@ -166,6 +167,7 @@ export const ROLE_PAGE_PRESETS = {
     '/shift-management',
     '/overtime-management',
     '/my-attendance',
+    '/my-attendance/monthly',
     '/employee',
     '/my-profile',
     '/leave-policy',
@@ -195,6 +197,7 @@ export const ROLE_PAGE_PRESETS = {
     '/shift-management',
     '/overtime-management',
     '/my-attendance',
+    '/my-attendance/monthly',
     '/employee',
     '/my-profile',
     '/leave-policy',
