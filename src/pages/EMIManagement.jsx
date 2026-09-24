@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, CreditCard, IndianRupee, Calendar, Filter, Eye, Plus, X, ArrowUpRight, ArrowDownRight, Pencil } from 'lucide-react';
+import { Search, CreditCard, IndianRupee, Calendar, Filter, Eye, Plus, X, ArrowUpRight, ArrowDownRight, Pencil, Info } from 'lucide-react';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
+import useAuthStore from '../store/authStore';
 
 const groupPaymentsByDay = (payments) => {
     const groups = {};
@@ -18,7 +19,7 @@ const groupPaymentsByDay = (payments) => {
         groups[dateStr].installments.push(p.installmentNo);
         groups[dateStr].totalAmount += Number(p.amountPaid || 0);
     });
-    
+
     return Object.values(groups).sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
 };
 
@@ -27,7 +28,7 @@ const formatInstallments = (list) => {
     const sorted = [...list].sort((a, b) => a - b);
     let isContiguous = true;
     for (let i = 1; i < sorted.length; i++) {
-        if (sorted[i] !== sorted[i-1] + 1) {
+        if (sorted[i] !== sorted[i - 1] + 1) {
             isContiguous = false;
             break;
         }
@@ -39,7 +40,20 @@ const formatInstallments = (list) => {
 };
 
 const EMIManagement = () => {
+    const user = useAuthStore((state) => state.user);
+    const isEmployeeOnly = useAuthStore((state) => state.isEmployeeOnly);
+    const isHOD = useAuthStore((state) => state.isHOD);
+    const isHR = useAuthStore((state) => state.isHR);
+    const isAdmin = useAuthStore((state) => state.isAdmin);
+
+    const hasHODRole = isHOD || user?.roles?.some(r => r.toLowerCase() === 'hod');
+    const hasHRRole = isHR || user?.roles?.some(r => r.toLowerCase() === 'hr');
+    const hasAdminRole = isAdmin || user?.roles?.some(r => r.toLowerCase() === 'admin');
+
+    const canManage = hasHRRole || hasAdminRole || hasHODRole;
+    const isSelfRequest = isEmployeeOnly || hasHODRole;
     const [employeeList, setEmployeeList] = useState([]);
+    const [loggedInEmpData, setLoggedInEmpData] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
     const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -51,11 +65,14 @@ const EMIManagement = () => {
     const [activeTab, setActiveTab] = useState('activeLoans');
     const [loading, setLoading] = useState(false);
 
+    const loggedInEmp = employeeList.find(emp => Number(emp.employee_id) === Number(user?.employeeId));
+    const isPendingResignation = isEmployeeOnly && loggedInEmp?.status === 'Pending';
+
     const [newEmiFormData, setNewEmiFormData] = useState({
         empId: '',
         name: '',
         employeeId: '',
-        loanType: '',
+        loanType: 'Personal Loan',
         loanAmount: '',
         emiAmount: '',
         interestRate: '0.00',
@@ -78,11 +95,26 @@ const EMIManagement = () => {
         }
     };
 
+    const fetchLoggedInEmployee = async () => {
+        try {
+            const userName = user?.name || user?.Name;
+            if (!userName) return;
+            const res = await api.get(`/employees/active?name=${encodeURIComponent(userName)}`);
+            if (res.success && res.data.length > 0) {
+                setLoggedInEmpData(res.data[0]);
+            }
+        } catch (error) {
+            console.error("Failed to fetch logged in employee details:", error);
+        }
+    };
+
     const fetchEmis = async () => {
         setLoading(true);
         try {
             const res = await api.get('/emis');
             if (res.success) {
+                console.log("fetchEmis data:", res.data);
+                console.log("isHOD:", isHOD, "isAdmin:", isAdmin, "user roles:", user?.roles);
                 setEmiData(res.data || []);
             }
         } catch (error) {
@@ -106,9 +138,41 @@ const EMIManagement = () => {
 
     useEffect(() => {
         fetchEmployees();
+        fetchLoggedInEmployee();
+        if (canManage) {
+            fetchPayments();
+        }
         fetchEmis();
-        fetchPayments();
-    }, []);
+    }, [user, canManage]);
+
+    useEffect(() => {
+        if (showAddModal && isSelfRequest) {
+            const empCode = loggedInEmpData?.employee_code || loggedInEmp?.employee_code || '';
+            const empName = loggedInEmpData?.name_as_per_aadhar || loggedInEmp?.name_as_per_aadhar || user?.name || '';
+            setNewEmiFormData(prev => ({
+                ...prev,
+                employeeId: user?.employeeId || '',
+                empId: empCode,
+                name: empName
+            }));
+        }
+    }, [showAddModal, user, isSelfRequest, loggedInEmp, loggedInEmpData]);
+
+    const handleApprove = async (emiId, nextStatus) => {
+        try {
+            const res = await api.patch(`/emis/${emiId}`, { status: nextStatus });
+            if (res.success) {
+                toast.success(`EMI request updated to ${nextStatus}`);
+                fetchEmis();
+                if (canManage) {
+                    fetchPayments();
+                }
+            }
+        } catch (error) {
+            console.error("Failed to approve/reject EMI:", error);
+            toast.error(error.message || "Failed to update EMI status");
+        }
+    };
 
     const stats = [
         { label: 'Total active Loans', value: `₹${emiData.filter(e => e.status === 'Active').reduce((sum, e) => sum + Number(e.loanAmount || 0), 0).toLocaleString()}`, icon: CreditCard, color: 'text-blue-600', bg: 'bg-blue-100' },
@@ -172,6 +236,10 @@ const EMIManagement = () => {
 
     const handleAddEmi = async (e) => {
         e.preventDefault();
+        if (Number(newEmiFormData.emiAmount) > Number(newEmiFormData.loanAmount)) {
+            toast.error("EMI amount cannot be greater than the loan amount!");
+            return;
+        }
         try {
             const payload = {
                 employeeId: Number(newEmiFormData.employeeId),
@@ -180,15 +248,17 @@ const EMIManagement = () => {
                 emiAmount: Number(newEmiFormData.emiAmount),
                 interestRate: Number(newEmiFormData.interestRate || 0),
                 tenure: Number(newEmiFormData.tenure),
-                status: 'Active'
+                status: isSelfRequest ? (hasHODRole ? 'Pending HR' : 'Pending HOD') : 'Active'
             };
             const res = await api.post('/emis', payload);
             if (res.success) {
-                toast.success("EMI Loan Entry added successfully!");
+                toast.success(isSelfRequest ? "EMI request submitted for approval!" : "EMI Loan Entry added successfully!");
                 setShowAddModal(false);
-                setNewEmiFormData({ empId: '', name: '', employeeId: '', loanType: '', loanAmount: '', emiAmount: '', interestRate: '0.00', tenure: '' });
+                setNewEmiFormData({ empId: '', name: '', employeeId: '', loanType: 'Personal Loan', loanAmount: '', emiAmount: '', interestRate: '0.00', tenure: '' });
                 fetchEmis();
-                fetchPayments();
+                if (canManage) {
+                    fetchPayments();
+                }
             }
         } catch (error) {
             console.error("Failed to add EMI:", error);
@@ -241,47 +311,59 @@ const EMIManagement = () => {
 
     return (
         <div className="space-y-6 page-content p-6">
+            {isPendingResignation && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 text-amber-800 text-sm">
+                    <Info className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                        <span className="font-bold">EMI Request Blocked:</span> You have a resignation in progress. Employees with a pending resignation or notice period status cannot request new EMI loans.
+                    </div>
+                </div>
+            )}
+
             <div className="flex items-center justify-between border-b border-gray-100 pb-4">
                 {/* Tabs */}
                 <div className="flex gap-2">
                     <button
                         onClick={() => setActiveTab('activeLoans')}
-                        className={`py-2 px-4 font-semibold text-sm rounded-lg transition-all ${
-                            activeTab === 'activeLoans'
+                        className={`py-2 px-4 font-semibold text-sm rounded-lg transition-all ${activeTab === 'activeLoans'
                                 ? 'bg-indigo-50 text-indigo-700'
                                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                        }`}
+                            }`}
                     >
                         Active Loans
                     </button>
                     <button
                         onClick={() => setActiveTab('completedLoans')}
-                        className={`py-2 px-4 font-semibold text-sm rounded-lg transition-all ${
-                            activeTab === 'completedLoans'
+                        className={`py-2 px-4 font-semibold text-sm rounded-lg transition-all ${activeTab === 'completedLoans'
                                 ? 'bg-indigo-50 text-indigo-700'
                                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                        }`}
+                            }`}
                     >
                         Completed Loans
                     </button>
                     <button
                         onClick={() => setActiveTab('payments')}
-                        className={`py-2 px-4 font-semibold text-sm rounded-lg transition-all ${
-                            activeTab === 'payments'
+                        className={`py-2 px-4 font-semibold text-sm rounded-lg transition-all ${activeTab === 'payments'
                                 ? 'bg-indigo-50 text-indigo-700'
                                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                        }`}
+                            }`}
                     >
                         Payment History
                     </button>
                 </div>
 
                 <button
+                    disabled={isPendingResignation}
                     onClick={() => setShowAddModal(true)}
-                    className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md"
+                    className={`inline-flex items-center px-4 py-2 text-white rounded-lg transition-colors shadow-md ${
+                        isPendingResignation
+                            ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                            : 'bg-indigo-600 hover:bg-indigo-700'
+                    }`}
+                    title={isPendingResignation ? "You cannot request EMI while resignation is pending" : "New EMI Request"}
                 >
                     <Plus size={18} className="mr-2" />
-                    New EMI Entry
+                    {isSelfRequest ? 'Request EMI' : 'New EMI Entry'}
                 </button>
             </div>
 
@@ -370,12 +452,50 @@ const EMIManagement = () => {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className="text-xs font-semibold inline-flex px-2 py-0.5 rounded bg-gray-100 text-gray-800">
+                                            <span className={`text-xs font-semibold inline-flex px-2 py-0.5 rounded ${
+                                                item.status === 'Completed' ? 'bg-green-100 text-green-800' :
+                                                item.status === 'Pending HOD' ? 'bg-amber-100 text-amber-800' :
+                                                item.status === 'Pending HR' ? 'bg-purple-100 text-purple-800' :
+                                                item.status === 'Rejected' ? 'bg-red-100 text-red-800' :
+                                                'bg-blue-100 text-blue-800'
+                                            }`}>
                                                 {item.status}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right">
-                                            <div className="flex justify-end gap-2">
+                                            <div className="flex justify-end gap-2 items-center">
+                                                {(hasHODRole || hasAdminRole) && item.status === 'Pending HOD' && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleApprove(item.id, 'Pending HR')}
+                                                            className="px-2.5 py-1 text-xs font-bold bg-green-100 hover:bg-green-200 text-green-700 rounded transition-colors"
+                                                        >
+                                                            Approve
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleApprove(item.id, 'Rejected')}
+                                                            className="px-2.5 py-1 text-xs font-bold bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors"
+                                                        >
+                                                            Reject
+                                                        </button>
+                                                    </>
+                                                )}
+                                                {(hasHRRole || hasAdminRole) && item.status === 'Pending HR' && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleApprove(item.id, 'Active')}
+                                                            className="px-2.5 py-1 text-xs font-bold bg-green-100 hover:bg-green-200 text-green-700 rounded transition-colors"
+                                                        >
+                                                            Approve
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleApprove(item.id, 'Rejected')}
+                                                            className="px-2.5 py-1 text-xs font-bold bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors"
+                                                        >
+                                                            Reject
+                                                        </button>
+                                                    </>
+                                                )}
                                                 <button
                                                     onClick={() => handleViewClick(item)}
                                                     className="text-blue-600 hover:text-blue-800 transition-colors p-2 rounded-lg hover:bg-blue-50"
@@ -383,13 +503,15 @@ const EMIManagement = () => {
                                                 >
                                                     <Eye size={18} />
                                                 </button>
-                                                <button
-                                                    onClick={() => handleEditClick(item)}
-                                                    className="text-amber-600 hover:text-amber-800 transition-colors p-2 rounded-lg hover:bg-amber-50"
-                                                    title="Update EMI"
-                                                >
-                                                    <Pencil size={18} />
-                                                </button>
+                                                {(hasHRRole || hasAdminRole) && item.status !== 'Pending HOD' && item.status !== 'Pending HR' && (
+                                                    <button
+                                                        onClick={() => handleEditClick(item)}
+                                                        className="text-amber-600 hover:text-amber-800 transition-colors p-2 rounded-lg hover:bg-amber-50"
+                                                        title="Update EMI"
+                                                    >
+                                                        <Pencil size={18} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -417,7 +539,7 @@ const EMIManagement = () => {
                                         </td>
                                     </tr>
                                 ) : (
-                                    paymentsData.filter(p => 
+                                    paymentsData.filter(p =>
                                         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                         p.empId.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                         p.loanType.toLowerCase().includes(searchTerm.toLowerCase())
@@ -458,55 +580,63 @@ const EMIManagement = () => {
             {/* New EMI Entry Modal */}
             {showAddModal && (
                 <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 modal-backdrop">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[85vh] animate-in fade-in zoom-in duration-200">
                         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-indigo-50/30">
                             <h2 className="text-xl font-bold text-gray-800">New EMI Entry</h2>
                             <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100">
                                 <X size={24} />
                             </button>
                         </div>
-                        <form onSubmit={handleAddEmi} className="p-6 space-y-4">
+                        <form onSubmit={handleAddEmi} className="p-6 space-y-4 overflow-y-auto pr-1 flex-1">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID *</label>
-                                    <select
-                                        name="empId"
-                                        value={newEmiFormData.empId}
-                                        onChange={handleInputChange}
-                                        required
-                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    >
-                                        <option value="">Select ID</option>
-                                        {employeeList.map(emp => (
-                                            <option key={emp.employee_id} value={emp.employee_code}>{emp.employee_code}</option>
-                                        ))}
-                                    </select>
+                                    {isSelfRequest ? (
+                                        <input
+                                            type="text"
+                                            value={newEmiFormData.empId}
+                                            readOnly
+                                            className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-gray-50 text-gray-500 outline-none cursor-not-allowed text-sm"
+                                        />
+                                    ) : (
+                                        <select
+                                            name="empId"
+                                            value={newEmiFormData.empId}
+                                            onChange={handleInputChange}
+                                            required
+                                            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                                        >
+                                            <option value="">Select ID</option>
+                                            {employeeList.map(emp => (
+                                                <option key={emp.employee_id} value={emp.employee_code}>{emp.employee_code}</option>
+                                            ))}
+                                        </select>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Employee Name *</label>
-                                    <select
-                                        name="name"
-                                        value={newEmiFormData.name}
-                                        onChange={handleInputChange}
-                                        required
-                                        className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    >
-                                        <option value="">Select Name</option>
-                                        {employeeList.map(emp => (
-                                            <option key={emp.employee_id} value={emp.name_as_per_aadhar}>{emp.name_as_per_aadhar}</option>
-                                        ))}
-                                    </select>
+                                    {isSelfRequest ? (
+                                        <input
+                                            type="text"
+                                            value={newEmiFormData.name}
+                                            readOnly
+                                            className="w-full border border-gray-300 rounded-lg px-4 py-2 bg-gray-50 text-gray-500 outline-none cursor-not-allowed text-sm"
+                                        />
+                                    ) : (
+                                        <select
+                                            name="name"
+                                            value={newEmiFormData.name}
+                                            onChange={handleInputChange}
+                                            required
+                                            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                                        >
+                                            <option value="">Select Name</option>
+                                            {employeeList.map(emp => (
+                                                <option key={emp.employee_id} value={emp.name_as_per_aadhar}>{emp.name_as_per_aadhar}</option>
+                                            ))}
+                                        </select>
+                                    )}
                                 </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Loan Type *</label>
-                                <select name="loanType" value={newEmiFormData.loanType} onChange={handleInputChange} required className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none">
-                                    <option value="">Select Type</option>
-                                    <option value="Personal Loan">Personal Loan</option>
-                                    <option value="Home Loan">Home Loan</option>
-                                    <option value="Car Loan">Car Loan</option>
-                                    <option value="Advanced Salary">Advanced Salary</option>
-                                </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
@@ -538,7 +668,7 @@ const EMIManagement = () => {
             {/* View EMI Details Modal */}
             {showViewModal && (
                 <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 modal-backdrop">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[85vh] animate-in fade-in zoom-in duration-200">
                         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-indigo-50/30">
                             <div>
                                 <h2 className="text-xl font-bold text-gray-800">EMI Details</h2>
@@ -548,7 +678,7 @@ const EMIManagement = () => {
                                 <X size={24} />
                             </button>
                         </div>
-                        <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+                        <div className="p-6 space-y-6 overflow-y-auto pr-1 flex-1">
                             {/* Loan Info Grid */}
                             <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
                                 <div>
@@ -574,13 +704,12 @@ const EMIManagement = () => {
                                 <div>
                                     <span className="text-xs text-gray-400 font-semibold uppercase">Status</span>
                                     <p className="text-sm font-bold text-gray-800">
-                                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${
-                                            selectedEmi?.status === 'Completed' 
-                                                ? 'bg-green-100 text-green-800' 
+                                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${selectedEmi?.status === 'Completed'
+                                                ? 'bg-green-100 text-green-800'
                                                 : selectedEmi?.status === 'Paused'
-                                                ? 'bg-amber-100 text-amber-800'
-                                                : 'bg-blue-100 text-blue-800'
-                                        }`}>
+                                                    ? 'bg-amber-100 text-amber-800'
+                                                    : 'bg-blue-100 text-blue-800'
+                                            }`}>
                                             {selectedEmi?.status}
                                         </span>
                                     </p>
@@ -613,7 +742,7 @@ const EMIManagement = () => {
                                     </div>
                                 )}
                             </div>
-                            
+
                             <div className="flex pt-4">
                                 <button type="button" onClick={() => setShowViewModal(false)} className="w-full px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-medium transition-colors shadow-sm">
                                     Close Details
@@ -627,7 +756,7 @@ const EMIManagement = () => {
             {/* Update EMI Modal */}
             {showUpdateModal && (
                 <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 modal-backdrop">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh] animate-in fade-in zoom-in duration-200">
                         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-indigo-50/30">
                             <div>
                                 <h2 className="text-xl font-bold text-gray-800">Update EMI</h2>
@@ -637,7 +766,7 @@ const EMIManagement = () => {
                                 <X size={24} />
                             </button>
                         </div>
-                        <form onSubmit={handleUpdateEmi} className="p-6 space-y-4">
+                        <form onSubmit={handleUpdateEmi} className="p-6 space-y-4 overflow-y-auto pr-1 flex-1">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Paid EMIs (Current: {selectedEmi?.paidEmis}/{selectedEmi?.tenure})</label>
                                 <input

@@ -30,7 +30,14 @@ import {
   FileCheck,
   Mail,
   IndianRupee,
+  Utensils,
+  ShieldCheck,
+  Ticket,
+  Award,
+  Database,
 } from "lucide-react";
+
+
 import useAuthStore from "../store/authStore";
 
 const Sidebar = ({ onClose }) => {
@@ -40,13 +47,16 @@ const Sidebar = ({ onClose }) => {
   const [isAttendanceOpen, setIsAttendanceOpen] = useState(false);
   const [isRecruitmentOpen, setIsRecruitmentOpen] = useState(false);
   const [isResignationOpen, setIsResignationOpen] = useState(false);
+  const [isSalaryOpen, setIsSalaryOpen] = useState(false);
+  const [isLeaveOpen, setIsLeaveOpen] = useState(false);
+  const [isCanteenOpen, setIsCanteenOpen] = useState(false);
 
-  const userString = localStorage.getItem("user");
-  const user = userString ? JSON.parse(userString) : null;
+  const user = useAuthStore((state) => state.user);
+  const isAdmin = useAuthStore((state) => state.isAdmin);
+  const hasPageAccess = useAuthStore((state) => state.hasPageAccess);
 
   const handleLogout = () => {
     logout();
-    localStorage.removeItem("user");
     navigate("/login", { replace: true });
   };
 
@@ -82,15 +92,231 @@ const Sidebar = ({ onClose }) => {
         { path: "/leaving", label: "Exit Clearance" },
       ],
     },
+    {
+      type: "dropdown",
+      icon: Clock,
+      label: "Attendance Module",
+      isOpen: isAttendanceOpen,
+      toggle: () => setIsAttendanceOpen(!isAttendanceOpen),
+      items: [
+        { path: "/attendance-dashboard", label: "Attendance Dashboard" },
+        { path: "/attendance-logs", label: "Attendance Logs" },
+        { path: "/shift-management", label: "Shift Management" },
+        { path: "/overtime-management", label: "Overtime (OT) Request" },
+      ],
+    },
     { path: "/employee", icon: Users, label: "Employee" },
-    { path: "/leave-management", icon: BookPlus, label: "Leave Management" },
-    { path: "/leave-policy", icon: BookPlus, label: "Leave Record" },
-    { path: "/emi-management", icon: CreditCard, label: "EMI Management" },
-    { path: "/salary", icon: IndianRupee, label: "Salary" },
+    {
+      type: "dropdown",
+      icon: CalendarClock,
+      label: "Leave Module",
+      isOpen: isLeaveOpen,
+      toggle: () => setIsLeaveOpen(!isLeaveOpen),
+      items: [
+        { path: "/leave-policy", label: "Leave Record" },
+        { path: "/leave-management", label: "Leave Management" },
+      ],
+    },
+    {
+      type: "dropdown",
+      icon: IndianRupee,
+      label: "Salary Module",
+      isOpen: isSalaryOpen,
+      toggle: () => setIsSalaryOpen(!isSalaryOpen),
+      items: [
+        { path: "/salary", label: "Salary" },
+        { path: "/payroll", label: "Payroll Creation" },
+        { path: "/emi-management", label: "EMI Management" },
+        { path: "/compensation", label: "Compensation" },
+        { path: "/pf-management", label: "PF Management" },
+        { path: "/esic-management", label: "ESIC Management" },
+      ],
+    },
+    { path: "/gate-pass", icon: Ticket, label: "Gate Pass Management" },
+    { path: "/canteen", icon: Utensils, label: "Canteen Management" },
+    { path: "/report", icon: FileCheck, label: "Reports & Analytics" },
+    { path: "/master-data", icon: Database, label: "Master Data Management" },
     { path: "/settings", icon: Settings, label: "Settings" },
   ];
 
-  const menuItems = adminMenuItems;
+  const getMenuItems = () => {
+    if (!user) return [];
+
+    // Administrator always gets the entire full navigation suite
+    if (isAdmin) {
+      return adminMenuItems;
+    }
+
+    const menuItems = [];
+    const addedPaths = new Set();
+
+    const addItem = (item) => {
+      const key = item.path ?? item.label;
+      if (!addedPaths.has(key)) {
+        addedPaths.add(key);
+        menuItems.push(item);
+      }
+    };
+
+    // 1. Dashboard
+    if (hasPageAccess('/')) {
+      addItem({ path: '/', icon: LayoutDashboard, label: 'Dashboard' });
+    }
+
+    // 2. Recruitment Module
+    const recruitmentSubItems = [
+      { path: '/vacancy', label: 'Vacancy' },
+      { path: '/vacancy-approval', label: 'Vacancy Approval' },
+      { path: '/job-application', label: 'Job Application' },
+      { path: '/call-tracker', label: 'Call Tracker' },
+      { path: '/interview-management', label: 'Interview Management' },
+      { path: '/selection-process', label: 'Selection Process' },
+      { path: '/offer-management', label: 'Offer Management' },
+      { path: '/document-verification', label: 'Document Verification' },
+      { path: '/joining', label: 'Joining' },
+    ].filter((item) => hasPageAccess(item.path));
+
+    if (recruitmentSubItems.length > 0) {
+      addItem({
+        type: 'dropdown',
+        icon: NotebookPen,
+        label: 'Recruitment Module',
+        isOpen: isRecruitmentOpen,
+        toggle: () => setIsRecruitmentOpen(!isRecruitmentOpen),
+        items: recruitmentSubItems,
+      });
+    }
+
+    // 3. Resignation Module
+    const resignationSubItems = [
+      { path: '/resignation-module', label: 'Resignation Requests' },
+      { path: '/after-leaving-work', label: 'After Leaving Work' },
+      { path: '/leaving', label: 'Exit Clearance' },
+    ].filter((item) => hasPageAccess(item.path));
+
+    if (resignationSubItems.length > 0) {
+      addItem({
+        type: 'dropdown',
+        icon: UserX,
+        label: 'Resignation Module',
+        isOpen: isResignationOpen,
+        toggle: () => setIsResignationOpen(!isResignationOpen),
+        items: resignationSubItems,
+      });
+    }
+
+    // 4. Attendance Module
+    const attendanceSubItems = [
+      { path: '/attendance-dashboard', label: 'Attendance Dashboard' },
+      { path: '/attendance-logs', label: 'Attendance Logs' },
+      { path: '/shift-management', label: 'Shift Management' },
+      { path: '/overtime-management', label: 'Overtime (OT) Request' },
+      { path: '/my-attendance', label: 'My Attendance' },
+    ].filter((item) => hasPageAccess(item.path));
+
+    if (attendanceSubItems.length > 0) {
+      addItem({
+        type: 'dropdown',
+        icon: Clock,
+        label: 'Attendance Module',
+        isOpen: isAttendanceOpen,
+        toggle: () => setIsAttendanceOpen(!isAttendanceOpen),
+        items: attendanceSubItems,
+      });
+    }
+
+    // 5. Employee Directory & Profile
+    if (hasPageAccess('/employee')) {
+      addItem({ path: '/employee', icon: Users, label: 'Employee' });
+    }
+    if (hasPageAccess('/my-profile')) {
+      addItem({ path: '/my-profile', icon: User, label: 'My Profile' });
+    }
+
+    // 6. Leave Module
+    const leaveSubItems = [
+      { path: '/leave-policy', label: 'Leave Record' },
+      { path: '/leave-management', label: 'Leave Management' },
+      { path: '/leave-request', label: 'Request Leave' },
+      { path: '/company-calendar', label: 'Company Calendar' },
+    ].filter((item) => hasPageAccess(item.path));
+
+    if (leaveSubItems.length > 0) {
+      addItem({
+        type: 'dropdown',
+        icon: CalendarClock,
+        label: 'Leave Module',
+        isOpen: isLeaveOpen,
+        toggle: () => setIsLeaveOpen(!isLeaveOpen),
+        items: leaveSubItems,
+      });
+    }
+
+    // 7. Salary Module
+    const salarySubItems = [
+      { path: '/salary', label: 'Salary Master' },
+      { path: '/payroll', label: 'Payroll Creation' },
+      { path: '/emi-management', label: 'EMI Management' },
+      { path: '/compensation', label: 'Compensation' },
+      { path: '/pf-management', label: 'PF Management' },
+      { path: '/esic-management', label: 'ESIC Management' },
+      { path: '/my-salary', label: 'My Salary' },
+    ].filter((item) => hasPageAccess(item.path));
+
+    if (salarySubItems.length > 0) {
+      addItem({
+        type: 'dropdown',
+        icon: IndianRupee,
+        label: 'Salary Module',
+        isOpen: isSalaryOpen,
+        toggle: () => setIsSalaryOpen(!isSalaryOpen),
+        items: salarySubItems,
+      });
+    }
+
+    // 8. Gate Pass
+    if (hasPageAccess('/gate-pass')) {
+      addItem({ path: '/gate-pass', icon: Ticket, label: 'Gate Pass Management' });
+    }
+
+    // 9. Canteen
+    const canteenSubItems = [
+      { path: '/canteen', label: 'Canteen Dashboard' },
+      { path: '/canteen/scan', label: 'Canteen Scanner' },
+    ].filter((item) => hasPageAccess(item.path));
+
+    if (canteenSubItems.length === 1 && canteenSubItems[0].path === '/canteen') {
+      addItem({ path: '/canteen', icon: Utensils, label: 'Canteen Management' });
+    } else if (canteenSubItems.length > 0) {
+      addItem({
+        type: 'dropdown',
+        icon: Utensils,
+        label: 'Canteen Management',
+        isOpen: isCanteenOpen,
+        toggle: () => setIsCanteenOpen(!isCanteenOpen),
+        items: canteenSubItems,
+      });
+    }
+
+    // 10. Reports & Analytics
+    if (hasPageAccess('/report')) {
+      addItem({ path: '/report', icon: FileCheck, label: 'Reports & Analytics' });
+    }
+
+    // 11. Master Data
+    if (hasPageAccess('/master-data')) {
+      addItem({ path: '/master-data', icon: Database, label: 'Master Data Management' });
+    }
+
+    // 12. Settings
+    if (hasPageAccess('/settings')) {
+      addItem({ path: '/settings', icon: Settings, label: 'Settings' });
+    }
+
+    return menuItems;
+  };
+
+  const menuItems = getMenuItems();
 
   return (
     <>
@@ -181,9 +407,9 @@ const SidebarContent = ({
         <h1 className="text-xl font-bold flex items-center gap-2 text-white">
           <Users size={24} />
           <span>HR FMS</span>
-          {user?.role === "employee" && (
-            <span className="text-xs bg-white bg-opacity-20 px-2 py-1 rounded">
-              Employee
+          {user?.role && (
+            <span className="text-xs bg-white bg-opacity-20 px-2 py-1 rounded capitalize">
+              {user.role}
             </span>
           )}
         </h1>
@@ -278,11 +504,20 @@ const SidebarContent = ({
           </div>
           {/* Show user info in mobile view regardless of collapsed state */}
           <div className={`${isCollapsed ? "hidden" : "block"} md:block`}>
-            <p className="text-sm font-medium text-white">
+            <p className="text-sm font-medium text-white truncate max-w-[120px]">
               {user?.Name || user?.Username || "Guest"}
             </p>
-            <p className="text-xs text-white">
-              {user?.Admin === "Yes" ? "Administrator" : "Employee"}
+            <p className="text-xs text-white capitalize">
+              {(() => {
+                const roles = user?.roles ?? (user?.role ? [user.role] : []);
+                if (roles.some(r => r.toLowerCase() === 'admin')) return 'Administrator';
+                const display = [];
+                if (roles.some(r => r.toLowerCase() === 'hod')) display.push('Department HOD');
+                if (roles.some(r => r.toLowerCase() === 'hr')) display.push('HR Specialist');
+                if (display.length > 0) return display.join(' · ');
+                if (roles.some(r => r.toLowerCase() === 'canteenmanager')) return 'Canteen Manager';
+                return 'Employee';
+              })()}
             </p>
           </div>
         </div>

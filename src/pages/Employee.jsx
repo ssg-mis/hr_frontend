@@ -2,13 +2,89 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Search, Users, UserCheck, UserMinus, Briefcase, Phone, Mail,
-  Calendar, Building2, Hash, Eye, X, RefreshCw, ChevronLeft, ChevronRight,
+  Calendar, Building2, Hash, Eye, X, RefreshCw, ChevronLeft, ChevronRight, Download, FileSpreadsheet,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { api } from '../lib/api';
 
 /* ─── helpers ─────────────────────────────────────────────────────── */
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+const fmtGender = (g) => {
+  if (!g) return '—';
+  const trimmed = String(g).trim().toUpperCase();
+  if (trimmed === 'M' || trimmed === 'MALE') return 'Male';
+  if (trimmed === 'F' || trimmed === 'FEMALE') return 'Female';
+  return String(g).trim();
+};
+
+const fmtBloodGroup = (bg) => {
+  if (!bg) return '—';
+  const val = String(bg).trim().toUpperCase();
+  // 'UK' means Unknown in source HRMS
+  if (val === 'UK' || val === 'UNKNOWN' || val === 'U') return '—';
+  // Numeric noise from bad CSV offsets
+  if (!isNaN(Number(val))) return '—';
+  // Long numbers are likely mislinked data (e.g. Aadhar number in wrong column)
+  if (val.length > 10) return '—';
+  return bg.trim();
+};
+
+const CAT_MAP = {
+  EM: 'Employee (EM)',
+  WOR: 'Worker (WOR)',
+  ST: 'Staff (ST)',
+  SO: 'Security Officer (SO)',
+  OH: 'Office Helper (OH)',
+  SF: 'Staff (SF)',
+  SA: 'Staff Admin (SA)',
+  SG: 'Security Guard (SG)',
+  WC: 'Worker Contract (WC)',
+  GARD: 'Gardener (GARD)',
+};
+
+const getNameDisplay = (emp) => {
+  if (!emp) return '—';
+  const name = String(emp.candidateName || '').trim();
+  const code = String(emp.employeeCode || emp.biometricEmployeeCode || '').trim();
+  const isInvalid = !name || name === code || name.toLowerCase() === 'name' || !isNaN(Number(name));
+
+  if (isInvalid) {
+    const constructed = [emp.firstName, emp.middleName, emp.lastName]
+      .filter((s) => Boolean(s && String(s).trim()))
+      .join(' ')
+      .trim();
+    if (constructed && constructed !== code && constructed.toLowerCase() !== 'name') {
+      return constructed;
+    }
+  }
+  return name || code || '—';
+};
+
+const getDeptDisplay = (emp) => {
+  if (!emp) return '—';
+  if (emp.departmentName) return emp.departmentName;
+  if (emp.deptCodeFromCsv) return `Dept ${emp.deptCodeFromCsv}`;
+  return '—';
+};
+
+const getDesgDisplay = (emp) => {
+  if (!emp) return '—';
+  if (emp.applyingForPost) return emp.applyingForPost;
+  if (emp.desgCodeFromCsv) return `Desg ${emp.desgCodeFromCsv}`;
+  return '—';
+};
+
+const getSalaryDisplay = (emp) => {
+  if (!emp) return '₹0.00';
+  const basicVal = emp.basicSalary ? parseFloat(emp.basicSalary) : 0;
+  const baseVal = emp.baseSalary ? parseFloat(emp.baseSalary) : 0;
+  const finalVal = basicVal > 0 ? basicVal : (baseVal > 0 ? baseVal : 0);
+  return finalVal > 0
+    ? `₹${finalVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '₹0.00';
+};
 
 const statusBadge = (status) => {
   const map = {
@@ -24,11 +100,25 @@ const statusBadge = (status) => {
   );
 };
 
-const Avatar = ({ name, size = 'md' }) => {
+const Avatar = ({ name, src, size = 'md' }) => {
   const initials = (name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
   const colors = ['bg-violet-500', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-cyan-500', 'bg-indigo-500'];
   const color = colors[(name || '').charCodeAt(0) % colors.length];
   const sz = size === 'lg' ? 'w-14 h-14 text-lg' : 'w-9 h-9 text-sm';
+  
+  const [imgErr, setImgErr] = useState(false);
+
+  if (src && !imgErr) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        onError={() => setImgErr(true)}
+        className={`${sz} rounded-full object-cover border border-white/20 shrink-0`}
+      />
+    );
+  }
+
   return (
     <div className={`${sz} rounded-full ${color} flex items-center justify-center text-white font-bold shrink-0`}>
       {initials}
@@ -54,21 +144,47 @@ const StatCard = ({ icon: Icon, label, value, color, sub }) => (
 const DetailModal = ({ employee, onClose }) => {
   if (!employee) return null;
 
+  const empCode = employee.employeeCode || employee.biometricEmployeeCode || '—';
+
   const fields = [
-    { label: 'Employee Code', value: employee.employeeCode, icon: Hash },
-    { label: 'Full Name', value: employee.candidateName, icon: Users },
-    { label: 'Department', value: employee.departmentName, icon: Building2 },
-    { label: 'Designation', value: employee.applyingForPost, icon: Briefcase },
+    { label: 'Employee Code', value: empCode, icon: Hash },
+    { label: 'Full Name', value: getNameDisplay(employee), icon: Users },
+    { label: 'Father\'s Name', value: employee.fatherName, icon: Users },
+    { label: 'Gender', value: fmtGender(employee.gender), icon: null },
+    { label: 'Blood Group', value: fmtBloodGroup(employee.bloodGroup), icon: null },
+    { label: 'Date of Birth', value: fmtDate(employee.dob), icon: Calendar },
+    { label: 'Marital Status', value: employee.maritalStatus || '—', icon: null },
+    { label: 'Qualification', value: employee.qualification, icon: Briefcase },
+    { label: 'Company Branch', value: employee.branchName ? `${employee.branchName}${employee.branchAddress ? ` (${employee.branchAddress})` : ''}` : '—', icon: Building2 },
+    { label: 'Department', value: getDeptDisplay(employee), icon: Building2 },
+    { label: 'Dept Code (CSV)', value: employee.deptCodeFromCsv, icon: Hash },
+    { label: 'Designation', value: getDesgDisplay(employee), icon: Briefcase },
+    { label: 'Desg Code (CSV)', value: employee.desgCodeFromCsv, icon: Hash },
+    { label: 'Category', value: employee.catCodeFromCsv ? (CAT_MAP[employee.catCodeFromCsv] || employee.catCodeFromCsv) : '—', icon: Hash },
+    { label: 'Grade Code (CSV)', value: employee.gradeCodeFromCsv, icon: Hash },
+    { label: 'Site Code (CSV)', value: employee.siteCodeFromCsv, icon: Hash },
+    { label: 'Division Code (CSV)', value: employee.divisionCodeFromCsv, icon: Hash },
+    { label: 'Shift Code (CSV)', value: employee.shiftCodeFromCsv, icon: Hash },
+    { label: 'Bank Code (CSV)', value: employee.bankCodeFromCsv, icon: Hash },
     { label: 'Phone', value: employee.candidatePhone, icon: Phone },
     { label: 'Email', value: employee.candidateEmail, icon: Mail },
-    { label: 'Date of Birth', value: fmtDate(employee.dob), icon: Calendar },
-    { label: 'Marital Status', value: employee.maritalStatus, icon: null },
     { label: 'Present Address', value: employee.presentAddress, icon: null },
+    { label: 'Correspondence Address', value: employee.corrAddress, icon: null },
     { label: 'Aadhar No.', value: employee.aadharNo, icon: Hash },
+    { label: 'PAN No.', value: employee.panNo, icon: Hash },
+    { label: 'Voter ID No.', value: employee.voterIdNo, icon: Hash },
+    { label: 'Ration Card No.', value: employee.rashanCardNo, icon: Hash },
+    { label: 'Driving License No.', value: employee.drivingLicenseNo, icon: Hash },
+    { label: 'Enrolment No.', value: employee.enrolmentNumber, icon: Hash },
     { label: 'Date of Joining', value: fmtDate(employee.joiningDate), icon: Calendar },
-    { label: 'Base Salary', value: employee.baseSalary ? `₹${Number(employee.baseSalary).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹0.00', icon: null },
-    { label: 'Allowance Salary', value: employee.allowanceSalary ? `₹${Number(employee.allowanceSalary).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹0.00', icon: null },
-    { label: 'Vacancy No.', value: employee.vacancyNumber, icon: Hash },
+    { label: 'Confirmation Date', value: fmtDate(employee.confirmDate), icon: Calendar },
+    { label: 'Left Date', value: fmtDate(employee.leftDate), icon: Calendar },
+    { label: 'Basic Salary', value: getSalaryDisplay(employee), icon: null },
+    { label: 'Pay Mode', value: employee.payMode, icon: null },
+    { label: 'Bank Account No.', value: employee.bankAccountNo, icon: Hash },
+    { label: 'IFSC Code', value: employee.ifscCode, icon: Hash },
+    { label: 'PF No. / UAN', value: employee.pfNo, icon: Hash },
+    { label: 'ESIC No.', value: employee.esicNo, icon: Hash },
     { label: 'Status', value: employee.status, icon: UserCheck, isStatus: true },
     { label: 'Joining Remark', value: employee.joiningRemark, icon: null },
   ];
@@ -82,10 +198,10 @@ const DetailModal = ({ employee, onClose }) => {
         {/* Modal header */}
         <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Avatar name={employee.candidateName} size="lg" />
+            <Avatar name={getNameDisplay(employee)} src={employee.candidatePhoto} size="lg" />
             <div>
-              <h3 className="text-white font-bold text-base leading-tight">{employee.candidateName}</h3>
-              <p className="text-indigo-200 text-xs mt-0.5">{employee.employeeCode}</p>
+              <h3 className="text-white font-bold text-base leading-tight">{getNameDisplay(employee)}</h3>
+              <p className="text-indigo-200 text-xs mt-0.5">{empCode}</p>
               <div className="mt-1">{statusBadge(employee.status)}</div>
             </div>
           </div>
@@ -113,6 +229,103 @@ const DetailModal = ({ employee, onClose }) => {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Uploaded Documents */}
+          <div className="mt-6 pt-6 border-t border-gray-150">
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Employee Documents</h4>
+            <div className="grid grid-cols-1 gap-2">
+              {[
+                { label: 'Passport Photo', value: employee.candidatePhoto },
+                { label: 'Resume', value: employee.candidateResume },
+                { label: 'Experience Letter', value: employee.experienceLetter },
+                { label: 'Salary Slip', value: employee.salarySlip },
+                { label: 'Relieving Letter', value: employee.relievingLetter },
+                { label: 'Bank Statement', value: employee.bankStatement },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex items-center justify-between p-2 rounded-lg border border-gray-100 bg-gray-50 text-xs">
+                  <span className="font-semibold text-gray-600">{label}</span>
+                  {value ? (
+                    <a
+                      href={value}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-indigo-600 hover:text-indigo-855 font-bold hover:underline"
+                    >
+                      View Document
+                    </a>
+                  ) : (
+                    <span className="text-gray-400">Not provided</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Canteen QR Code for HR access */}
+          <div className="mt-6 pt-6 border-t border-gray-150 flex flex-col items-center">
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Employee Canteen QR Code</h4>
+            <div className="bg-white p-3 border border-gray-200 rounded-2xl shadow-sm relative group">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(employee.employeeCode)}`}
+                alt="Employee QR Code"
+                className="w-36 h-36 object-contain"
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-2 font-mono">{employee.employeeCode}</p>
+            <button
+              onClick={() => {
+                const printWindow = window.open("", "_blank");
+                if (printWindow) {
+                  printWindow.document.write(`
+                    <html>
+                      <head>
+                        <title>Canteen QR - ${employee.candidateName}</title>
+                        <style>
+                          body {
+                            font-family: sans-serif;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            justify-content: center;
+                            height: 100vh;
+                            margin: 0;
+                            text-align: center;
+                          }
+                          .card {
+                            border: 2px solid #e2e8f0;
+                            border-radius: 16px;
+                            padding: 24px;
+                            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+                          }
+                          h2 { margin: 0 0 8px 0; color: #1e293b; }
+                          p { margin: 0 0 16px 0; color: #64748b; font-size: 14px; font-weight: bold; }
+                          .code { font-family: monospace; font-size: 16px; color: #4f46e5; margin-top: 8px; }
+                        </style>
+                      </head>
+                      <body>
+                        <div class="card">
+                          <h2>${employee.candidateName}</h2>
+                          <p>${employee.applyingForPost || "Employee"}</p>
+                          <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(employee.employeeCode)}" />
+                          <div class="code">${employee.employeeCode}</div>
+                        </div>
+                        <script>
+                          window.onload = function() {
+                            window.print();
+                            setTimeout(function() { window.close(); }, 500);
+                          };
+                        </script>
+                      </body>
+                    </html>
+                  `);
+                  printWindow.document.close();
+                }
+              }}
+              className="mt-3 px-4 py-2 border border-indigo-250 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+            >
+              Print QR Badge
+            </button>
           </div>
         </div>
 
@@ -143,6 +356,8 @@ const TAB_CONFIG = [
 const Employee = () => {
   const [activeTab, setActiveTab] = useState('Active');
   const [searchTerm, setSearchTerm] = useState('');
+  const [companies, setCompanies] = useState([]);
+  const [selectedCompany, setSelectedCompany] = useState('All');
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState({ Active: 0, Pending: 0, Relieved: 0 });
   const [loading, setLoading] = useState(false);
@@ -150,7 +365,143 @@ const Employee = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [selected, setSelected] = useState(null);
+  const [exporting, setExporting] = useState(false);
   const isFirstRun = React.useRef(true);
+
+  // Fetch company branches for dropdown filter
+  useEffect(() => {
+    api.get('/company-branches').then(res => {
+      const list = res.data || [];
+      setCompanies(list);
+    }).catch(err => {
+      console.error("Failed to load company branches", err);
+    });
+  }, []);
+
+  const handleExportExcel = async () => {
+    setExporting(true);
+    try {
+      const res = await api.get(`/employees?status=${activeTab}`);
+      let list = res.data || [];
+
+      if (selectedCompany && selectedCompany !== 'All') {
+        list = list.filter(e => String(e.branchId) === String(selectedCompany) || e.branchName === selectedCompany);
+      }
+
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase();
+        list = list.filter(e =>
+          (e.candidateName || '').toLowerCase().includes(q) ||
+          (e.employeeCode || e.biometricEmployeeCode || '').toLowerCase().includes(q) ||
+          (e.candidatePhone || '').toLowerCase().includes(q) ||
+          (e.candidateEmail || '').toLowerCase().includes(q) ||
+          (e.applyingForPost || '').toLowerCase().includes(q) ||
+          (e.departmentName || '').toLowerCase().includes(q) ||
+          (e.branchName || '').toLowerCase().includes(q) ||
+          (e.deptCodeFromCsv || '').toLowerCase().includes(q) ||
+          (e.desgCodeFromCsv || '').toLowerCase().includes(q) ||
+          (e.fatherName || '').toLowerCase().includes(q) ||
+          (e.panNo || '').toLowerCase().includes(q) ||
+          (e.aadharNo || '').toLowerCase().includes(q) ||
+          (e.pfNo || '').toLowerCase().includes(q)
+        );
+      }
+
+      if (list.length === 0) {
+        toast.error('No employee records available to export.');
+        return;
+      }
+
+      const headers = [
+        'Employee Code', 'Full Name', "Father's Name", 'Gender', 'Blood Group', 'Date of Birth',
+        'Marital Status', 'Qualification', 'Branch Name', 'Branch Address', 'Department', 'Dept Code (CSV)',
+        'Designation', 'Desg Code (CSV)', 'Category', 'Grade Code', 'Site Code', 'Division Code',
+        'Shift Code', 'Bank Code', 'Phone', 'Email', 'Present Address', 'Correspondence Address',
+        'Aadhar No', 'PAN No', 'Voter ID No', 'Ration Card No', 'Driving License No', 'Enrolment No',
+        'Date of Joining', 'Confirmation Date', 'Left Date', 'Basic Salary', 'Pay Mode',
+        'Bank Account No', 'IFSC Code', 'PF No / UAN', 'ESIC No', 'Status', 'Joining Remark'
+      ];
+
+      const escapeCell = (val) => {
+        if (val === null || val === undefined) return '""';
+        const str = String(val).replace(/"/g, '""');
+        return `"${str}"`;
+      };
+
+      const rowsCsv = [headers.map(escapeCell).join(',')];
+
+      list.forEach(emp => {
+        const code = emp.employeeCode || emp.biometricEmployeeCode || '—';
+        const name = getNameDisplay(emp);
+        const fName = emp.fatherName || '—';
+        const gender = fmtGender(emp.gender);
+        const blood = fmtBloodGroup(emp.bloodGroup);
+        const dob = fmtDate(emp.dob);
+        const marital = emp.maritalStatus || '—';
+        const qual = emp.qualification || '—';
+        const branch = emp.branchName || '—';
+        const branchAddr = emp.branchAddress || '—';
+        const dept = getDeptDisplay(emp);
+        const deptCsv = emp.deptCodeFromCsv || '—';
+        const desg = getDesgDisplay(emp);
+        const desgCsv = emp.desgCodeFromCsv || '—';
+        const cat = emp.catCodeFromCsv ? (CAT_MAP[emp.catCodeFromCsv] || emp.catCodeFromCsv) : '—';
+        const grade = emp.gradeCodeFromCsv || '—';
+        const site = emp.siteCodeFromCsv || '—';
+        const div = emp.divisionCodeFromCsv || '—';
+        const shift = emp.shiftCodeFromCsv || '—';
+        const bankCode = emp.bankCodeFromCsv || '—';
+        const phone = emp.candidatePhone || '—';
+        const email = emp.candidateEmail || '—';
+        const pAddr = emp.presentAddress || '—';
+        const cAddr = emp.corrAddress || '—';
+        const aadhar = emp.aadharNo || '—';
+        const pan = emp.panNo || '—';
+        const voter = emp.voterIdNo || '—';
+        const ration = emp.rashanCardNo || '—';
+        const dl = emp.drivingLicenseNo || '—';
+        const enrolment = emp.enrolmentNumber || '—';
+        const doj = fmtDate(emp.joiningDate);
+        const doc = fmtDate(emp.confirmDate);
+        const dol = fmtDate(emp.leftDate);
+        const sal = getSalaryDisplay(emp);
+        const payMode = emp.payMode || '—';
+        const bankAcc = emp.bankAccountNo || '—';
+        const ifsc = emp.ifscCode || '—';
+        const pf = emp.pfNo || '—';
+        const esic = emp.esicNo || '—';
+        const status = emp.status || '—';
+        const remark = emp.joiningRemark || '—';
+
+        rowsCsv.push([
+          code, name, fName, gender, blood, dob,
+          marital, qual, branch, branchAddr, dept, deptCsv,
+          desg, desgCsv, cat, grade, site, div,
+          shift, bankCode, phone, email, pAddr, cAddr,
+          aadhar, pan, voter, ration, dl, enrolment,
+          doj, doc, dol, sal, payMode,
+          bankAcc, ifsc, pf, esic, status, remark
+        ].map(escapeCell).join(','));
+      });
+
+      const bom = '\uFEFF';
+      const blob = new Blob([bom + rowsCsv.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Employee_Database_${activeTab}_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${list.length} employee records to Excel!`);
+    } catch (err) {
+      console.error('Export Excel error:', err);
+      toast.error('Failed to export employee data.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   /* fetch counts for all statuses once */
   const fetchStats = useCallback(async () => {
@@ -166,21 +517,32 @@ const Employee = () => {
   }, []);
 
   /* fetch + filter for the current tab */
-  const fetchList = useCallback(async (pg = 1, tab = activeTab, search = searchTerm) => {
+  const fetchList = useCallback(async (pg = 1, tab = activeTab, search = searchTerm, company = selectedCompany) => {
     setLoading(true);
     try {
       const res = await api.get(`/employees?status=${tab}`);
       let list = res.data || [];
 
+      if (company && company !== 'All') {
+        list = list.filter(e => String(e.branchId) === String(company) || e.branchName === company);
+      }
+
       if (search.trim()) {
         const q = search.toLowerCase();
         list = list.filter(e =>
           (e.candidateName || '').toLowerCase().includes(q) ||
-          (e.employeeCode || '').toLowerCase().includes(q) ||
+          (e.employeeCode || e.biometricEmployeeCode || '').toLowerCase().includes(q) ||
           (e.candidatePhone || '').toLowerCase().includes(q) ||
           (e.candidateEmail || '').toLowerCase().includes(q) ||
           (e.applyingForPost || '').toLowerCase().includes(q) ||
-          (e.departmentName || '').toLowerCase().includes(q)
+          (e.departmentName || '').toLowerCase().includes(q) ||
+          (e.branchName || '').toLowerCase().includes(q) ||
+          (e.deptCodeFromCsv || '').toLowerCase().includes(q) ||
+          (e.desgCodeFromCsv || '').toLowerCase().includes(q) ||
+          (e.fatherName || '').toLowerCase().includes(q) ||
+          (e.panNo || '').toLowerCase().includes(q) ||
+          (e.aadharNo || '').toLowerCase().includes(q) ||
+          (e.pfNo || '').toLowerCase().includes(q)
         );
       }
 
@@ -193,27 +555,27 @@ const Employee = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, searchTerm]);
+  }, [activeTab, searchTerm, selectedCompany]);
 
   useEffect(() => {
     setPage(1);
-    fetchList(1, activeTab, searchTerm);
+    fetchList(1, activeTab, searchTerm, selectedCompany);
     fetchStats();
-  }, [activeTab]);
+  }, [activeTab, selectedCompany]);
 
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false;
       return;
     }
-    const t = setTimeout(() => { setPage(1); fetchList(1, activeTab, searchTerm); }, 350);
+    const t = setTimeout(() => { setPage(1); fetchList(1, activeTab, searchTerm, selectedCompany); }, 350);
     return () => clearTimeout(t);
   }, [searchTerm]);
 
   const goPage = (p) => {
     if (p < 1 || p > totalPages) return;
     setPage(p);
-    fetchList(p, activeTab, searchTerm);
+    fetchList(p, activeTab, searchTerm, selectedCompany);
   };
 
   return (
@@ -227,12 +589,22 @@ const Employee = () => {
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">Manage and view all company employees</p>
         </div>
-        <button
-          onClick={() => { fetchList(page); fetchStats(); }}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 shadow-sm transition-colors"
-        >
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={handleExportExcel}
+            disabled={exporting}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download size={15} className={exporting ? 'animate-bounce' : ''} />
+            <span>{exporting ? 'Exporting...' : 'Export Excel'}</span>
+          </button>
+          <button
+            onClick={() => { fetchList(page, activeTab, searchTerm, selectedCompany); fetchStats(); }}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 shadow-sm transition-colors cursor-pointer"
+          >
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* ── Stats — only Working + Resignation Requested ─── */}
@@ -258,25 +630,44 @@ const Employee = () => {
 
         {/* Toolbar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-gray-200">
-          {/* Tabs */}
-          <nav className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-            {TAB_CONFIG.map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key)}
-                className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${activeTab === key
-                    ? 'bg-white text-indigo-700 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                  }`}
+          {/* Tabs + Company Dropdown Filter */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <nav className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+              {TAB_CONFIG.map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all whitespace-nowrap ${activeTab === key
+                      ? 'bg-white text-indigo-700 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                >
+                  {label}
+                  <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${activeTab === key ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 text-gray-500'
+                    }`}>
+                    {stats[key]}
+                  </span>
+                </button>
+              ))}
+            </nav>
+
+            {/* Company Dropdown Filter */}
+            <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+              <span className="text-xs font-semibold text-gray-500 pl-2">Company:</span>
+              <select
+                value={selectedCompany}
+                onChange={(e) => setSelectedCompany(e.target.value)}
+                className="bg-white border border-gray-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer max-w-[210px] truncate"
               >
-                {label}
-                <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${activeTab === key ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 text-gray-500'
-                  }`}>
-                  {stats[key]}
-                </span>
-              </button>
-            ))}
-          </nav>
+                <option value="All">All Companies</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
           {/* Search */}
           <div className="relative w-full sm:w-72">
@@ -340,17 +731,17 @@ const Employee = () => {
                   <tr key={emp.id} className="hover:bg-indigo-50/30 transition-colors group">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
-                        <Avatar name={emp.candidateName} />
-                        <span className="font-semibold text-gray-900">{emp.candidateName}</span>
+                        <Avatar name={getNameDisplay(emp)} src={emp.candidatePhoto} />
+                        <span className="font-semibold text-gray-900">{getNameDisplay(emp)}</span>
                       </div>
                     </td>
                     <td className="px-1 py-1">
                       <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
-                        {emp.employeeCode}
+                        {emp.employeeCode || emp.biometricEmployeeCode}
                       </span>
                     </td>
-                    <td className="px-5 py-3.5 text-gray-600">{emp.departmentName || '—'}</td>
-                    <td className="px-5 py-3.5 text-gray-600">{emp.applyingForPost || '—'}</td>
+                    <td className="px-5 py-3.5 text-gray-600">{getDeptDisplay(emp)}</td>
+                    <td className="px-5 py-3.5 text-gray-600">{getDesgDisplay(emp)}</td>
                     <td className="px-5 py-3.5 text-gray-600 font-mono text-xs">{emp.candidatePhone}</td>
                     <td className="px-5 py-3.5 text-gray-500 text-xs max-w-[160px] truncate" title={emp.candidateEmail}>
                       {emp.candidateEmail || '—'}

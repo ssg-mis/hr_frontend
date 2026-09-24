@@ -4,6 +4,7 @@ import { Search, ClipboardCheck, CheckCircle, X, UserX, AlertCircle, Check, Load
 import toast from 'react-hot-toast';
 import { resignationApi } from '../features/resignation/resignation.api';
 import { employeeApi } from '../features/employee/employee.api';
+import useAuthStore from '../store/authStore';
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
 
@@ -11,13 +12,16 @@ const stageBadge = (stage) => {
   const style = {
     Left: 'bg-red-50 text-red-700 border border-red-200',
     Clearance: 'bg-purple-50 text-purple-700 border border-purple-200',
-    Settlement: 'bg-amber-50 text-amber-700 border border-amber-200',
+    Settlement: 'bg-amber-55 text-amber-800 border border-amber-200',
     Relieved: 'bg-green-50 text-green-700 border border-green-200',
   }[stage] || 'bg-gray-50 text-gray-700 border border-gray-200';
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${style}`}>{stage}</span>;
 };
 
 const Leaving = () => {
+  const { user, isHOD, isHR, isAdmin } = useAuthStore();
+  const isPureHOD = isHOD && !isHR && !isAdmin;
+
   const [activeTab, setActiveTab] = useState('pending');
   const [searchTerm, setSearchTerm] = useState('');
   const [rows, setRows] = useState([]);
@@ -64,6 +68,7 @@ const Leaving = () => {
       departmentClearance: !!savedChecklist.departmentClearance,
       handover: !!savedChecklist.handover,
       handoverEmployeeId: savedChecklist.handoverEmployeeId || '',
+      handoverStatus: savedChecklist.handoverStatus || 'Not Prompted',
     });
     setClearanceRemark(row.clearanceRemark || '');
   };
@@ -73,7 +78,7 @@ const Leaving = () => {
       ...prev,
       [field]: !prev[field],
       // If unchecking handover, clear the employee ID
-      ...(field === 'handover' && prev.handover ? { handoverEmployeeId: '' } : {}),
+      ...(field === 'handover' && prev.handover ? { handoverEmployeeId: '', handoverStatus: 'Not Prompted' } : {}),
     }));
   };
 
@@ -81,12 +86,68 @@ const Leaving = () => {
     setChecklist((prev) => ({
       ...prev,
       handoverEmployeeId: e.target.value,
+      handoverStatus: e.target.value === 'none' ? 'Approved' : 'Not Prompted',
+      handover: e.target.value === 'none',
     }));
   };
 
+  const promptHOD = async () => {
+    if (!checklist.handoverEmployeeId) {
+      toast.error('Please select an employee first');
+      return;
+    }
+    if (!selectedRow) return;
+
+    setSubmitting(true);
+    try {
+      const handoverEmp = allEmployees.find(emp => String(emp.id) === String(checklist.handoverEmployeeId));
+      const updatedChecklist = {
+        ...checklist,
+        handoverStatus: 'Pending HOD',
+        handover: false,
+        handoverEmployeeName: handoverEmp ? handoverEmp.candidateName : (checklist.handoverEmployeeId === 'none' ? 'No task handover needed' : ''),
+        handoverEmployeeCode: handoverEmp ? handoverEmp.employeeCode : '',
+      };
+
+      await resignationApi.update(selectedRow.id, {
+        stage: 'Clearance',
+        clearanceChecklist: updatedChecklist,
+        clearanceRemark: clearanceRemark || null,
+      });
+
+      setChecklist(updatedChecklist);
+      toast.success('Task handover request sent to HOD!');
+      loadData();
+    } catch (err) {
+      toast.error(err.message || 'Failed to request HOD confirmation');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleConfirmHandover = async (row, isDone) => {
+    try {
+      const currentChecklist = row.clearanceChecklist || {};
+      const updatedChecklist = {
+        ...currentChecklist,
+        handover: isDone,
+        handoverStatus: isDone ? 'Approved' : 'Rejected',
+      };
+      
+      await resignationApi.update(row.id, {
+        clearanceChecklist: updatedChecklist,
+      });
+
+      toast.success(isDone ? 'Task handover approved!' : 'Task handover marked as rejected.');
+      loadData();
+    } catch (err) {
+      toast.error(err.message || 'Failed to update task handover');
+    }
+  };
+
   const saveClearance = async (isComplete = false) => {
-    if (checklist.handover && !checklist.handoverEmployeeId) {
-      toast.error('Please select an employee for task handover');
+    if (isComplete && checklist.handoverStatus !== 'Approved') {
+      toast.error('Cannot complete clearance until Task Handover is approved by HOD');
       return;
     }
 
@@ -118,14 +179,23 @@ const Leaving = () => {
     }
   };
 
-  // Filter rows based on tab
-  // Pending Clearance: Left, Clearance
-  // Cleared History: Settlement, Relieved
-  const visibleRows = rows.filter((r) =>
-    activeTab === 'pending'
-      ? ['Left', 'Clearance'].includes(r.stage)
-      : ['Settlement', 'Relieved'].includes(r.stage)
-  );
+  // Filter rows:
+  // Pending Clearance: Left, Clearance or handoverStatus !== 'Approved'
+  // Cleared History: Settlement, Relieved AND handoverStatus === 'Approved'
+  const visibleRows = rows.filter((r) => {
+    const cl = r.clearanceChecklist || {};
+    const isHandoverApproved = cl.handoverStatus === 'Approved' || cl.handover === true;
+
+    if (isPureHOD || user?.role === 'hod') {
+      return ['Left', 'Clearance'].includes(r.stage) || !isHandoverApproved;
+    }
+
+    if (activeTab === 'pending') {
+      return ['Left', 'Clearance'].includes(r.stage) || !isHandoverApproved;
+    } else {
+      return ['Settlement', 'Relieved'].includes(r.stage) && isHandoverApproved;
+    }
+  });
 
   const leftEmployeeIds = new Set(
     rows
@@ -143,7 +213,7 @@ const Leaving = () => {
       )
     : [];
 
-  const isFormFullyChecked = checklist.assetClearance && checklist.departmentClearance && checklist.handover && checklist.handoverEmployeeId;
+  const isFormFullyChecked = checklist.assetClearance && checklist.departmentClearance && checklist.handoverStatus === 'Approved';
 
   return (
     <div className="space-y-6 page-content p-6 max-w-7xl mx-auto">
@@ -155,8 +225,14 @@ const Leaving = () => {
               <ClipboardCheck className="h-6 w-6" />
             </div>
             <div>
-              <h2 className="text-lg font-bold tracking-tight text-gray-900">Exit Clearance</h2>
-              <p className="mt-0.5 text-sm text-gray-500">Asset clearance, Department Clearance and Task Handover management</p>
+              <h2 className="text-lg font-bold tracking-tight text-gray-900">
+                {isPureHOD || user?.role === 'hod' ? 'Task Handover Approvals' : 'Exit Clearance'}
+              </h2>
+              <p className="mt-0.5 text-sm text-gray-500">
+                {isPureHOD || user?.role === 'hod'
+                  ? 'Confirm task handover completion for department employees'
+                  : 'Asset clearance, Department Clearance and Task Handover management'}
+              </p>
             </div>
           </div>
         </div>
@@ -191,19 +267,31 @@ const Leaving = () => {
               onClick={() => setActiveTab('pending')}
             >
               <UserX size={16} className="inline mr-2" />
-              Pending Clearance ({rows.filter((r) => ['Left', 'Clearance'].includes(r.stage)).length})
+              {isPureHOD || user?.role === 'hod' ? 'Task Handover Approvals' : 'Pending Clearance'} ({
+                rows.filter((r) => {
+                  const cl = r.clearanceChecklist || {};
+                  return ['Left', 'Clearance'].includes(r.stage) || (cl.handoverStatus !== 'Approved' && !cl.handover);
+                }).length
+              })
             </button>
-            <button
-              className={`py-4 px-6 font-medium text-sm border-b-2 transition-colors ${
-                activeTab === 'cleared'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-              onClick={() => setActiveTab('cleared')}
-            >
-              <CheckCircle size={16} className="inline mr-2" />
-              Cleared ({rows.filter((r) => ['Settlement', 'Relieved'].includes(r.stage)).length})
-            </button>
+            {!isPureHOD && user?.role !== 'hod' && (
+              <button
+                className={`py-4 px-6 font-medium text-sm border-b-2 transition-colors ${
+                  activeTab === 'cleared'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+                onClick={() => setActiveTab('cleared')}
+              >
+                <CheckCircle size={16} className="inline mr-2" />
+                Cleared ({
+                  rows.filter((r) => {
+                    const cl = r.clearanceChecklist || {};
+                    return ['Settlement', 'Relieved'].includes(r.stage) && (cl.handoverStatus === 'Approved' || cl.handover);
+                  }).length
+                })
+              </button>
+            )}
           </nav>
         </div>
 
@@ -214,15 +302,25 @@ const Leaving = () => {
                 <th className="px-6 py-3 text-left">Employee</th>
                 <th className="px-6 py-3 text-left">Designation</th>
                 <th className="px-6 py-3 text-left">Last Working Day</th>
-                <th className="px-6 py-3 text-left">Stage</th>
-                <th className="px-6 py-3 text-left">Clearance Progress</th>
-                <th className="px-6 py-3 text-center">Action</th>
+                {isPureHOD || user?.role === 'hod' ? (
+                  <>
+                    <th className="px-6 py-3 text-left">Handover Assigned To</th>
+                    <th className="px-6 py-3 text-left">Handover Status</th>
+                    <th className="px-6 py-3 text-center">Confirm Handover Done?</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="px-6 py-3 text-left">Stage</th>
+                    <th className="px-6 py-3 text-left">Clearance Progress</th>
+                    <th className="px-6 py-3 text-center">Action</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={user?.role === 'hod' ? 6 : 6} className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center space-y-2">
                       <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
                       <span className="text-sm font-semibold">Loading data...</span>
@@ -231,7 +329,7 @@ const Leaving = () => {
                 </tr>
               ) : visibleRows.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-16 text-center text-gray-400 text-sm">
+                  <td colSpan={user?.role === 'hod' ? 6 : 6} className="px-6 py-16 text-center text-gray-400 text-sm">
                     {activeTab === 'pending' ? 'No pending clearances found.' : 'No completed clearances found.'}
                   </td>
                 </tr>
@@ -247,33 +345,73 @@ const Leaving = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-800">{row.applyingForPost || '—'}</div>
-                        <div className="text-xs text-gray-400">{row.vacancyNumber}</div>
+                        {user?.role !== 'hod' && <div className="text-xs text-gray-400">{row.vacancyNumber}</div>}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-gray-600">{fmtDate(row.lastWorkingDay)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">{stageBadge(row.stage)}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <div className="w-24 bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
-                              style={{ width: `${(doneCount / 3) * 100}%` }}
-                            />
-                          </div>
-                          <span className="text-xs font-semibold text-gray-600">{doneCount} / 3 Tasks</span>
-                        </div>
-                        {checklist.handoverEmployeeName && (
-                          <div className="text-xs text-indigo-600 mt-1">Handover to: {checklist.handoverEmployeeName}</div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <button
-                          onClick={() => openClearanceModal(row)}
-                          className="inline-flex items-center gap-1 px-4 py-2 border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-semibold rounded-xl text-xs transition-colors"
-                        >
-                          <ClipboardCheck size={13} />
-                          {activeTab === 'pending' ? 'Process Clearance' : 'View Clearance'}
-                        </button>
-                      </td>
+                      {isPureHOD || user?.role === 'hod' ? (
+                        <>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                            {checklist.handoverEmployeeName || '—'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`text-xs font-semibold inline-flex px-2 py-0.5 rounded-full ${
+                              checklist.handoverStatus === 'Approved' ? 'bg-green-50 border border-green-200 text-green-700' :
+                              checklist.handoverStatus === 'Rejected' ? 'bg-red-50 border border-red-200 text-red-700' :
+                              checklist.handoverStatus === 'Pending HOD' ? 'bg-amber-50 border border-amber-200 text-amber-700' :
+                              'bg-gray-50 border border-gray-200 text-gray-650'
+                            }`}>
+                              {checklist.handoverStatus || 'Not Prompted'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            {checklist.handoverStatus === 'Pending HOD' ? (
+                              <div className="flex justify-center gap-2">
+                                <button
+                                  onClick={() => handleConfirmHandover(row, true)}
+                                  className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white font-bold rounded text-xs transition-colors cursor-pointer"
+                                >
+                                  Yes
+                                </button>
+                                <button
+                                  onClick={() => handleConfirmHandover(row, false)}
+                                  className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white font-bold rounded text-xs transition-colors cursor-pointer"
+                                >
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400 font-semibold">—</span>
+                            )}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-6 py-4 whitespace-nowrap">{stageBadge(row.stage)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <div className="w-24 bg-gray-200 rounded-full h-2">
+                                <div
+                                  className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                                  style={{ width: `${(doneCount / 3) * 100}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-semibold text-gray-600">{doneCount} / 3 Tasks</span>
+                            </div>
+                            {checklist.handoverEmployeeName && (
+                              <div className="text-xs text-indigo-600 mt-1">Handover to: {checklist.handoverEmployeeName}</div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <button
+                              onClick={() => openClearanceModal(row)}
+                              className="inline-flex items-center gap-1 px-4 py-2 border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 font-semibold rounded-xl text-xs transition-colors"
+                            >
+                              <ClipboardCheck size={13} />
+                              {activeTab === 'pending' ? 'Process Clearance' : 'View Clearance'}
+                            </button>
+                          </td>
+                        </>
+                      )}
                     </tr>
                   );
                 })
@@ -330,28 +468,37 @@ const Leaving = () => {
 
               {/* Task Handover Checklist */}
               <div className="p-3.5 rounded-xl border border-gray-200 bg-white space-y-3">
-                <label className="flex items-start gap-3 cursor-pointer">
+                <div className="flex items-start gap-3">
                   <input
                     type="checkbox"
-                    disabled={activeTab === 'cleared'}
-                    checked={checklist.handover}
-                    onChange={() => handleCheckboxChange('handover')}
-                    className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mt-0.5"
+                    disabled
+                    checked={checklist.handoverStatus === 'Approved'}
+                    className="h-5 w-5 rounded border-gray-300 text-indigo-600 mt-0.5"
                   />
-                  <div>
-                    <span className="text-sm font-semibold text-gray-800">Task Handover Completed</span>
-                    <p className="text-xs text-gray-500 mt-0.5">Document active files, transfer responsibilities, and assign tasks to a team member.</p>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-gray-800">Task Handover Completed</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        checklist.handoverStatus === 'Approved' ? 'bg-green-100 text-green-700' :
+                        checklist.handoverStatus === 'Rejected' ? 'bg-red-100 text-red-700' :
+                        checklist.handoverStatus === 'Pending HOD' ? 'bg-amber-100 text-amber-700' :
+                        'bg-gray-105 text-gray-500'
+                      }`}>
+                        {checklist.handoverStatus || 'Not Prompted'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">Assign a team member. Task handover must be approved by their department HOD.</p>
                   </div>
-                </label>
+                </div>
 
-                {checklist.handover && (
-                  <div className="pt-2 pl-8 border-t border-gray-100">
-                    <label className="block text-xs font-semibold text-indigo-600 mb-1">Handover Employee (Same Department) *</label>
+                <div className="pt-2 pl-8 border-t border-gray-100">
+                  <label className="block text-xs font-semibold text-indigo-600 mb-1">Handover Employee (Same Department) *</label>
+                  <div className="flex gap-2">
                     <select
-                      disabled={activeTab === 'cleared'}
+                      disabled={activeTab === 'cleared' || checklist.handoverStatus === 'Approved'}
                       value={checklist.handoverEmployeeId}
                       onChange={handleEmployeeSelect}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
                       <option value="">Select an employee...</option>
                       <option value="none">No task handover needed</option>
@@ -361,13 +508,22 @@ const Leaving = () => {
                         </option>
                       ))}
                     </select>
-                    {sameDeptEmployees.length === 0 && (
-                      <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
-                        <AlertCircle size={12} /> No other active employees in this department.
-                      </p>
+                    {checklist.handoverEmployeeId && checklist.handoverEmployeeId !== 'none' && checklist.handoverStatus !== 'Approved' && checklist.handoverStatus !== 'Pending HOD' && (
+                      <button
+                        type="button"
+                        onClick={promptHOD}
+                        className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors shrink-0 cursor-pointer"
+                      >
+                        Prompt HOD
+                      </button>
                     )}
                   </div>
-                )}
+                  {sameDeptEmployees.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                      <AlertCircle size={12} /> No other active employees in this department.
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Remark */}

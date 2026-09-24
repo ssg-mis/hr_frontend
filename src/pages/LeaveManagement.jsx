@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Check, Clock, Calendar, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
+import useAuthStore from '../store/authStore';
+import { api } from '../lib/api';
 
 const LeaveManagement = () => {
+  const { user, isAdmin, isHR, isHOD } = useAuthStore();
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const userIsHOD = isHOD || userRoles.some(r => r.toLowerCase() === 'hod');
   const [searchTerm, setSearchTerm] = useState('');
   const [pendingLeaves, setPendingLeaves] = useState([]);
   const [approvedLeaves, setApprovedLeaves] = useState([]);
@@ -41,7 +46,23 @@ const LeaveManagement = () => {
     reason: ''
   });
 
-  const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
+  useEffect(() => {
+    if (employees.length > 0 && user && !isAdmin && !isHR) {
+      const selfEmp = employees.find(emp => emp.id === user.employeeId);
+      if (selfEmp) {
+        setFormData(prev => ({
+          ...prev,
+          employeeName: selfEmp.name,
+          employeeId: selfEmp.id,
+          employeeCode: selfEmp.employeeCode,
+          department: selfEmp.department,
+          departmentId: selfEmp.departmentId,
+          hodName: selfEmp.hodName
+        }));
+      }
+    }
+  }, [employees, user, isAdmin, isHR, showModal]);
+
   const isFirstRun = useRef(true);
 
   const handleCheckboxChange = (leaveId, rowData) => {
@@ -82,8 +103,7 @@ const LeaveManagement = () => {
   // Fetch employees from backend
   const fetchEmployees = async () => {
     try {
-      const response = await fetch(`${API_URL}/employees/active?all=true`);
-      const result = await response.json();
+      const result = await api.get('/employees/active?all=true');
 
       if (result.success) {
         setEmployees(result.data.map(emp => ({
@@ -103,8 +123,7 @@ const LeaveManagement = () => {
   // Fetch HODs from backend
   const fetchHods = async () => {
     try {
-      const response = await fetch(`${API_URL}/leaves/hods`);
-      const result = await response.json();
+      const result = await api.get('/leaves/hods');
       if (result.success) {
         setHods(result.data);
       }
@@ -116,8 +135,7 @@ const LeaveManagement = () => {
   // Fetch leave types from backend
   const fetchLeaveTypes = async () => {
     try {
-      const response = await fetch(`${API_URL}/leaves/policies`);
-      const result = await response.json();
+      const result = await api.get('/leaves/policies');
       if (result.success) {
         setLeaveTypes(result.data);
       }
@@ -227,29 +245,23 @@ const LeaveManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason || !formData.hodName) {
+    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason || (!userIsHOD && !formData.hodName)) {
       toast.error('Please fill all required fields');
       return;
     }
 
     try {
       setSubmitting(true);
-      const response = await fetch(`${API_URL}/leaves`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeId: formData.employeeId,
-          employeeName: formData.employeeName,
-          startDate: formData.fromDate,
-          endDate: formData.toDate,
-          remark: formData.reason,
-          leaveCode: formData.leaveCode,
-          hodName: formData.hodName,
-          departmentId: formData.departmentId
-        }),
+      const result = await api.post('/leaves', {
+        employeeId: formData.employeeId,
+        employeeName: formData.employeeName,
+        startDate: formData.fromDate,
+        endDate: formData.toDate,
+        remark: formData.reason,
+        leaveCode: formData.leaveCode,
+        hodName: userIsHOD ? 'N/A' : (formData.hodName || 'N/A'),
+        departmentId: formData.departmentId
       });
-
-      const result = await response.json();
 
       if (result.success) {
         toast.success('Leave Request submitted successfully!');
@@ -273,7 +285,7 @@ const LeaveManagement = () => {
       }
     } catch (error) {
       console.error('Insert error:', error);
-      toast.error('Something went wrong!');
+      toast.error(error.message || 'Something went wrong!');
     } finally {
       setSubmitting(false);
     }
@@ -289,15 +301,10 @@ const LeaveManagement = () => {
       else if (action === 'approve_hr') status = 'Approved';
       else if (action === 'reject') status = 'Rejected';
 
-      const response = await fetch(`${API_URL}/leaves/${item.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status
-        }),
+      const result = await api.patch(`/leaves/${item.id}`, {
+        status
       });
 
-      const result = await response.json();
       if (result.success) {
         toast.success(`Leave ${status} for ${item.employeeName}`);
         fetchLeaveData(pagination.page);
@@ -321,8 +328,7 @@ const LeaveManagement = () => {
 
     try {
       const statusParam = activeTab === 'pending' ? 'Pending' : activeTab === 'approved' ? 'Approved' : 'Rejected';
-      const response = await fetch(`${API_URL}/leaves?status=${statusParam}&page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
-      const result = await response.json();
+      const result = await api.get(`/leaves?status=${statusParam}&page=${page}&limit=${pagination.limit}&search=${encodeURIComponent(searchTerm)}`);
 
       if (!result.success) {
         throw new Error(result.message || 'Failed to fetch leave data');
@@ -372,10 +378,15 @@ const LeaveManagement = () => {
 
   useEffect(() => {
     fetchLeaveData(1);
-    fetchEmployees();
-    fetchHods();
-    fetchLeaveTypes();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (showModal) {
+      if (employees.length === 0) fetchEmployees();
+      if (hods.length === 0) fetchHods();
+      if (leaveTypes.length === 0) fetchLeaveTypes();
+    }
+  }, [showModal]);
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -459,36 +470,55 @@ const LeaveManagement = () => {
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 <div className="flex space-x-2">
                   {item.status === 'Pending HOD' && (
-                    <button
-                      onClick={() => handleLeaveAction(item, 'approve_hod')}
-                      disabled={loading}
-                      className={`px-3 py-1.5 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
-                    >
-                      {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'approve_hod' ? (
-                        <span>Approving...</span>
-                      ) : 'Approve HOD'}
-                    </button>
+                    (user?.roles?.some(r => r.toLowerCase() === 'hod') || user?.roles?.some(r => r.toLowerCase() === 'admin'))
+                    || (user?.role === 'hod' || user?.role === 'admin')
+                  ) && (
+                    <>
+                      <button
+                        onClick={() => handleLeaveAction(item, 'approve_hod')}
+                        disabled={loading}
+                        className={`px-3 py-1.5 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                      >
+                        {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'approve_hod' ? (
+                          <span>Approving...</span>
+                        ) : 'Approve HOD'}
+                      </button>
+                      <button
+                        onClick={() => handleLeaveAction(item, 'reject')}
+                        disabled={loading}
+                        className={`px-3 py-1.5 text-xs text-white bg-red-600 rounded-md hover:bg-red-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                      >
+                        {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'reject' ? (
+                          <span>Rejecting...</span>
+                        ) : 'Reject'}
+                      </button>
+                    </>
                   )}
                   {item.status === 'Pending HR' && (
-                    <button
-                      onClick={() => handleLeaveAction(item, 'approve_hr')}
-                      disabled={loading}
-                      className={`px-3 py-1.5 text-xs text-white bg-green-600 rounded-md hover:bg-green-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
-                    >
-                      {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'approve_hr' ? (
-                        <span>Approving...</span>
-                      ) : 'Approve HR'}
-                    </button>
+                    (user?.roles?.some(r => r.toLowerCase() === 'hr') || user?.roles?.some(r => r.toLowerCase() === 'admin'))
+                    || (user?.role === 'hr' || user?.role === 'admin')
+                  ) && (
+                    <>
+                      <button
+                        onClick={() => handleLeaveAction(item, 'approve_hr')}
+                        disabled={loading}
+                        className={`px-3 py-1.5 text-xs text-white bg-green-600 rounded-md hover:bg-green-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                      >
+                        {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'approve_hr' ? (
+                          <span>Approving...</span>
+                        ) : 'Approve HR'}
+                      </button>
+                      <button
+                        onClick={() => handleLeaveAction(item, 'reject')}
+                        disabled={loading}
+                        className={`px-3 py-1.5 text-xs text-white bg-red-600 rounded-md hover:bg-red-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
+                      >
+                        {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'reject' ? (
+                          <span>Rejecting...</span>
+                        ) : 'Reject'}
+                      </button>
+                    </>
                   )}
-                  <button
-                    onClick={() => handleLeaveAction(item, 'reject')}
-                    disabled={loading}
-                    className={`px-3 py-1.5 text-xs text-white bg-red-600 rounded-md hover:bg-red-700 min-h-[36px] flex items-center justify-center ${loading ? 'opacity-75 cursor-not-allowed' : ''}`}
-                  >
-                    {loading && actionInProgress?.id === item.id && actionInProgress?.action === 'reject' ? (
-                      <span>Rejecting...</span>
-                    ) : 'Reject'}
-                  </button>
                 </div>
               </td>
             </tr>
@@ -791,18 +821,28 @@ const LeaveManagement = () => {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Employee Name *</label>
-                <select
-                  name="employeeName"
-                  value={formData.employeeName}
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                >
-                  <option value="">Select Employee</option>
-                  {employees.map(employee => (
-                    <option key={employee.id} value={employee.name}>{employee.name}</option>
-                  ))}
-                </select>
+                {!isHR && !isAdmin ? (
+                  <input
+                    type="text"
+                    name="employeeName"
+                    value={formData.employeeName}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
+                    readOnly
+                  />
+                ) : (
+                  <select
+                    name="employeeName"
+                    value={formData.employeeName}
+                    onChange={handleInputChange}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  >
+                    <option value="">Select Employee</option>
+                    {employees.map(employee => (
+                      <option key={employee.id} value={employee.name}>{employee.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -827,24 +867,18 @@ const LeaveManagement = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name *</label>
-                <select
-                  name="hodName"
-                  value={formData.hodName}
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                >
-                  <option value="">Select HOD</option>
-                  {hods.map(hod => (
-                    <option key={hod.id} value={hod.name}>{hod.name}</option>
-                  ))}
-                  <option value="Dharam">Dharam</option>
-                  <option value="Pratap">Pratap</option>
-                  <option value="Aubhav">Aubhav</option>
-                </select>
-              </div>
+              {!userIsHOD && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name</label>
+                  <input
+                    type="text"
+                    name="hodName"
+                    value={formData.hodName || '—'}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
+                    readOnly
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Leave Type *</label>
