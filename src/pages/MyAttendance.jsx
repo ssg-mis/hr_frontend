@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Clock, CheckCircle, XCircle, ShieldCheck } from 'lucide-react';
+import { Calendar, CalendarOff, Clock, CheckCircle, XCircle, ShieldCheck } from 'lucide-react';
 import { api } from '../lib/api';
 import useAuthStore from '../store/authStore';
 
@@ -230,8 +230,12 @@ const MyAttendance = () => {
     });
 
   const totalDays = filteredAttendance.length;
-  const presentDays = filteredAttendance.filter(record =>
-    record.status === 'Present' || (record.In && record.In !== '' && record.In !== '-')
+  const isWorkedDay = (record) =>
+    record.status === 'Present' || (record.In && record.In !== '' && record.In !== '-');
+  // Same as the admin dashboard: days worked on a weekly off count as WO, not Present
+  const presentDays = filteredAttendance.filter(record => isWorkedDay(record) && !record.isWeeklyOff).length;
+  const weekoffDays = filteredAttendance.filter(record =>
+    record.isWeeklyOff && (record.status === 'Weekoff' || record.status === 'Leave' || record.status === 'leave' || isWorkedDay(record))
   ).length;
   const leaveDays = filteredAttendance.filter(record =>
     record.status === 'Leave' || record.status === 'leave'
@@ -339,7 +343,7 @@ const MyAttendance = () => {
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center">
             <div className="p-3 rounded-full bg-blue-100 mr-4">
@@ -372,6 +376,18 @@ const MyAttendance = () => {
             <div>
               <p className="text-sm text-gray-600 font-medium">Absent Days</p>
               <h3 className="text-2xl font-bold text-gray-800">{absentDays}</h3>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center">
+            <div className="p-3 rounded-full bg-purple-100 mr-4">
+              <CalendarOff size={24} className="text-purple-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 font-medium">Weekly Off (WO)</p>
+              <h3 className="text-2xl font-bold text-gray-800">{weekoffDays}</h3>
             </div>
           </div>
         </div>
@@ -470,6 +486,11 @@ const MyAttendance = () => {
                             }`}>
                             {status}
                           </span>
+                          {record.isWeeklyOff && status !== 'Weekoff' && (
+                            <span className="ml-1.5 inline-flex px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                              WO
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {workingHours.toFixed(1)} hrs
