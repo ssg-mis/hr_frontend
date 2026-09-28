@@ -12,36 +12,13 @@ import useAuthStore from "../store/authStore";
 import toast from "react-hot-toast";
 import { generatePayslipPDF, generateBulkPayslipsPDF } from "../lib/generatePayslipPDF";
 import PayslipPreviewModal from "../components/PayslipPreviewModal";
+import SalaryReportModal from "../components/SalaryReportModal";
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
-import allowance2026Data from "../data/allowance2026.json";
-
-// Set of employee codes with valid 2026 allowance in Master Allowance CSV
-const valid2026AllowanceCodes = new Set(allowance2026Data.validCodes || []);
-
-// Helper: Check if an employee has a valid 2026 allowance record
-const is2026AllowanceCode = (code) => {
-  if (!code) return false;
-  const str = String(code).trim();
-  const norm = str.replace(/^0+/, '');
-  return valid2026AllowanceCodes.has(str) || valid2026AllowanceCodes.has(norm);
-};
-
-// Helper: Get exact 2026 allowance rate (returns 0 if employee has no 2026 record)
-const get2026AllowanceRate = (code, periodMonth, fallback = 0) => {
-  if (!code) return 0;
-  const str = String(code).trim();
-  const norm = str.replace(/^0+/, '');
-  if (!valid2026AllowanceCodes.has(str) && !valid2026AllowanceCodes.has(norm)) {
-    return 0;
-  }
-  if (periodMonth && allowance2026Data.byMonth?.[periodMonth]) {
-    const val = allowance2026Data.byMonth[periodMonth][str] ?? allowance2026Data.byMonth[periodMonth][norm];
-    if (val !== undefined) return Number(val);
-  }
-  const latest = allowance2026Data.latest2026?.[str] ?? allowance2026Data.latest2026?.[norm];
-  if (latest !== undefined) return Number(latest);
-  return Number(fallback || 0);
+// Helper: Monthly allowance rate from the DB salary record (same source as the Salary page)
+const getDbAllowanceRate = (salRecord, fallback = 0) => {
+  if (salRecord && salRecord.allowanceSalary != null) return Number(salRecord.allowanceSalary) || 0;
+  return Number(fallback) || 0;
 };
 
 // Helper to safely invoke autoTable regardless of build bundle structure
@@ -72,6 +49,7 @@ const Payroll = () => {
   const [companyFilter, setCompanyFilter] = useState("All");
   const [payModeFilter, setPayModeFilter] = useState("All");
   const [companies, setCompanies] = useState([]);
+  const [showSalaryReportModal, setShowSalaryReportModal] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -479,15 +457,12 @@ const Payroll = () => {
     const esicRecord = esicByEmployeeId.get(Number(run.employeeId)) || {};
 
     const empCode = empRecord?.biometricEmployeeCode || run.employeeCode || run.biometricEmployeeCode || '';
-    const has2026Allowance = is2026AllowanceCode(empCode);
-
     const baseVal = salRecord ? parseFloat(salRecord.baseSalary) : 0;
     const monthlyBase = (baseVal > 0)
       ? baseVal
       : Number(empRecord?.basicSalary || run.basicSalary || run.basicPay || 0);
-    const monthlyAllowance = has2026Allowance
-      ? get2026AllowanceRate(empCode, selectedMonth, salRecord.allowanceSalary || run.allowanceSalary || run.allowance)
-      : 0;
+    const monthlyAllowance = getDbAllowanceRate(salRecord, run.allowanceSalary || run.allowance);
+    const hasAllowance = monthlyAllowance > 0;
     const grossTotal = parseFloat((monthlyBase + monthlyAllowance).toFixed(2));
     const { compSum: liveOtAmount, otHours: liveOtHrs } = getApprovedCompensationDetails(run.employeeId, grossTotal);
 
@@ -690,7 +665,7 @@ const Payroll = () => {
       : monthlyAllowance;
 
     const earnBasic = run.status === "Draft" ? liveEarnBasic : Math.round(parseFloat(run.basicPay || 0));
-    const earnAllowance = !has2026Allowance
+    const earnAllowance = !hasAllowance
       ? 0
       : (run.status === "Draft" ? liveEarnAllowance : Math.round(parseFloat(run.allowance != null ? run.allowance : liveEarnAllowance)));
     const basicPay = earnBasic;
@@ -735,7 +710,7 @@ const Payroll = () => {
     const liveEsicDeduction = (isEsicOptedIn && grossTotal <= 21000) ? Math.ceil(earnGross * 0.0075) : 0;
     const esicDeduction = run.status === "Draft"
       ? liveEsicDeduction
-      : (!has2026Allowance && parseFloat(run.allowance || 0) > 0 ? liveEsicDeduction : Math.ceil(parseFloat(run.esicDeduction || 0)));
+      : (!hasAllowance && parseFloat(run.allowance || 0) > 0 ? liveEsicDeduction : Math.ceil(parseFloat(run.esicDeduction || 0)));
 
     const lwfDeduction = Math.round(parseFloat(run.lwfDeduction || 0));
     // ABSENT price/cut disabled: absent amount is always 0.00 and not added to total deductions
@@ -809,13 +784,10 @@ const Payroll = () => {
     const generated = employees.map(emp => {
       // Find salary details
       const empCode = emp.biometricEmployeeCode || '';
-      const has2026Allowance = is2026AllowanceCode(empCode);
       const salRecord = salaryByEmployeeId.get(Number(emp.id));
       const baseVal = salRecord ? parseFloat(salRecord.baseSalary) : 0;
       const monthlyBase = (baseVal > 0) ? baseVal : (parseFloat(emp.basicSalary) || 0);
-      const monthlyAllowance = has2026Allowance
-        ? get2026AllowanceRate(empCode, selectedMonth, salRecord ? parseFloat(salRecord.allowanceSalary) : 0)
-        : 0;
+      const monthlyAllowance = getDbAllowanceRate(salRecord);
 
       // Find PF Settings
       const pfRecord = pfByEmployeeId.get(Number(emp.id));
@@ -2103,15 +2075,12 @@ const Payroll = () => {
         const salRec = salaryByEmployeeId.get(Number(row.employeeId));
 
         const empCode = row.employeeCode || row.biometricEmployeeCode || '';
-        const has2026Allowance = is2026AllowanceCode(empCode);
         const baseVal = salRec ? parseFloat(salRec.baseSalary) : 0;
         const empRec = employeeById.get(Number(row.employeeId));
         const monthlyBase = (baseVal > 0)
           ? baseVal
           : (parseFloat(row.basicRate || row.basicPay || empRec?.basicSalary || 0));
-        const monthlyAllowance = has2026Allowance
-          ? get2026AllowanceRate(empCode, selectedMonth, salRec ? parseFloat(salRec.allowanceSalary) : parseFloat(row.allowanceRate || row.allowance || 0))
-          : 0;
+        const monthlyAllowance = getDbAllowanceRate(salRec, row.allowanceRate || row.allowance);
         const grossTotal = monthlyBase + monthlyAllowance;
         const earnedTotal = (row.earnBasic || 0) + (row.earnAllowance || 0) + (row.compensation || 0) + (row.otAmount || 0);
         const earnGross = row.grossSalary || row.earnGross || earnedTotal || 0;
@@ -2348,6 +2317,13 @@ const Payroll = () => {
             >
               <Download size={16} />
               Export Excel (Payroll Formate)
+            </button>
+            <button
+              onClick={() => setShowSalaryReportModal(true)}
+              className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-xl font-medium transition-colors flex items-center gap-1.5 shadow-sm text-sm"
+            >
+              <BarChart3 size={16} />
+              Salary Report
             </button>
             {/* Export Summary PDF - Commented out for now
             <button
@@ -3200,6 +3176,19 @@ const Payroll = () => {
         isOpen={showPayslipModal}
         onClose={() => setShowPayslipModal(false)}
         payslipData={selectedRowForPayslip}
+      />
+
+      {/* Salary Report (month range) Modal */}
+      <SalaryReportModal
+        isOpen={showSalaryReportModal}
+        onClose={() => setShowSalaryReportModal(false)}
+        companies={companies}
+        departments={uniqueDepartments}
+        defaultMonth={selectedMonth}
+        defaultCompany={companyFilter}
+        defaultDepartment={departmentFilter}
+        defaultPayMode={payModeFilter}
+        author={user?.username}
       />
     </div>
   );
