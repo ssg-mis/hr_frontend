@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { getDefaultPagesForRole } from '../data/pagePermissions';
+import { getDefaultPagesForRole, ROLE_RESTRICTED_PAGES } from '../data/pagePermissions';
 
 const useAuthStore = create(
   persist(
@@ -104,6 +104,14 @@ const useAuthStore = create(
           if (state.isAdmin) return true;
 
           const user = state.user;
+
+          // Role-restricted pages (e.g. My Salary = HR only) ignore custom page toggles
+          const restrictedTo = ROLE_RESTRICTED_PAGES[path];
+          if (restrictedTo) {
+            const userRoles = (user.roles || (user.role ? [user.role] : [])).map((r) => String(r).toLowerCase());
+            if (!restrictedTo.some((r) => userRoles.includes(r.toLowerCase()))) return false;
+          }
+
           const userAllowedPages = user.allowedPages || user.allowed_pages;
 
           // If custom allowedPages array is set on user record

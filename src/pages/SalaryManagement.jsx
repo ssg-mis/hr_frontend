@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Search, Plus, Check, X, ArrowUpRight, History, ShieldAlert, Users, Percent, IndianRupee, Layers, CheckSquare, Gift, CreditCard, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+// Increments always start from the latest salary, even when the list shows an older month's rate
+const latestBase = (emp) => emp.latestBaseSalary ?? emp.baseSalary;
+const latestAllowance = (emp) => emp.latestAllowanceSalary ?? emp.allowanceSalary;
+
 // "YYYY-MM" of today, default month a salary change applies from
 const currentMonthStr = () => new Date().toISOString().slice(0, 7);
 // "2026-09" -> "Sep 2026"; the opening rate ("2000-01") has been in force since before tracking began
@@ -48,6 +52,7 @@ const SalaryManagement = () => {
   const [loading, setLoading] = useState(false);
   const [salaryLoading, setSalaryLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [salaryMonth, setSalaryMonth] = useState(''); // '' = current salary, else "YYYY-MM"
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(25);
   const [total, setTotal] = useState(0);
@@ -162,8 +167,8 @@ const SalaryManagement = () => {
         const factor = 1 + (Number(empForm.percent || 0) / 100);
         setEmpForm(prev => ({
           ...prev,
-          proposedBaseSalary: (Number(emp.baseSalary || 0) * factor).toFixed(2),
-          proposedAllowanceSalary: (Number(emp.allowanceSalary || 0) * factor).toFixed(2),
+          proposedBaseSalary: (Number(latestBase(emp) || 0) * factor).toFixed(2),
+          proposedAllowanceSalary: (Number(latestAllowance(emp) || 0) * factor).toFixed(2),
         }));
       }
     }
@@ -179,7 +184,7 @@ const SalaryManagement = () => {
       }
     };
     run();
-  }, [page, limit, searchTerm]);
+  }, [page, limit, searchTerm, salaryMonth]);
 
   const fetchSalaries = async () => {
     const params = new URLSearchParams({
@@ -189,6 +194,7 @@ const SalaryManagement = () => {
     if (searchTerm.trim()) {
       params.set("search", searchTerm.trim());
     }
+    if (salaryMonth) params.set("month", salaryMonth);
     const res = await fetch(`${API_URL}/salaries?${params.toString()}`);
     const result = await res.json();
     if (result.success) {
@@ -250,8 +256,8 @@ const SalaryManagement = () => {
 
     const activeSalaryRecord = salaries.find(s => s.employeeId === Number(empForm.employeeId));
     if (activeSalaryRecord) {
-      const isBaseUnchanged = Number(empForm.proposedBaseSalary).toFixed(2) === Number(activeSalaryRecord.baseSalary).toFixed(2);
-      const isAllowanceUnchanged = Number(empForm.proposedAllowanceSalary).toFixed(2) === Number(activeSalaryRecord.allowanceSalary).toFixed(2);
+      const isBaseUnchanged = Number(empForm.proposedBaseSalary).toFixed(2) === Number(latestBase(activeSalaryRecord)).toFixed(2);
+      const isAllowanceUnchanged = Number(empForm.proposedAllowanceSalary).toFixed(2) === Number(latestAllowance(activeSalaryRecord)).toFixed(2);
       if (isBaseUnchanged && isAllowanceUnchanged) {
         setDialogError("Nothing is changed");
         return;
@@ -329,8 +335,8 @@ const SalaryManagement = () => {
       employeeId: employee.employeeId,
       incrementType: 'flat',
       percent: '',
-      proposedBaseSalary: employee.baseSalary,
-      proposedAllowanceSalary: employee.allowanceSalary,
+      proposedBaseSalary: latestBase(employee),
+      proposedAllowanceSalary: latestAllowance(employee),
       effectiveFrom: currentMonthStr(),
     });
     setDialogError('');
@@ -494,10 +500,34 @@ const SalaryManagement = () => {
                 className="pl-9 pr-4 py-2 border border-slate-200 rounded-xl w-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
-            <div className="text-xs text-slate-500 font-medium">
-              Showing {salaries.length} of {total} Active Employees
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+                <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">Salary for month:</span>
+                <input
+                  type="month"
+                  value={salaryMonth}
+                  onChange={(e) => { setSalaryMonth(e.target.value); setPage(1); }}
+                  className="bg-transparent text-sm font-semibold text-slate-800 focus:outline-none"
+                />
+                {salaryMonth && (
+                  <button
+                    onClick={() => { setSalaryMonth(''); setPage(1); }}
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 whitespace-nowrap"
+                  >
+                    Show current
+                  </button>
+                )}
+              </div>
+              <div className="text-xs text-slate-500 font-medium whitespace-nowrap">
+                Showing {salaries.length} of {total} Active Employees
+              </div>
             </div>
           </div>
+          {salaryMonth && (
+            <div className="px-5 py-2 bg-indigo-50 border-b border-indigo-100 text-xs font-medium text-indigo-700">
+              Showing the salary that applied in <b>{formatEffectiveMonth(salaryMonth)}</b>. Rows marked "changed later" have a newer salary now.
+            </div>
+          )}
 
           {/* Salaries Table */}
           <div className="overflow-x-auto">
@@ -539,7 +569,14 @@ const SalaryManagement = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{emp.departmentName || "Unassigned"}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-slate-700">₹{Number(emp.baseSalary).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-slate-700">₹{Number(emp.allowanceSalary).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-indigo-600">₹{totalSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-indigo-600">
+                          ₹{totalSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {salaryMonth && (Number(latestBase(emp)) !== Number(emp.baseSalary) || Number(latestAllowance(emp)) !== Number(emp.allowanceSalary)) && (
+                            <span className="block text-[10px] font-semibold text-amber-600">
+                              changed later · now ₹{(Number(latestBase(emp)) + Number(latestAllowance(emp))).toLocaleString('en-IN')}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                           <div className="flex justify-center gap-2">
                             <button

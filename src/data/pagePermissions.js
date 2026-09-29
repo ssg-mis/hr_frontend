@@ -82,7 +82,7 @@ export const SYSTEM_MODULES = [
       { id: '/compensation', label: 'Compensation & Allowances', path: '/compensation', description: 'Special incentives, overtime pay, and bonuses' },
       { id: '/pf-management', label: 'PF Management', path: '/pf-management', description: 'Provident Fund calculations, UAN, and reports' },
       { id: '/esic-management', label: 'ESIC Management', path: '/esic-management', description: 'Employee State Insurance compliance records' },
-      { id: '/my-salary', label: 'My Salary & Payslips', path: '/my-salary', description: 'Personal salary breakdown and PDF payslip download' },
+      { id: '/my-salary', label: 'My Salary & Payslips', path: '/my-salary', description: 'Personal salary breakdown and PDF payslip download (HR only)' },
     ],
   },
   {
@@ -209,7 +209,6 @@ export const ROLE_PAGE_PRESETS = {
     '/compensation',
     '/pf-management',
     '/esic-management',
-    '/my-salary',
     '/gate-pass',
   ],
 
@@ -220,7 +219,6 @@ export const ROLE_PAGE_PRESETS = {
     '/leave-policy',
     '/leave-request',
     '/company-calendar',
-    '/my-salary',
     '/emi-management',
     '/compensation',
     '/pf-management',
@@ -239,6 +237,23 @@ export const ROLE_PAGE_PRESETS = {
 /**
  * Helper to get default page array for a given role name.
  */
+// Pages limited to specific roles no matter what custom page list a user has (Admin always has access)
+export const ROLE_RESTRICTED_PAGES = {
+  '/my-salary': ['HR'],
+};
+
+// Role label shown under the user's name (sidebar + header)
+export const getRoleDisplayLabel = (user) => {
+  const roles = (user?.roles ?? (user?.role ? [user.role] : [])).map((r) => String(r).toLowerCase());
+  if (roles.includes('admin')) return 'Administrator';
+  const display = [];
+  if (roles.includes('hod')) display.push('Department HOD');
+  if (roles.includes('hr')) display.push('HR Specialist');
+  if (display.length > 0) return display.join(' · ');
+  if (roles.includes('canteenmanager')) return 'Canteen Manager';
+  return 'Employee';
+};
+
 export const getDefaultPagesForRole = (roleName) => {
   if (!roleName) return ROLE_PAGE_PRESETS.Employee;
   const key = Object.keys(ROLE_PAGE_PRESETS).find(

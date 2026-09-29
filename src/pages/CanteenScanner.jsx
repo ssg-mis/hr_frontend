@@ -221,18 +221,44 @@ const CanteenScanner = () => {
               <span className="text-slate-400 text-xs">Loading meals...</span>
             </div>
           ) : (
-            <select
-              value={selectedMealId}
-              onChange={(e) => setSelectedMealId(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white font-semibold"
-            >
-              <option value="">-- Choose Meal Option --</option>
-              {meals.map((meal) => (
-                <option key={meal.id} value={meal.id}>
-                  {meal.name} (₹{Number(meal.price).toFixed(2)})
-                </option>
-              ))}
-            </select>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {meals.map((meal) => {
+                const emp = Number(meal.price);
+                const co = Number(meal.companyPrice || 0);
+                const selected = String(meal.id) === String(selectedMealId);
+                return (
+                  <button
+                    key={meal.id}
+                    type="button"
+                    onClick={() => setSelectedMealId(selected ? '' : String(meal.id))}
+                    className={`text-left rounded-2xl border p-3 transition-all cursor-pointer ${selected
+                      ? 'bg-indigo-600/20 border-indigo-400 ring-2 ring-indigo-400/60'
+                      : 'bg-slate-800/60 border-slate-700 hover:border-slate-500'
+                      }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-white">{meal.name}</span>
+                      {selected && <CheckCircle size={16} className="text-indigo-300" />}
+                    </div>
+                    <p className="text-lg font-extrabold text-white mt-1">₹{(emp + co).toFixed(2)}</p>
+                    <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold -mt-0.5">Total price</p>
+                    <div className="mt-2 pt-2 border-t border-slate-700/70 space-y-0.5 text-[11px] sm:text-xs">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-emerald-300">Company pays</span>
+                        <span className="font-bold text-emerald-400">₹{co.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-indigo-300">Employee pays</span>
+                        <span className="font-bold text-indigo-200">₹{emp.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {!loading && !selectedMealId && meals.length > 0 && (
+            <p className="text-[11px] text-slate-400 mt-2">Tap a meal to unlock the scanner. Only the employee's share is deducted from salary.</p>
           )}
         </section>
 
@@ -334,8 +360,16 @@ const CanteenScanner = () => {
                   <span className="font-bold text-slate-200">{scanResult.mealName}</span>
                 </div>
                 <div className="mt-1 flex justify-between items-center text-xs">
-                  <span className="text-slate-400">Charge:</span>
-                  <span className="font-bold text-emerald-400">₹{Number(scanResult.price).toFixed(2)}</span>
+                  <span className="text-slate-400">Total Price:</span>
+                  <span className="font-bold text-white">₹{(Number(scanResult.price) + Number(scanResult.companyPrice || 0)).toFixed(2)}</span>
+                </div>
+                <div className="mt-1 flex justify-between items-center text-xs">
+                  <span className="text-slate-400">Company Pays:</span>
+                  <span className="font-bold text-emerald-400">₹{Number(scanResult.companyPrice || 0).toFixed(2)}</span>
+                </div>
+                <div className="mt-1 flex justify-between items-center text-xs">
+                  <span className="text-slate-400">Employee Pays (salary deduction):</span>
+                  <span className="font-bold text-indigo-300">₹{Number(scanResult.price).toFixed(2)}</span>
                 </div>
               </div>
 
@@ -379,7 +413,8 @@ const CanteenScanner = () => {
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="font-bold text-emerald-400">₹{Number(log.price).toFixed(2)}</p>
+                    <p className="font-bold text-indigo-300">Emp ₹{Number(log.price).toFixed(2)}</p>
+                    <p className="text-[10px] text-emerald-400 font-semibold">Co ₹{Number(log.companyPrice || 0).toFixed(2)}</p>
                     <p className="text-[9px] text-slate-500 mt-0.5">
                       {new Date(log.servedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </p>

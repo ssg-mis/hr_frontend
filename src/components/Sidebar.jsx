@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import { getRoleDisplayLabel } from '../data/pagePermissions';
 import {
   LayoutDashboard,
   FileText,
@@ -505,19 +506,10 @@ const SidebarContent = ({
           {/* Show user info in mobile view regardless of collapsed state */}
           <div className={`${isCollapsed ? "hidden" : "block"} md:block`}>
             <p className="text-sm font-medium text-white truncate max-w-[120px]">
-              {user?.Name || user?.Username || "Guest"}
+              {user?.name || user?.Name || user?.Username || "Guest"}
             </p>
             <p className="text-xs text-white capitalize">
-              {(() => {
-                const roles = user?.roles ?? (user?.role ? [user.role] : []);
-                if (roles.some(r => r.toLowerCase() === 'admin')) return 'Administrator';
-                const display = [];
-                if (roles.some(r => r.toLowerCase() === 'hod')) display.push('Department HOD');
-                if (roles.some(r => r.toLowerCase() === 'hr')) display.push('HR Specialist');
-                if (display.length > 0) return display.join(' · ');
-                if (roles.some(r => r.toLowerCase() === 'canteenmanager')) return 'Canteen Manager';
-                return 'Employee';
-              })()}
+              {getRoleDisplayLabel(user)}
             </p>
           </div>
         </div>

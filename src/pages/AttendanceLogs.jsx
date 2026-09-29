@@ -19,17 +19,23 @@ const AttendanceLogs = () => {
         throw new Error("No user logged in");
       }
       const currentUser = JSON.parse(userData);
-      const userName = currentUser.Name || currentUser.Username || currentUser.username;
-      
-      const response = await fetch(`${API_URL}/employees/active?name=${encodeURIComponent(userName)}`);
+      // Identify the logged-in employee by their own code/id - never take the first row of an unfiltered list
+      const empCode = currentUser.biometricEmployeeCode || currentUser.employeeCode || currentUser.username;
+      const empId = Number(currentUser.employeeId || currentUser.id);
+      if (!empCode && !empId) {
+        throw new Error("No employee linked to this login");
+      }
+
+      const response = await fetch(`${API_URL}/employees/active?employeeCode=${encodeURIComponent(empCode || '')}`);
       const result = await response.json();
-      if (result.success && result.data && result.data.length > 0) {
-        const emp = result.data[0];
+      const list = result.success && Array.isArray(result.data) ? result.data : [];
+      const emp = list.find((e) => Number(e.employee_id) === empId)
+        || list.find((e) => String(e.biometric_employee_code) === String(empCode));
+      if (emp) {
         setEmployee(emp);
         return emp.employee_id;
-      } else {
-        throw new Error("Employee record not found for the user " + userName);
       }
+      throw new Error("Employee record not found for the user " + (empCode || empId));
     } catch (error) {
       console.error("fetchEmployeeData error:", error);
       toast.error(error.message || "Failed to load employee profile");

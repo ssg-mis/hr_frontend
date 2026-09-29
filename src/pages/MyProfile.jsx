@@ -15,6 +15,7 @@ import {
   XCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import CanteenQrCard from "../components/CanteenQrCard";
 
 const MyProfile = () => {
   const [isEditing, setIsEditing] = useState(false);
@@ -191,6 +192,13 @@ const MyProfile = () => {
             </h2>
             <p className="text-gray-600">{profileData.designation}</p>
             <p className="text-sm text-gray-500">{profileData.joiningNo}</p>
+          </div>
+
+          {/* Employee's own canteen QR + ID (signed; show at the canteen counter) */}
+          <div className="mt-6 pt-5 border-t border-gray-100">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 text-center">My Canteen QR &amp; ID</h4>
+            <p className="text-[11px] text-gray-400 text-center mb-3">Show this QR at the canteen counter</p>
+            <CanteenQrCard subtitle={profileData.designation || 'Employee'} />
           </div>
         </div>
 
