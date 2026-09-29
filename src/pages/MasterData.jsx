@@ -133,6 +133,7 @@ const MasterData = () => {
       ...item,
       baseSalary: item.baseSalary || '0.00',
       allowanceSalary: item.allowanceSalary || '0.00',
+      salaryEffectiveFrom: new Date().toISOString().slice(0, 7),
       dob: item.dob ? item.dob.split('T')[0] : '',
       joiningDate: item.joiningDate ? item.joiningDate.split('T')[0] : '',
     });
@@ -179,10 +180,12 @@ const MasterData = () => {
         branchId: formData.branchId ? Number(formData.branchId) : null,
         baseSalary: formData.baseSalary,
         allowanceSalary: formData.allowanceSalary,
+        salaryEffectiveFrom: formData.salaryEffectiveFrom,
       };
 
-      await api.patch(`/employees/${selectedItem.id}`, payload);
+      const res = await api.patch(`/employees/${selectedItem.id}`, payload);
       toast.success(`Employee ${formData.candidateName} updated successfully!`);
+      if (res?.warning) toast(res.warning, { icon: '⚠️', duration: 8000 });
       setEditModalOpen(false);
       fetchAllMasterData();
     } catch (err) {
@@ -855,6 +858,23 @@ const MasterData = () => {
                       className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-semibold text-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     />
                   </div>
+
+                  {(Number(formData.baseSalary || 0) !== Number(selectedItem?.baseSalary || 0) ||
+                    Number(formData.allowanceSalary || 0) !== Number(selectedItem?.allowanceSalary || 0)) && (
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Salary Effective From (Month)</label>
+                      <input
+                        type="month"
+                        required
+                        value={formData.salaryEffectiveFrom || ''}
+                        onChange={(e) => handleFormChange('salaryEffectiveFrom', e.target.value)}
+                        className="w-full md:w-1/2 px-3 py-2 border border-slate-200 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      />
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        New salary applies from this month. Earlier months keep ₹{Number(selectedItem?.baseSalary || 0).toLocaleString('en-IN')} + ₹{Number(selectedItem?.allowanceSalary || 0).toLocaleString('en-IN')}.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="md:col-span-2 p-4 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between mt-2">
                     <span className="font-bold text-slate-700 text-sm">Total Monthly Gross Salary:</span>
