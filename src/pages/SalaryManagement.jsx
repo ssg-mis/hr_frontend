@@ -2,6 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Search, Plus, Check, X, ArrowUpRight, History, ShieldAlert, Users, Percent, IndianRupee, Layers, CheckSquare, Gift, CreditCard, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+// "YYYY-MM" of today, default month a salary change applies from
+const currentMonthStr = () => new Date().toISOString().slice(0, 7);
+// "2026-09" -> "Sep 2026"; the opening rate ("2000-01") has been in force since before tracking began
+const formatEffectiveMonth = (m) => {
+  if (!m) return '—';
+  if (m <= '2000-01') return 'Opening rate';
+  const [y, mo] = m.split('-').map(Number);
+  return new Date(y, mo - 1, 1).toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+};
+
 const SalaryManagement = () => {
   const [activeSubTab, setActiveSubTab] = useState('active-salaries'); // 'active-salaries' | 'requests' | 'history'
   const [requestsFilter, setRequestsFilter] = useState('all'); // 'all' | 'pending' | 'approved' | 'rejected'
@@ -49,6 +59,7 @@ const SalaryManagement = () => {
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyTotalPages, setHistoryTotalPages] = useState(1);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
 
   // Modals state
   const [showEmpModal, setShowEmpModal] = useState(false);
@@ -62,6 +73,7 @@ const SalaryManagement = () => {
     percent: '',
     proposedBaseSalary: '',
     proposedAllowanceSalary: '',
+    effectiveFrom: currentMonthStr(),
   });
 
   const [deptForm, setDeptForm] = useState({
@@ -70,6 +82,7 @@ const SalaryManagement = () => {
     percent: '',
     flatBase: '',
     flatAllowance: '',
+    effectiveFrom: currentMonthStr(),
   });
 
   const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
@@ -195,13 +208,14 @@ const SalaryManagement = () => {
     }
   };
 
-  const fetchHistory = async (p = historyPage, l = historyLimit) => {
+  const fetchHistory = async (p = historyPage, l = historyLimit, q = historySearch) => {
     setHistoryLoading(true);
     try {
       const params = new URLSearchParams({
         page: String(p),
         limit: String(l),
       });
+      if (q && q.trim()) params.append('search', q.trim());
       const res = await fetch(`${API_URL}/salaries/history?${params.toString()}`);
       const result = await res.json();
       if (result.success) {
@@ -255,13 +269,14 @@ const SalaryManagement = () => {
           proposedAllowanceSalary: empForm.proposedAllowanceSalary,
           incrementType: empForm.incrementType,
           percent: empForm.incrementType === 'percent' ? Number(empForm.percent) : undefined,
+          effectiveFrom: empForm.effectiveFrom,
         }),
       });
       const result = await res.json();
       if (result.success) {
         toast.success("Salary request created successfully!");
         setShowEmpModal(false);
-        setEmpForm({ employeeId: '', incrementType: 'flat', percent: '', proposedBaseSalary: '', proposedAllowanceSalary: '' });
+        setEmpForm({ employeeId: '', incrementType: 'flat', percent: '', proposedBaseSalary: '', proposedAllowanceSalary: '', effectiveFrom: currentMonthStr() });
         fetchRequests();
       } else {
         toast.error(result.message || "Failed to create request");
@@ -290,13 +305,14 @@ const SalaryManagement = () => {
           percent: deptForm.percent ? Number(deptForm.percent) : undefined,
           flatBase: deptForm.flatBase ? Number(deptForm.flatBase) : undefined,
           flatAllowance: deptForm.flatAllowance ? Number(deptForm.flatAllowance) : undefined,
+          effectiveFrom: deptForm.effectiveFrom,
         }),
       });
       const result = await res.json();
       if (result.success) {
         toast.success(`Successfully created salary requests for ${result.count || 0} employees!`);
         setShowDeptModal(false);
-        setDeptForm({ departmentId: '', incrementType: 'percent', percent: '', flatBase: '', flatAllowance: '' });
+        setDeptForm({ departmentId: '', incrementType: 'percent', percent: '', flatBase: '', flatAllowance: '', effectiveFrom: currentMonthStr() });
         fetchRequests();
       } else {
         toast.error(result.message || "Failed to create department request");
@@ -315,9 +331,19 @@ const SalaryManagement = () => {
       percent: '',
       proposedBaseSalary: employee.baseSalary,
       proposedAllowanceSalary: employee.allowanceSalary,
+      effectiveFrom: currentMonthStr(),
     });
     setDialogError('');
     setShowEmpModal(true);
+  };
+
+  // Jump to the month-wise history of one employee
+  const openEmployeeHistory = (employee) => {
+    const q = employee.employeeCode || employee.employeeName || '';
+    setHistorySearch(q);
+    setHistoryPage(1);
+    if (activeSubTab === 'history') fetchHistory(1, historyLimit, q);
+    else setActiveSubTab('history');
   };
 
   // Process approval workflow (HR / HOD)
@@ -331,6 +357,7 @@ const SalaryManagement = () => {
       const result = await res.json();
       if (result.success) {
         toast.success(`Request status updated to ${nextStatus}`);
+        if (result.warning) toast(result.warning, { icon: '⚠️', duration: 8000 });
         fetchRequests();
         fetchSalaries();
         fetchHistory();
@@ -368,7 +395,7 @@ const SalaryManagement = () => {
           <button
             onClick={() => {
               setSelectedEmp(null);
-              setEmpForm({ employeeId: '', incrementType: 'flat', percent: '', proposedBaseSalary: '', proposedAllowanceSalary: '' });
+              setEmpForm({ employeeId: '', incrementType: 'flat', percent: '', proposedBaseSalary: '', proposedAllowanceSalary: '', effectiveFrom: currentMonthStr() });
               setDialogError('');
               setShowEmpModal(true);
             }}
@@ -521,6 +548,13 @@ const SalaryManagement = () => {
                             >
                               Change Manually
                             </button>
+                            <button
+                              onClick={() => openEmployeeHistory(emp)}
+                              className="px-2.5 py-1.5 bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 text-xs font-semibold transition-all flex items-center gap-1"
+                            >
+                              <History size={12} />
+                              History
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -667,6 +701,9 @@ const SalaryManagement = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 font-medium">
                             {new Date(req.createdAt).toLocaleDateString()}
+                            {req.effectiveFrom && (
+                              <span className="block text-[11px] font-semibold text-indigo-600">Effective: {formatEffectiveMonth(req.effectiveFrom)}</span>
+                            )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                             <div className="flex justify-center gap-1.5">
@@ -727,10 +764,39 @@ const SalaryManagement = () => {
       {activeSubTab === 'history' && (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="p-5 border-b border-slate-100">
-            <h2 className="text-md font-bold text-slate-800 flex items-center gap-2">
-              <History className="text-slate-500 w-4 h-4" />
-              <span>Historical Salary Log (Approved Changes)</span>
-            </h2>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <h2 className="text-md font-bold text-slate-800 flex items-center gap-2">
+                <History className="text-slate-500 w-4 h-4" />
+                <span>Month-wise Salary History</span>
+              </h2>
+              <form
+                onSubmit={(e) => { e.preventDefault(); setHistoryPage(1); fetchHistory(1, historyLimit, historySearch); }}
+                className="flex items-center gap-2"
+              >
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    placeholder="Search by name or emp code..."
+                    value={historySearch}
+                    onChange={(e) => setHistorySearch(e.target.value)}
+                    className="pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-64"
+                  />
+                </div>
+                {historySearch && (
+                  <button
+                    type="button"
+                    onClick={() => { setHistorySearch(''); setHistoryPage(1); fetchHistory(1, historyLimit, ''); }}
+                    className="px-3 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-xl text-xs font-semibold"
+                  >
+                    Clear
+                  </button>
+                )}
+              </form>
+            </div>
+            <p className="text-xs text-slate-500 mt-2">
+              Each row is the salary from its <b>Effective From</b> month until the next change. Payroll for a month uses the rate in force that month, so earlier months keep their old salary.
+            </p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-100">
@@ -738,23 +804,24 @@ const SalaryManagement = () => {
                 <tr>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee ID</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee Name</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Effective From</th>
                   <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Base Salary</th>
                   <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Allowance Salary</th>
                   <th className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Salary</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Update Date</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Recorded On</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Type / Notes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {historyLoading ? (
                   <tr>
-                    <td colSpan="7" className="px-6 py-12 text-center">
+                    <td colSpan="8" className="px-6 py-12 text-center">
                       <div className="w-6 h-6 border-4 border-indigo-500 border-dashed rounded-full animate-spin mx-auto"></div>
                     </td>
                   </tr>
                 ) : history.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="px-6 py-12 text-center text-slate-500 text-sm">
+                    <td colSpan="8" className="px-6 py-12 text-center text-slate-500 text-sm">
                       No salary history records found.
                     </td>
                   </tr>
@@ -765,6 +832,7 @@ const SalaryManagement = () => {
                       <tr key={record.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-700">{record.employeeCode}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-800">{record.employeeName}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-indigo-700">{formatEffectiveMonth(record.effectiveFrom)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-slate-700">₹{Number(record.baseSalary).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-slate-700">₹{Number(record.allowanceSalary).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-slate-800">₹{total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -1431,6 +1499,18 @@ const SalaryManagement = () => {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Effective From (Month)</label>
+                <input
+                  type="month"
+                  required
+                  value={empForm.effectiveFrom}
+                  onChange={(e) => setEmpForm(prev => ({ ...prev, effectiveFrom: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">New salary applies from this month. Earlier months keep the current salary.</p>
+              </div>
+
               <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -1562,6 +1642,18 @@ const SalaryManagement = () => {
                   </div>
                 </div>
               )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Effective From (Month)</label>
+                <input
+                  type="month"
+                  required
+                  value={deptForm.effectiveFrom}
+                  onChange={(e) => setDeptForm(prev => ({ ...prev, effectiveFrom: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">New salary applies from this month. Earlier months keep the current salary.</p>
+              </div>
 
               <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
                 <button

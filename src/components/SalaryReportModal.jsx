@@ -104,9 +104,10 @@ const SalaryReportModal = ({
 
       const res = await api.get(`/salaries/payroll/report?${params.toString()}`);
       const data = toArray(res);
+      const rateHistory = Array.isArray(res?.rateHistory) ? res.rateHistory : [];
       toast.dismiss(toastId);
 
-      if (data.length === 0) {
+      if (data.length === 0 && rateHistory.length === 0) {
         toast.error(includeDraft
           ? "No saved payroll found for this range. Save the payroll run for these months first (Save Payroll Run)."
           : "No Processed/Paid payroll found. Tick 'Include Draft payrolls' to include saved drafts.");
@@ -115,6 +116,9 @@ const SalaryReportModal = ({
 
       const companyObj = companies.find((c) => String(c.id) === String(company));
       const uniqueBranches = Array.from(new Set(data.map((r) => r.branchName).filter(Boolean)));
+      if (data.length === 0) {
+        toast("No saved payroll in this range - exporting the Salary Rate sheet only.", { icon: "ℹ️" });
+      }
       const companyName = companyObj?.name || (uniqueBranches.length === 1 ? uniqueBranches[0] : DEFAULT_COMPANY_NAME);
 
       const filterParts = [
@@ -127,13 +131,14 @@ const SalaryReportModal = ({
 
       const result = await generateSalaryReportExcel({
         data,
+        rateHistory,
         from: fromMonth,
         to: toMonth,
         companyName,
         filterLine: filterParts.join("  |  "),
         author,
       });
-      toast.success(`Salary Report exported: ${result.employees} employees, ${result.rows} payroll rows.`);
+      toast.success(`Salary Report exported: ${result.employees} employees with payroll, ${result.rateEmployees} in Salary Rate sheet.`);
       onClose();
     } catch (err) {
       toast.dismiss(toastId);
@@ -269,7 +274,7 @@ const SalaryReportModal = ({
           </label>
 
           <p className="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-            Excel contains 3 sheets: <b>Summary</b> (range totals per employee), <b>Month-wise</b> (net pay per month) and <b>Detail</b> (every payroll row). Only saved Monthly payroll runs are included.
+            Excel contains 4 sheets: <b>Summary</b> (range totals per employee), <b>Month-wise</b> (net pay per month), <b>Detail</b> (every payroll row) and <b>Salary Rate</b> (basic &amp; allowance rate for each month, changes highlighted). The first three use saved Monthly payroll runs only.
           </p>
         </div>
 

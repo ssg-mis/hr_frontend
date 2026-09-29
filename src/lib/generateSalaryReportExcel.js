@@ -142,11 +142,132 @@ const writeSheet = (ws, { companyName, subtitle, filterLine, columns, rows }) =>
   totalRow.getCell(1).alignment = { horizontal: "center" };
 };
 
+// Month-wise salary rate sheet: Basic + Allowance per month (2 columns per month), changed months highlighted
+const writeRateSheet = (ws, { companyName, subtitle, filterLine, months, rateHistory }) => {
+  const fixedCols = [
+    { header: "S.No", width: 6 },
+    { header: "Emp Code", width: 11 },
+    { header: "Employee Name", width: 26 },
+    { header: "Department", width: 18 },
+  ];
+  const totalCols = fixedCols.length + months.length * 2 + 1;
+  const lastCol = ws.getColumn(totalCols).letter;
+  const fmt = "#,##0";
+  const changedFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCFCE7" } };
+
+  ws.mergeCells(`A1:${lastCol}1`);
+  Object.assign(ws.getCell("A1"), { value: companyName.toUpperCase() });
+  ws.getCell("A1").font = { name: "Arial", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+  ws.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
+  ws.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
+  ws.getRow(1).height = 28;
+
+  ws.mergeCells(`A2:${lastCol}2`);
+  ws.getCell("A2").value = subtitle;
+  ws.getCell("A2").font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+  ws.getCell("A2").alignment = { horizontal: "center", vertical: "middle" };
+  ws.getCell("A2").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } };
+  ws.getRow(2).height = 22;
+
+  ws.mergeCells(`A3:${lastCol}3`);
+  ws.getCell("A3").value = `${filterLine}  |  Monthly full rate (not days-adjusted). Green = salary changed that month.`;
+  ws.getCell("A3").font = { name: "Arial", size: 9, italic: true, color: { argb: "FF4B5563" } };
+  ws.getCell("A3").alignment = { horizontal: "center", vertical: "middle" };
+
+  // Two header rows: month (merged over Basic/Allowance), then Basic | Allowance
+  const headerStyle = (cell) => {
+    cell.font = { name: "Arial", size: 10, bold: true, color: { argb: "FF1F2937" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDBEAFE" } };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.border = thinBorder;
+  };
+  fixedCols.forEach((c, i) => {
+    ws.mergeCells(5, i + 1, 6, i + 1);
+    ws.getCell(5, i + 1).value = c.header;
+    headerStyle(ws.getCell(5, i + 1));
+    headerStyle(ws.getCell(6, i + 1));
+    ws.getColumn(i + 1).width = c.width;
+  });
+  months.forEach((m, mi) => {
+    const col = fixedCols.length + 1 + mi * 2;
+    ws.mergeCells(5, col, 5, col + 1);
+    ws.getCell(5, col).value = formatMonthLabel(m);
+    ws.getCell(6, col).value = "Basic";
+    ws.getCell(6, col + 1).value = "Allowance";
+    [ws.getCell(5, col), ws.getCell(5, col + 1), ws.getCell(6, col), ws.getCell(6, col + 1)].forEach(headerStyle);
+    ws.getColumn(col).width = 10;
+    ws.getColumn(col + 1).width = 10;
+  });
+  ws.mergeCells(5, totalCols, 6, totalCols);
+  ws.getCell(5, totalCols).value = "Changes in Range";
+  headerStyle(ws.getCell(5, totalCols));
+  headerStyle(ws.getCell(6, totalCols));
+  ws.getColumn(totalCols).width = 40;
+  ws.getRow(5).height = 20;
+  ws.views = [{ state: "frozen", ySplit: 6, xSplit: 3, showGridLines: true }];
+
+  // Group history rows by employee (already ordered by emp code, effectiveFrom)
+  const byEmp = new Map();
+  rateHistory.forEach((h) => {
+    if (!byEmp.has(h.employeeId)) byEmp.set(h.employeeId, { ...h, rows: [] });
+    byEmp.get(h.employeeId).rows.push(h);
+  });
+
+  let rowIdx = 7;
+  Array.from(byEmp.values()).forEach((emp, i) => {
+    // Rate in force in month m = last row with effectiveFrom <= m
+    const rateFor = (m) => {
+      let r = null;
+      for (const h of emp.rows) if (h.effectiveFrom <= m) r = h;
+      return r;
+    };
+    const row = ws.getRow(rowIdx++);
+    [i + 1, emp.employeeCode || "", emp.employeeName || "", emp.department || "—"].forEach((v, ci) => {
+      const cell = row.getCell(ci + 1);
+      cell.value = v;
+      cell.font = { name: "Arial", size: 10 };
+      cell.border = thinBorder;
+      cell.alignment = { horizontal: ci === 0 ? "center" : "left" };
+    });
+
+    const changes = [];
+    let prev = null;
+    months.forEach((m, mi) => {
+      const col = fixedCols.length + 1 + mi * 2;
+      const r = rateFor(m);
+      const changed = prev && r && (num(prev.baseSalary) !== num(r.baseSalary) || num(prev.allowanceSalary) !== num(r.allowanceSalary));
+      if (changed) {
+        const db = num(r.baseSalary) - num(prev.baseSalary);
+        const da = num(r.allowanceSalary) - num(prev.allowanceSalary);
+        const sign = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toLocaleString("en-IN")}`;
+        changes.push(`${formatMonthLabel(m)}: Basic ${sign(db)}, Allow. ${sign(da)}`);
+      }
+      [r ? num(r.baseSalary) : null, r ? num(r.allowanceSalary) : null].forEach((v, k) => {
+        const cell = row.getCell(col + k);
+        cell.value = v === null ? "—" : v;
+        if (v !== null) cell.numFmt = fmt;
+        cell.alignment = { horizontal: v === null ? "center" : "right" };
+        cell.font = { name: "Arial", size: 10, bold: !!changed };
+        cell.border = thinBorder;
+        if (changed) cell.fill = changedFill;
+      });
+      if (r) prev = r;
+    });
+
+    const changeCell = row.getCell(totalCols);
+    changeCell.value = changes.length ? changes.join("; ") : "No change";
+    changeCell.font = { name: "Arial", size: 10, color: { argb: changes.length ? "FF166534" : "FF6B7280" } };
+    changeCell.border = thinBorder;
+  });
+
+  return byEmp.size;
+};
+
 /**
- * Builds the 3-sheet Salary Report workbook (Summary, Month-wise, Detail) and triggers download.
+ * Builds the Salary Report workbook (Summary, Month-wise, Detail) and triggers download.
  * @param {Array} data - rows from GET /salaries/payroll/report
  */
-export const generateSalaryReportExcel = async ({ data, from, to, companyName, filterLine, author }) => {
+export const generateSalaryReportExcel = async ({ data, rateHistory = [], from, to, companyName, filterLine, author }) => {
   const months = getMonthsInRange(from, to);
   const rangeLabel = `${formatMonthLabel(from)} to ${formatMonthLabel(to)}`;
 
@@ -173,6 +294,8 @@ export const generateSalaryReportExcel = async ({ data, from, to, companyName, f
   wb.modified = new Date();
   const sheetOpts = { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1 } };
 
+  const hasPayroll = data.length > 0;
+
   // Sheet 1: Summary - one row per employee, totals across the range
   const summaryRows = employeesList.map((emp) => {
     const row = {
@@ -194,7 +317,7 @@ export const generateSalaryReportExcel = async ({ data, from, to, companyName, f
     });
     return row;
   });
-  writeSheet(wb.addWorksheet("Summary", sheetOpts), {
+  if (hasPayroll) writeSheet(wb.addWorksheet("Summary", sheetOpts), {
     companyName,
     subtitle: `SALARY REPORT (SUMMARY) - ${rangeLabel}`,
     filterLine,
@@ -226,7 +349,7 @@ export const generateSalaryReportExcel = async ({ data, from, to, companyName, f
     });
     return row;
   });
-  writeSheet(wb.addWorksheet("Month-wise", sheetOpts), {
+  if (hasPayroll) writeSheet(wb.addWorksheet("Month-wise", sheetOpts), {
     companyName,
     subtitle: `SALARY REPORT (MONTH-WISE NET PAY) - ${rangeLabel}`,
     filterLine,
@@ -256,7 +379,7 @@ export const generateSalaryReportExcel = async ({ data, from, to, companyName, f
       });
     });
   });
-  writeSheet(wb.addWorksheet("Detail", sheetOpts), {
+  if (hasPayroll) writeSheet(wb.addWorksheet("Detail", sheetOpts), {
     companyName,
     subtitle: `SALARY REPORT (DETAIL) - ${rangeLabel}`,
     filterLine,
@@ -274,6 +397,17 @@ export const generateSalaryReportExcel = async ({ data, from, to, companyName, f
     ],
   });
 
+  // Sheet 4: Salary Rate - month-wise basic/allowance from salary history (works even without saved payroll)
+  const rateEmployees = rateHistory.length > 0
+    ? writeRateSheet(wb.addWorksheet("Salary Rate", sheetOpts), {
+      companyName,
+      subtitle: `SALARY RATE (MONTH-WISE BASIC & ALLOWANCE) - ${rangeLabel}`,
+      filterLine,
+      months,
+      rateHistory,
+    })
+    : 0;
+
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
@@ -285,5 +419,5 @@ export const generateSalaryReportExcel = async ({ data, from, to, companyName, f
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 
-  return { employees: employeesList.length, rows: data.length };
+  return { employees: employeesList.length, rows: data.length, rateEmployees };
 };

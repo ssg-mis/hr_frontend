@@ -74,6 +74,9 @@ const Payroll = () => {
   // Raw data from APIs
   const [employees, setEmployees] = useState([]);
   const [salariesList, setSalariesList] = useState([]);
+  // Rates that applied in the selected month for employees whose salary changed later (e.g. pre-increment rate)
+  const [monthRateOverrides, setMonthRateOverrides] = useState([]);
+  const [ratesLoading, setRatesLoading] = useState(false);
   const [pfDetailsList, setPfDetailsList] = useState([]);
   const [esicDetailsList, setEsicDetailsList] = useState([]);
   const [emisList, setEmisList] = useState([]);
@@ -104,8 +107,13 @@ const Payroll = () => {
     for (const record of salariesList) {
       map.set(Number(record.employeeId), record);
     }
+    // Apply the rate that was in force during the selected month (old rate before an increment)
+    for (const o of monthRateOverrides) {
+      const id = Number(o.employeeId);
+      map.set(id, { ...(map.get(id) || { employeeId: id }), baseSalary: o.baseSalary, allowanceSalary: o.allowanceSalary });
+    }
     return map;
-  }, [salariesList]);
+  }, [salariesList, monthRateOverrides]);
 
   const employeeById = useMemo(() => {
     const map = new Map();
@@ -258,6 +266,22 @@ const Payroll = () => {
   useEffect(() => {
     loadBaseData();
   }, []);
+
+  // Fetch the salary rates that applied in the selected month
+  useEffect(() => {
+    const rateMonth = activeMode === "Monthly" ? selectedMonth : (startDate || "").slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(rateMonth)) return;
+    let cancelled = false;
+    setRatesLoading(true);
+    api.get(`/salaries/rates?month=${rateMonth}`)
+      .then((res) => { if (!cancelled) setMonthRateOverrides(getArrayData(res)); })
+      .catch((err) => {
+        console.error("Failed to load month salary rates:", err);
+        if (!cancelled) setMonthRateOverrides([]);
+      })
+      .finally(() => { if (!cancelled) setRatesLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeMode, selectedMonth, startDate]);
 
   // Fetch canteen deductions and attendance logs when month or date range changes
   const loadMonthLogsData = async () => {
@@ -1135,7 +1159,7 @@ const Payroll = () => {
     });
 
     setPayrollRows(generated);
-  }, [employees, salariesList, pfDetailsList, esicDetailsList, emisList, compensationList, canteenData, leavesList, attendanceData, savedPayrollRuns, activeMode, selectedMonth, startDate, endDate, currentPeriodDays]);
+  }, [employees, salariesList, monthRateOverrides, pfDetailsList, esicDetailsList, emisList, compensationList, canteenData, leavesList, attendanceData, savedPayrollRuns, activeMode, selectedMonth, startDate, endDate, currentPeriodDays]);
 
   // Recalculates calculated columns on input overrides
   const handleCellChange = (empId, field, val) => {
@@ -2349,8 +2373,8 @@ const Payroll = () => {
             */}
             <button
               onClick={handleSavePayroll}
-              disabled={saving || payrollRows.length === 0}
-              className={`px-5 py-2 text-white rounded-xl font-medium transition-all flex items-center gap-1.5 shadow-sm text-sm ${saving || payrollRows.length === 0
+              disabled={saving || ratesLoading || payrollRows.length === 0}
+              className={`px-5 py-2 text-white rounded-xl font-medium transition-all flex items-center gap-1.5 shadow-sm text-sm ${saving || ratesLoading || payrollRows.length === 0
                 ? "bg-blue-300 cursor-not-allowed"
                 : "bg-blue-600 hover:bg-blue-700"
                 }`}
