@@ -213,6 +213,16 @@ const CanteenDashboard = () => {
   // Aggregated Analytics calculations
   const totalMealsCount = deductions.reduce((sum, d) => sum + d.totalMeals, 0);
   const totalDeductionsSum = deductions.reduce((sum, d) => sum + Number(d.totalDeduction), 0);
+  const totalCompanyPaidSum = deductions.reduce((sum, d) => sum + Number(d.totalCompanyPaid || 0), 0);
+
+  // Employee's own summary for the current month (from their own logs)
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const myMonthLogs = logs.filter((l) => {
+    const d = new Date(l.servedAt);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === currentMonthKey;
+  });
+  const myEmployeePays = myMonthLogs.reduce((sum, l) => sum + Number(l.price || 0), 0);
+  const myCompanyPays = myMonthLogs.reduce((sum, l) => sum + Number(l.companyPrice || 0), 0);
   const uniqueUsersCount = deductions.length;
 
   // Chart data: Meal counts
@@ -285,15 +295,37 @@ const CanteenDashboard = () => {
 
       {/* 2. Key Metrics Summary cards */}
       {!isEmployeeOrManager && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
           <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
             <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
               <Receipt size={22} />
             </div>
             <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Deductions</p>
-              <p className="text-2xl font-bold text-gray-900 mt-0.5">₹{totalDeductionsSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">Month: {new Date(selectedMonth).toLocaleDateString([], { month: 'long', year: 'numeric' })}</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Employee Pays</p>
+              <p className="text-2xl font-bold text-indigo-600 mt-0.5">₹{totalDeductionsSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Salary deduction · {new Date(selectedMonth).toLocaleDateString([], { month: 'long', year: 'numeric' })}</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <CreditCard size={22} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Company Pays</p>
+              <p className="text-2xl font-bold text-emerald-600 mt-0.5">₹{totalCompanyPaidSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Company contribution</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
+            <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center text-gray-700">
+              <BarChart3 size={22} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Meal Cost</p>
+              <p className="text-2xl font-bold text-gray-900 mt-0.5">₹{(totalDeductionsSum + totalCompanyPaidSum).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Employee + Company</p>
             </div>
           </div>
 
@@ -317,6 +349,27 @@ const CanteenDashboard = () => {
               <p className="text-2xl font-bold text-gray-900 mt-0.5">{uniqueUsersCount}</p>
               <p className="text-[11px] text-gray-400 mt-0.5">Active users this month</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Employee's own canteen summary for this month */}
+      {isEmployeeOnly && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">You Pay (this month)</p>
+            <p className="text-2xl font-bold text-indigo-600 mt-0.5">₹{myEmployeePays.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">Deducted from your salary · {myMonthLogs.length} meals</p>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Company Pays (this month)</p>
+            <p className="text-2xl font-bold text-emerald-600 mt-0.5">₹{myCompanyPays.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">Paid by the company for your meals</p>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Meal Cost</p>
+            <p className="text-2xl font-bold text-gray-900 mt-0.5">₹{(myEmployeePays + myCompanyPays).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{new Date().toLocaleDateString([], { month: 'long', year: 'numeric' })}</p>
           </div>
         </div>
       )}
@@ -462,7 +515,9 @@ const CanteenDashboard = () => {
                       <th className="px-6 py-3 text-center">Lunch</th>
                       <th className="px-6 py-3 text-center">Snack</th>
                       <th className="px-6 py-3 text-center">Dinner</th>
-                      <th className="px-6 py-3 text-right">Deduction (INR)</th>
+                      <th className="px-6 py-3 text-right">Employee Pays<br /><span className="normal-case font-medium text-gray-400">(deduction)</span></th>
+                      <th className="px-6 py-3 text-right">Company Pays</th>
+                      <th className="px-6 py-3 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
@@ -476,7 +531,9 @@ const CanteenDashboard = () => {
                         <td className="px-6 py-4 text-center text-gray-500">{emp.breakdown.Lunch || 0}</td>
                         <td className="px-6 py-4 text-center text-gray-500">{emp.breakdown.Snack || 0}</td>
                         <td className="px-6 py-4 text-center text-gray-500">{emp.breakdown.Dinner || 0}</td>
-                        <td className="px-6 py-4 text-right font-bold text-gray-900">₹{Number(emp.totalDeduction).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-6 py-4 text-right font-bold text-indigo-600">₹{Number(emp.totalDeduction).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-6 py-4 text-right font-bold text-emerald-600">₹{Number(emp.totalCompanyPaid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-6 py-4 text-right font-extrabold text-gray-900">₹{(Number(emp.totalDeduction) + Number(emp.totalCompanyPaid || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                       </tr>
                     ))}
                   </tbody>
