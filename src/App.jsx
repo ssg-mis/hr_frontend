@@ -94,7 +94,7 @@ function App() {
               <Route path="master-data" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><MasterData /></ProtectedRoute>} />
               <Route path="my-profile" element={<MyProfile />} />
               <Route path="my-attendance" element={<MyAttendance />} />
-              <Route path="my-salary" element={<MySalary />} />
+              <Route path="my-salary" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><MySalary /></ProtectedRoute>} />
               <Route path="leave-policy" element={<LeavePolicy />} />
               <Route path="leave-request" element={<LeaveRequest />} />
               <Route path="company-calendar" element={<CompanyCalendar />} />

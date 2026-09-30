@@ -32,7 +32,7 @@ const CanteenDashboard = () => {
   // Modal states for meal crud
   const [showMealModal, setShowMealModal] = useState(false);
   const [editingMeal, setEditingMeal] = useState(null); // null means adding new
-  const [mealForm, setMealForm] = useState({ name: "", price: "" });
+  const [mealForm, setMealForm] = useState({ name: "", price: "", companyPrice: "" });
   const [submittingMeal, setSubmittingMeal] = useState(false);
 
   // Pagination for logs
@@ -119,18 +119,23 @@ const CanteenDashboard = () => {
   const openMealModal = (meal = null) => {
     if (meal) {
       setEditingMeal(meal);
-      setMealForm({ name: meal.name, price: Number(meal.price).toString() });
+      setMealForm({ name: meal.name, price: Number(meal.price).toString(), companyPrice: Number(meal.companyPrice || 0).toString() });
     } else {
       setEditingMeal(null);
-      setMealForm({ name: "", price: "" });
+      setMealForm({ name: "", price: "", companyPrice: "" });
     }
     setShowMealModal(true);
   };
 
   const handleMealSubmit = async (e) => {
     e.preventDefault();
-    if (!mealForm.name || !mealForm.price || isNaN(Number(mealForm.price))) {
-      toast.error("Please enter a valid name and price");
+    const companyPriceValue = mealForm.companyPrice === "" ? 0 : Number(mealForm.companyPrice);
+    if (!mealForm.name || mealForm.price === "" || isNaN(Number(mealForm.price)) || Number(mealForm.price) < 0) {
+      toast.error("Please enter a valid meal name and employee price");
+      return;
+    }
+    if (isNaN(companyPriceValue) || companyPriceValue < 0) {
+      toast.error("Company price must be 0 or more");
       return;
     }
 
@@ -140,14 +145,16 @@ const CanteenDashboard = () => {
         // Edit
         await api.put(`/canteen/meals/${editingMeal.id}`, {
           name: mealForm.name,
-          price: Number(mealForm.price)
+          price: Number(mealForm.price),
+          companyPrice: companyPriceValue
         });
         toast.success("Meal updated successfully!");
       } else {
         // Create
         await api.post("/canteen/meals", {
           name: mealForm.name,
-          price: Number(mealForm.price)
+          price: Number(mealForm.price),
+          companyPrice: companyPriceValue
         });
         toast.success("Meal added successfully!");
       }
@@ -178,13 +185,15 @@ const CanteenDashboard = () => {
       return;
     }
 
-    const headers = ["ID", "Employee Code", "Employee Name", "Meal Type", "Price (INR)", "Served At"];
+    const headers = ["ID", "Employee Code", "Employee Name", "Meal Type", "Employee Pays (INR)", "Company Pays (INR)", "Total (INR)", "Served At"];
     const rows = filteredLogs.map(log => [
       log.id,
       log.employeeCode,
       log.employeeName,
       log.mealName,
       Number(log.price).toFixed(2),
+      Number(log.companyPrice || 0).toFixed(2),
+      (Number(log.price) + Number(log.companyPrice || 0)).toFixed(2),
       new Date(log.servedAt).toLocaleString()
     ]);
 
@@ -204,6 +213,16 @@ const CanteenDashboard = () => {
   // Aggregated Analytics calculations
   const totalMealsCount = deductions.reduce((sum, d) => sum + d.totalMeals, 0);
   const totalDeductionsSum = deductions.reduce((sum, d) => sum + Number(d.totalDeduction), 0);
+  const totalCompanyPaidSum = deductions.reduce((sum, d) => sum + Number(d.totalCompanyPaid || 0), 0);
+
+  // Employee's own summary for the current month (from their own logs)
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const myMonthLogs = logs.filter((l) => {
+    const d = new Date(l.servedAt);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === currentMonthKey;
+  });
+  const myEmployeePays = myMonthLogs.reduce((sum, l) => sum + Number(l.price || 0), 0);
+  const myCompanyPays = myMonthLogs.reduce((sum, l) => sum + Number(l.companyPrice || 0), 0);
   const uniqueUsersCount = deductions.length;
 
   // Chart data: Meal counts
@@ -276,15 +295,37 @@ const CanteenDashboard = () => {
 
       {/* 2. Key Metrics Summary cards */}
       {!isEmployeeOrManager && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
           <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
             <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
               <Receipt size={22} />
             </div>
             <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Deductions</p>
-              <p className="text-2xl font-bold text-gray-900 mt-0.5">₹{totalDeductionsSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">Month: {new Date(selectedMonth).toLocaleDateString([], { month: 'long', year: 'numeric' })}</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Employee Pays</p>
+              <p className="text-2xl font-bold text-indigo-600 mt-0.5">₹{totalDeductionsSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Salary deduction · {new Date(selectedMonth).toLocaleDateString([], { month: 'long', year: 'numeric' })}</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <CreditCard size={22} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Company Pays</p>
+              <p className="text-2xl font-bold text-emerald-600 mt-0.5">₹{totalCompanyPaidSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Company contribution</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
+            <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center text-gray-700">
+              <BarChart3 size={22} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Meal Cost</p>
+              <p className="text-2xl font-bold text-gray-900 mt-0.5">₹{(totalDeductionsSum + totalCompanyPaidSum).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">Employee + Company</p>
             </div>
           </div>
 
@@ -308,6 +349,27 @@ const CanteenDashboard = () => {
               <p className="text-2xl font-bold text-gray-900 mt-0.5">{uniqueUsersCount}</p>
               <p className="text-[11px] text-gray-400 mt-0.5">Active users this month</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Employee's own canteen summary for this month */}
+      {isEmployeeOnly && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">You Pay (this month)</p>
+            <p className="text-2xl font-bold text-indigo-600 mt-0.5">₹{myEmployeePays.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">Deducted from your salary · {myMonthLogs.length} meals</p>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Company Pays (this month)</p>
+            <p className="text-2xl font-bold text-emerald-600 mt-0.5">₹{myCompanyPays.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">Paid by the company for your meals</p>
+          </div>
+          <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Total Meal Cost</p>
+            <p className="text-2xl font-bold text-gray-900 mt-0.5">₹{(myEmployeePays + myCompanyPays).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{new Date().toLocaleDateString([], { month: 'long', year: 'numeric' })}</p>
           </div>
         </div>
       )}
@@ -453,7 +515,9 @@ const CanteenDashboard = () => {
                       <th className="px-6 py-3 text-center">Lunch</th>
                       <th className="px-6 py-3 text-center">Snack</th>
                       <th className="px-6 py-3 text-center">Dinner</th>
-                      <th className="px-6 py-3 text-right">Deduction (INR)</th>
+                      <th className="px-6 py-3 text-right">Employee Pays<br /><span className="normal-case font-medium text-gray-400">(deduction)</span></th>
+                      <th className="px-6 py-3 text-right">Company Pays</th>
+                      <th className="px-6 py-3 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
@@ -467,7 +531,9 @@ const CanteenDashboard = () => {
                         <td className="px-6 py-4 text-center text-gray-500">{emp.breakdown.Lunch || 0}</td>
                         <td className="px-6 py-4 text-center text-gray-500">{emp.breakdown.Snack || 0}</td>
                         <td className="px-6 py-4 text-center text-gray-500">{emp.breakdown.Dinner || 0}</td>
-                        <td className="px-6 py-4 text-right font-bold text-gray-900">₹{Number(emp.totalDeduction).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-6 py-4 text-right font-bold text-indigo-600">₹{Number(emp.totalDeduction).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-6 py-4 text-right font-bold text-emerald-600">₹{Number(emp.totalCompanyPaid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="px-6 py-4 text-right font-extrabold text-gray-900">₹{(Number(emp.totalDeduction) + Number(emp.totalCompanyPaid || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -568,7 +634,9 @@ const CanteenDashboard = () => {
                           <th className="px-6 py-3">Employee Name</th>
                           <th className="px-6 py-3">Meal Served</th>
                           <th className="px-6 py-3 text-center">Timestamp</th>
-                          <th className="px-6 py-3 text-right">Price</th>
+                          <th className="px-6 py-3 text-right">Employee Pays</th>
+                          <th className="px-6 py-3 text-right">Company Pays</th>
+                          <th className="px-6 py-3 text-right">Total</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
@@ -581,7 +649,9 @@ const CanteenDashboard = () => {
                             <td className="px-6 py-4 text-center text-xs text-gray-500">
                               {new Date(log.servedAt).toLocaleString()}
                             </td>
-                            <td className="px-6 py-4 text-right font-bold text-gray-900">₹{Number(log.price).toFixed(2)}</td>
+                            <td className="px-6 py-4 text-right font-bold text-indigo-600">₹{Number(log.price).toFixed(2)}</td>
+                            <td className="px-6 py-4 text-right font-bold text-emerald-600">₹{Number(log.companyPrice || 0).toFixed(2)}</td>
+                            <td className="px-6 py-4 text-right font-extrabold text-gray-900">₹{(Number(log.price) + Number(log.companyPrice || 0)).toFixed(2)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -638,7 +708,9 @@ const CanteenDashboard = () => {
                   <tr>
                     <th className="px-6 py-3">Meal ID</th>
                     <th className="px-6 py-3">Meal Name</th>
-                    <th className="px-6 py-3 text-right">Price (INR)</th>
+                    <th className="px-6 py-3 text-right">Employee Pays</th>
+                    <th className="px-6 py-3 text-right">Company Pays</th>
+                    <th className="px-6 py-3 text-right">Total Price</th>
                     <th className="px-6 py-3 text-center">Last Updated</th>
                     <th className="px-6 py-3 text-right">Actions</th>
                   </tr>
@@ -648,7 +720,9 @@ const CanteenDashboard = () => {
                     <tr key={meal.id} className="hover:bg-gray-50/80 transition-colors">
                       <td className="px-6 py-4 text-xs font-mono text-gray-400">#{meal.id}</td>
                       <td className="px-6 py-4 font-bold text-gray-900">{meal.name}</td>
-                      <td className="px-6 py-4 text-right font-bold text-indigo-650">₹{Number(meal.price).toFixed(2)}</td>
+                      <td className="px-6 py-4 text-right font-bold text-indigo-600">₹{Number(meal.price).toFixed(2)}</td>
+                      <td className="px-6 py-4 text-right font-bold text-emerald-600">₹{Number(meal.companyPrice || 0).toFixed(2)}</td>
+                      <td className="px-6 py-4 text-right font-extrabold text-gray-900">₹{(Number(meal.price) + Number(meal.companyPrice || 0)).toFixed(2)}</td>
                       <td className="px-6 py-4 text-center text-xs text-gray-500">
                         {new Date(meal.updatedAt).toLocaleDateString()}
                       </td>
@@ -707,7 +781,7 @@ const CanteenDashboard = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Price (₹) *</label>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Employee Pays (₹) *</label>
                 <input
                   type="number"
                   required
@@ -718,6 +792,28 @@ const CanteenDashboard = () => {
                   onChange={(e) => setMealForm(prev => ({ ...prev, price: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+                <p className="text-[11px] text-gray-400 mt-1">Deducted from the employee's salary for each meal.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Company Pays (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={mealForm.companyPrice}
+                  onChange={(e) => setMealForm(prev => ({ ...prev, companyPrice: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">Company's contribution per meal. Leave blank for 0.</p>
+              </div>
+
+              <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                <span className="font-semibold text-gray-600">Total Meal Price</span>
+                <span className="font-extrabold text-gray-900">
+                  ₹{((Number(mealForm.price) || 0) + (Number(mealForm.companyPrice) || 0)).toFixed(2)}
+                </span>
               </div>
 
               <div className="pt-3 border-t border-gray-100 flex justify-end space-x-2">

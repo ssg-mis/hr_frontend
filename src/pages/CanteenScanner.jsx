@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Camera, CheckCircle, Utensils, RefreshCw, User } from 'lucide-react';
+import { Camera, CheckCircle, Utensils, RefreshCw, User, AlertTriangle } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
@@ -15,6 +15,7 @@ const CanteenScanner = () => {
 
   // Success result popup state
   const [scanResult, setScanResult] = useState(null);
+  const [duplicateScan, setDuplicateScan] = useState(null); // same meal already served today
   const [recentScans, setRecentScans] = useState([]);
   
   const qrCodeReaderRef = useRef(null);
@@ -96,6 +97,11 @@ const CanteenScanner = () => {
       }
     } catch (err) {
       playBeepSound(300, 0.4); // lower error beep
+      if (err.status === 409 && err.body?.code === "ALREADY_SERVED") {
+        // Show a clear popup instead of a small toast; the camera restarts when it is dismissed
+        setDuplicateScan(err.body.data || { message: err.message });
+        return;
+      }
       toast.error(err.message || "Failed to log canteen meal");
       // Restart camera scanner on error if a meal is selected
       if (selectedMealId) {
@@ -165,6 +171,7 @@ const CanteenScanner = () => {
   // Restart camera after dismissing scan popup
   const dismissResultPopup = () => {
     setScanResult(null);
+    setDuplicateScan(null);
     if (selectedMealId) {
       startCamera();
     }
@@ -172,13 +179,13 @@ const CanteenScanner = () => {
 
   // Auto dismiss popup after 2.5 seconds
   useEffect(() => {
-    if (scanResult) {
+    if (scanResult || duplicateScan) {
       const timer = setTimeout(() => {
         dismissResultPopup();
-      }, 2500);
+      }, duplicateScan ? 4000 : 2500);
       return () => clearTimeout(timer);
     }
-  }, [scanResult]);
+  }, [scanResult, duplicateScan]);
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col font-sans select-none relative overflow-hidden">
@@ -221,18 +228,44 @@ const CanteenScanner = () => {
               <span className="text-slate-400 text-xs">Loading meals...</span>
             </div>
           ) : (
-            <select
-              value={selectedMealId}
-              onChange={(e) => setSelectedMealId(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white font-semibold"
-            >
-              <option value="">-- Choose Meal Option --</option>
-              {meals.map((meal) => (
-                <option key={meal.id} value={meal.id}>
-                  {meal.name} (₹{Number(meal.price).toFixed(2)})
-                </option>
-              ))}
-            </select>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {meals.map((meal) => {
+                const emp = Number(meal.price);
+                const co = Number(meal.companyPrice || 0);
+                const selected = String(meal.id) === String(selectedMealId);
+                return (
+                  <button
+                    key={meal.id}
+                    type="button"
+                    onClick={() => setSelectedMealId(selected ? '' : String(meal.id))}
+                    className={`text-left rounded-2xl border p-3 transition-all cursor-pointer ${selected
+                      ? 'bg-indigo-600/20 border-indigo-400 ring-2 ring-indigo-400/60'
+                      : 'bg-slate-800/60 border-slate-700 hover:border-slate-500'
+                      }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-white">{meal.name}</span>
+                      {selected && <CheckCircle size={16} className="text-indigo-300" />}
+                    </div>
+                    <p className="text-lg font-extrabold text-white mt-1">₹{(emp + co).toFixed(2)}</p>
+                    <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold -mt-0.5">Total price</p>
+                    <div className="mt-2 pt-2 border-t border-slate-700/70 space-y-0.5 text-[11px] sm:text-xs">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-emerald-300">Company pays</span>
+                        <span className="font-bold text-emerald-400">₹{co.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-indigo-300">Employee pays</span>
+                        <span className="font-bold text-indigo-200">₹{emp.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {!loading && !selectedMealId && meals.length > 0 && (
+            <p className="text-[11px] text-slate-400 mt-2">Tap a meal to unlock the scanner. Only the employee's share is deducted from salary.</p>
           )}
         </section>
 
@@ -303,6 +336,36 @@ const CanteenScanner = () => {
           </div>
 
           {/* Overlay Pop-up Notification (Success Scan Screen) */}
+          {duplicateScan && (
+            <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center animate-fade-in z-20">
+              <div className="w-16 h-16 bg-amber-500/10 border-2 border-amber-500/30 text-amber-400 rounded-full flex items-center justify-center mb-4 animate-scale-up">
+                <AlertTriangle size={32} />
+              </div>
+              <h3 className="text-lg font-bold text-amber-400">Already Served Today</h3>
+              <p className="text-xs text-slate-400 mt-1">Not logged again · No extra charge</p>
+              <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-4 my-5 w-full max-w-[280px] text-left text-xs space-y-1.5">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400">Employee:</span>
+                  <span className="font-bold text-white text-right">{duplicateScan.employeeName} ({duplicateScan.employeeCode})</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400">Meal:</span>
+                  <span className="font-bold text-white">{duplicateScan.mealName}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-400">Already had at:</span>
+                  <span className="font-bold text-amber-300">{duplicateScan.servedTime}</span>
+                </div>
+              </div>
+              <button
+                onClick={dismissResultPopup}
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-xl border border-slate-700 transition-colors cursor-pointer"
+              >
+                Scan Next
+              </button>
+            </div>
+          )}
+
           {scanResult && (
             <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center animate-fade-in z-20">
               <div className="w-16 h-16 bg-emerald-500/10 border-2 border-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mb-4 animate-scale-up">
@@ -334,8 +397,16 @@ const CanteenScanner = () => {
                   <span className="font-bold text-slate-200">{scanResult.mealName}</span>
                 </div>
                 <div className="mt-1 flex justify-between items-center text-xs">
-                  <span className="text-slate-400">Charge:</span>
-                  <span className="font-bold text-emerald-400">₹{Number(scanResult.price).toFixed(2)}</span>
+                  <span className="text-slate-400">Total Price:</span>
+                  <span className="font-bold text-white">₹{(Number(scanResult.price) + Number(scanResult.companyPrice || 0)).toFixed(2)}</span>
+                </div>
+                <div className="mt-1 flex justify-between items-center text-xs">
+                  <span className="text-slate-400">Company Pays:</span>
+                  <span className="font-bold text-emerald-400">₹{Number(scanResult.companyPrice || 0).toFixed(2)}</span>
+                </div>
+                <div className="mt-1 flex justify-between items-center text-xs">
+                  <span className="text-slate-400">Employee Pays (salary deduction):</span>
+                  <span className="font-bold text-indigo-300">₹{Number(scanResult.price).toFixed(2)}</span>
                 </div>
               </div>
 
@@ -379,7 +450,8 @@ const CanteenScanner = () => {
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="font-bold text-emerald-400">₹{Number(log.price).toFixed(2)}</p>
+                    <p className="font-bold text-indigo-300">Emp ₹{Number(log.price).toFixed(2)}</p>
+                    <p className="text-[10px] text-emerald-400 font-semibold">Co ₹{Number(log.companyPrice || 0).toFixed(2)}</p>
                     <p className="text-[9px] text-slate-500 mt-0.5">
                       {new Date(log.servedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </p>

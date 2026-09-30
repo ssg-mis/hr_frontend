@@ -97,12 +97,15 @@ const EMIManagement = () => {
 
     const fetchLoggedInEmployee = async () => {
         try {
-            const userName = user?.name || user?.Name;
-            if (!userName) return;
-            const res = await api.get(`/employees/active?name=${encodeURIComponent(userName)}`);
-            if (res.success && res.data.length > 0) {
-                setLoggedInEmpData(res.data[0]);
-            }
+            // Match the logged-in employee by their own code/id - never take the first row of an unfiltered list
+            const empCode = user?.biometricEmployeeCode || user?.employeeCode || user?.username;
+            const empId = Number(user?.employeeId || user?.id);
+            if (!empCode && !empId) return;
+            const res = await api.get(`/employees/active?employeeCode=${encodeURIComponent(empCode || '')}`);
+            const list = res.success && Array.isArray(res.data) ? res.data : [];
+            const emp = list.find((e) => Number(e.employee_id) === empId)
+                || list.find((e) => String(e.biometric_employee_code) === String(empCode));
+            if (emp) setLoggedInEmpData(emp);
         } catch (error) {
             console.error("Failed to fetch logged in employee details:", error);
         }

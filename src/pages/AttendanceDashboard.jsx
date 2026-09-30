@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import ExcelJS from "exceljs";
+import CanteenQrCard from '../components/CanteenQrCard';
 
 const Avatar = ({ name, size = "md" }) => {
   const initials = (name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
@@ -2068,14 +2069,7 @@ const AttendanceDashboard = () => {
               {/* Canteen QR code */}
               <div className="pt-4 border-t border-gray-100 flex flex-col items-center">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Employee Canteen QR Code</h4>
-                <div className="bg-white p-3 border border-gray-200 rounded-2xl shadow-sm relative group">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(selectedEmployeeInfo.employeeCode)}`}
-                    alt="Employee QR Code"
-                    className="w-32 h-32 object-contain"
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-2 font-mono font-semibold">{selectedEmployeeInfo.employeeCode}</p>
+                <CanteenQrCard employeeCode={selectedEmployeeInfo.employeeCode} size={128} />
               </div>
 
             </div>

@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { resignationApi } from '../features/resignation/resignation.api';
 import { employeeApi } from '../features/employee/employee.api';
 import useAuthStore from '../store/authStore';
+import SearchableEmployeeSelect from '../components/SearchableEmployeeSelect';
 
 const REASONS = [
   'Better Opportunity',
@@ -566,17 +567,12 @@ const ResignationModule = () => {
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500 outline-none cursor-not-allowed"
                     />
                   ) : (
-                    <select
-                      required
-                      value={requestForm.jobApplicationId}
-                      onChange={(e) => setRequestForm((f) => ({ ...f, jobApplicationId: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="">Select an onboarded employee</option>
-                      {eligibleEmployees.map((emp) => (
-                        <option key={emp.id} value={emp.id}>{emp.candidateName} · {emp.employeeCode}</option>
-                      ))}
-                    </select>
+                    <SearchableEmployeeSelect
+                      employees={eligibleEmployees}
+                      selectedEmployeeId={requestForm.jobApplicationId}
+                      onSelect={(emp) => setRequestForm((f) => ({ ...f, jobApplicationId: emp ? String(emp.id) : '' }))}
+                      placeholder="Search by employee name or code..."
+                    />
                   )}
                   {(isAdmin || isHR) && eligibleEmployees.length === 0 && (
                     <p className="text-xs text-gray-400 mt-1">No onboarded employees available (or all already have an active resignation).</p>
