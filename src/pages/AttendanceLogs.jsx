@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Clock, CheckCircle, AlertCircle, Play, Square, Coffee, Moon, Calendar, History, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
+import { authFetch } from '../lib/api';
 
 const AttendanceLogs = () => {
   const [employee, setEmployee] = useState(null);
@@ -26,7 +27,7 @@ const AttendanceLogs = () => {
         throw new Error("No employee linked to this login");
       }
 
-      const response = await fetch(`${API_URL}/employees/active?employeeCode=${encodeURIComponent(empCode || '')}`);
+      const response = await authFetch(`${API_URL}/employees/active?employeeCode=${encodeURIComponent(empCode || '')}`);
       const result = await response.json();
       const list = result.success && Array.isArray(result.data) ? result.data : [];
       const emp = list.find((e) => Number(e.employee_id) === empId)
@@ -46,7 +47,7 @@ const AttendanceLogs = () => {
   // Fetch today's session details
   const fetchTodaySession = async (empId) => {
     try {
-      const res = await fetch(`${API_URL}/attendance/sessions/today?employeeId=${empId}`);
+      const res = await authFetch(`${API_URL}/attendance/sessions/today?employeeId=${empId}`);
       const result = await res.json();
       if (result.success) {
         setTodaySession(result.data);
@@ -59,7 +60,7 @@ const AttendanceLogs = () => {
   // Fetch attendance history
   const fetchHistory = async (empId) => {
     try {
-      const res = await fetch(`${API_URL}/attendance/sessions/history?employeeId=${empId}`);
+      const res = await authFetch(`${API_URL}/attendance/sessions/history?employeeId=${empId}`);
       const result = await res.json();
       if (result.success) {
         // Reverse array to show newest first
@@ -91,7 +92,7 @@ const AttendanceLogs = () => {
     if (!employee) return;
     setSubmitting(true);
     try {
-      const response = await fetch(`${API_URL}/attendance/events`, {
+      const response = await authFetch(`${API_URL}/attendance/events`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

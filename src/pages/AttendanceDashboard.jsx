@@ -6,6 +6,7 @@ import {
 import toast from "react-hot-toast";
 import ExcelJS from "exceljs";
 import CanteenQrCard from '../components/CanteenQrCard';
+import { authFetch } from '../lib/api';
 
 const Avatar = ({ name, size = "md" }) => {
   const initials = (name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
@@ -130,7 +131,7 @@ const AttendanceDashboard = () => {
     setSyncing(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`${API_URL}/attendance/sync`, {
+      const res = await authFetch(`${API_URL}/attendance/sync`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -168,7 +169,7 @@ const AttendanceDashboard = () => {
       const today = new Date();
       const pad = (n) => String(n).padStart(2, "0");
       const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
-      const res = await fetch(`${API_URL}/attendance/sessions?startDate=${todayStr}&endDate=${todayStr}`);
+      const res = await authFetch(`${API_URL}/attendance/sessions?startDate=${todayStr}&endDate=${todayStr}`);
       const result = await safeJson(res);
       if (result.success) {
         setTodayRecords(result.data || []);
@@ -182,8 +183,8 @@ const AttendanceDashboard = () => {
     setLoading(true);
     try {
       const [res, calRes] = await Promise.all([
-        fetch(`${API_URL}/attendance/sessions?startDate=${start}&endDate=${end}`),
-        fetch(`${API_URL}/calendar`).catch(() => null),
+        authFetch(`${API_URL}/attendance/sessions?startDate=${start}&endDate=${end}`),
+        authFetch(`${API_URL}/calendar`).catch(() => null),
       ]);
       const result = await safeJson(res);
       if (result.success) {
@@ -228,8 +229,8 @@ const AttendanceDashboard = () => {
       setLoading(true);
       try {
         const [res, calRes] = await Promise.all([
-          fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`),
-          fetch(`${API_URL}/calendar`).catch(() => null),
+          authFetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`),
+          authFetch(`${API_URL}/calendar`).catch(() => null),
         ]);
 
         // Parse BOTH before any setState so React batches them in one render
@@ -245,7 +246,7 @@ const AttendanceDashboard = () => {
         const today = new Date();
         const pad = (n) => String(n).padStart(2, "0");
         const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
-        const todayRes = await fetch(`${API_URL}/attendance/sessions?startDate=${todayStr}&endDate=${todayStr}`);
+        const todayRes = await authFetch(`${API_URL}/attendance/sessions?startDate=${todayStr}&endDate=${todayStr}`);
         const todayResult = await safeJson(todayRes);
         if (isCurrent && todayResult.success) {
           setTodayRecords(todayResult.data || []);
@@ -261,7 +262,7 @@ const AttendanceDashboard = () => {
       if (isCurrent) setSyncing(true);
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch(`${API_URL}/attendance/sync`, {
+        const res = await authFetch(`${API_URL}/attendance/sync`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -276,7 +277,7 @@ const AttendanceDashboard = () => {
             if (processed > 0) {
               // New punches were found — refetch from DB and notify
               toast.success(`Synced ${processed} new punches from BioTime.`);
-              const refetchRes = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
+              const refetchRes = await authFetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
               const refetchResult = await safeJson(refetchRes);
               if (isCurrent && refetchResult.success) {
                 setAttendanceRecords(refetchResult.data || []);
@@ -309,7 +310,7 @@ const AttendanceDashboard = () => {
     const dateStr = record.workDate ? new Date(record.workDate).toISOString().split('T')[0] : '';
     setTimelineLoading(true);
     try {
-      const res = await fetch(`${API_URL}/attendance/sessions/today?employeeId=${record.employeeId}&date=${dateStr}`);
+      const res = await authFetch(`${API_URL}/attendance/sessions/today?employeeId=${record.employeeId}&date=${dateStr}`);
       const result = await res.json();
       if (result.success && result.data) {
         setSelectedSessionTimeline({
@@ -362,7 +363,7 @@ const AttendanceDashboard = () => {
     try {
       const token = localStorage.getItem("token");
       const dateStr = typeof day.workDate === "string" ? day.workDate.slice(0, 10) : new Date(day.workDate).toISOString().slice(0, 10);
-      const res = await fetch(`${API_URL}/attendance/overtime`, {
+      const res = await authFetch(`${API_URL}/attendance/overtime`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -391,7 +392,7 @@ const AttendanceDashboard = () => {
     setEmployeeInfoLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`${API_URL}/employees?id=${record.employeeId}`, {
+      const res = await authFetch(`${API_URL}/employees?id=${record.employeeId}`, {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         }
@@ -470,7 +471,7 @@ const AttendanceDashboard = () => {
       const targetEmpId = recordModalEmp.employeeId || selectedEmployeeLogs?.employeeId;
       const endpoint = target === "biotime" ? "/attendance/events/biotime" : "/attendance/events";
 
-      const res = await fetch(`${API_URL}${endpoint}`, {
+      const res = await authFetch(`${API_URL}${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -489,7 +490,7 @@ const AttendanceDashboard = () => {
         setRecordModalEmp(null);
 
         // Refetch sessions from backend to update UI
-        const refetchRes = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
+        const refetchRes = await authFetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
         const refetchResult = await refetchRes.json();
         if (refetchResult.success) {
           setAttendanceRecords(refetchResult.data || []);
@@ -527,7 +528,7 @@ const AttendanceDashboard = () => {
         remarks: editForm.remarks || "Manual punch update by Admin",
       };
 
-      const res = await fetch(`${API_URL}/attendance/events`, {
+      const res = await authFetch(`${API_URL}/attendance/events`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -542,7 +543,7 @@ const AttendanceDashboard = () => {
         setRecordModalEmp(null);
 
         // Refetch sessions from backend to update UI
-        const refetchRes = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
+        const refetchRes = await authFetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
         const refetchResult = await refetchRes.json();
         if (refetchResult.success) {
           setAttendanceRecords(refetchResult.data || []);
@@ -576,7 +577,7 @@ const AttendanceDashboard = () => {
       const token = localStorage.getItem("token");
       const targetEmpId = recordModalEmp.employeeId || selectedEmployeeLogs?.employeeId;
 
-      const res = await fetch(`${API_URL}/attendance/events`, {
+      const res = await authFetch(`${API_URL}/attendance/events`, {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
@@ -594,7 +595,7 @@ const AttendanceDashboard = () => {
         setRecordModalEmp(null);
 
         // Refetch sessions from backend to update UI
-        const refetchRes = await fetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
+        const refetchRes = await authFetch(`${API_URL}/attendance/sessions?startDate=${startDate}&endDate=${endDate}`);
         const refetchResult = await refetchRes.json();
         if (refetchResult.success) {
           setAttendanceRecords(refetchResult.data || []);

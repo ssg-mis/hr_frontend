@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { authFetch } from '../lib/api';
 
 
 const Attendance = () => {
@@ -35,7 +36,7 @@ const Attendance = () => {
     setError(null);
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `${import.meta.env.VITE_API_URL || "/api/v1"}/attendance?page=${page}&limit=${pagination.limit}&search=${searchTerm}&department=${selectedDepartment}&employee=${selectedEmployee}&year=${selectedYear}&date=${selectedDate}`
       );
 
