@@ -26,6 +26,9 @@ const PublicApplyPage = () => {
   const [submitted, setSubmitted] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadingResume, setUploadingResume] = useState(false);
+  const [uploadingSalarySlip, setUploadingSalarySlip] = useState(false);
+  const [uploadingExperienceLetter, setUploadingExperienceLetter] = useState(false);
+  const [uploadingRelievingLetter, setUploadingRelievingLetter] = useState(false);
 
   const [formData, setFormData] = useState({
     candidateName: '',
@@ -41,6 +44,9 @@ const PublicApplyPage = () => {
     aadharNo: '',
     candidatePhoto: null,
     candidateResume: null,
+    salarySlip: null,
+    experienceLetter: null,
+    relievingLetter: null,
   });
 
   useEffect(() => {
@@ -113,6 +119,11 @@ const PublicApplyPage = () => {
       return;
     }
 
+    if (!formData.candidatePhoto) {
+      toast.error('Please upload your Passport Photo');
+      return;
+    }
+
     if (!formData.candidateResume) {
       toast.error('Please upload your Resume');
       return;
@@ -137,6 +148,9 @@ const PublicApplyPage = () => {
     try {
       let photoUrl = '';
       let resumeUrl = '';
+      let salarySlipUrl = '';
+      let experienceLetterUrl = '';
+      let relievingLetterUrl = '';
 
       if (formData.candidatePhoto) {
         setUploadingPhoto(true);
@@ -147,6 +161,24 @@ const PublicApplyPage = () => {
       setUploadingResume(true);
       resumeUrl = await uploadFile(formData.candidateResume);
       setUploadingResume(false);
+
+      if (formData.salarySlip) {
+        setUploadingSalarySlip(true);
+        salarySlipUrl = await uploadFile(formData.salarySlip);
+        setUploadingSalarySlip(false);
+      }
+
+      if (formData.experienceLetter) {
+        setUploadingExperienceLetter(true);
+        experienceLetterUrl = await uploadFile(formData.experienceLetter);
+        setUploadingExperienceLetter(false);
+      }
+
+      if (formData.relievingLetter) {
+        setUploadingRelievingLetter(true);
+        relievingLetterUrl = await uploadFile(formData.relievingLetter);
+        setUploadingRelievingLetter(false);
+      }
 
       const payload = {
         vacancyNumber,
@@ -164,6 +196,9 @@ const PublicApplyPage = () => {
         aadharNo: formData.aadharNo || null,
         candidatePhoto: photoUrl || null,
         candidateResume: resumeUrl || null,
+        salarySlip: salarySlipUrl || null,
+        experienceLetter: experienceLetterUrl || null,
+        relievingLetter: relievingLetterUrl || null,
         referenceBy: 'Direct Applicant',
       };
 
@@ -177,6 +212,9 @@ const PublicApplyPage = () => {
       setSubmitting(false);
       setUploadingPhoto(false);
       setUploadingResume(false);
+      setUploadingSalarySlip(false);
+      setUploadingExperienceLetter(false);
+      setUploadingRelievingLetter(false);
     }
   };
 
@@ -400,7 +438,7 @@ const PublicApplyPage = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1">Passport Photo (JPG/PNG)</label>
+                  <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1">Passport Photo * (JPG/PNG)</label>
                   <div className="relative border border-dashed border-gray-300 hover:border-indigo-500 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors bg-white">
                     <input type="file" accept=".jpg,.jpeg,.png" onChange={(e) => handleFileChange(e, 'candidatePhoto')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                     <Upload size={20} className="text-gray-400 mb-1" />
@@ -408,16 +446,55 @@ const PublicApplyPage = () => {
                     <span className="text-[10px] text-gray-400 mt-1">Images, max 10MB</span>
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1">Salary Slip (PDF/JPG/PNG)</label>
+                  <div className="relative border border-dashed border-gray-300 hover:border-indigo-500 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors bg-white">
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => handleFileChange(e, 'salarySlip')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                    <Upload size={20} className="text-gray-400 mb-1" />
+                    <span className="text-xs font-bold text-gray-700">{formData.salarySlip ? formData.salarySlip.name : 'Choose file...'}</span>
+                    <span className="text-[10px] text-gray-400 mt-1">PDF or Images, max 10MB</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1">Experience Letter (PDF/JPG/PNG)</label>
+                  <div className="relative border border-dashed border-gray-300 hover:border-indigo-500 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors bg-white">
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => handleFileChange(e, 'experienceLetter')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                    <Upload size={20} className="text-gray-400 mb-1" />
+                    <span className="text-xs font-bold text-gray-700">{formData.experienceLetter ? formData.experienceLetter.name : 'Choose file...'}</span>
+                    <span className="text-[10px] text-gray-400 mt-1">PDF or Images, max 10MB</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1">Relieving Letter (PDF/JPG/PNG)</label>
+                  <div className="relative border border-dashed border-gray-300 hover:border-indigo-500 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors bg-white">
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => handleFileChange(e, 'relievingLetter')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                    <Upload size={20} className="text-gray-400 mb-1" />
+                    <span className="text-xs font-bold text-gray-700">{formData.relievingLetter ? formData.relievingLetter.name : 'Choose file...'}</span>
+                    <span className="text-[10px] text-gray-400 mt-1">PDF or Images, max 10MB</span>
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Submission Action */}
             <div className="pt-4 flex justify-end">
-              <button type="submit" className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-100 transition-colors flex items-center" disabled={submitting || uploadingPhoto || uploadingResume}>
-                {submitting ? (
+              <button
+                type="submit"
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-100 transition-colors flex items-center"
+                disabled={submitting || uploadingPhoto || uploadingResume || uploadingSalarySlip || uploadingExperienceLetter || uploadingRelievingLetter}
+              >
+                {submitting || uploadingPhoto || uploadingResume || uploadingSalarySlip || uploadingExperienceLetter || uploadingRelievingLetter ? (
                   <>
                     <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin mr-2" />
-                    {uploadingPhoto ? 'Uploading Photo...' : uploadingResume ? 'Uploading Resume...' : 'Submitting...'}
+                    {uploadingPhoto ? 'Uploading Photo...' :
+                     uploadingResume ? 'Uploading Resume...' :
+                     uploadingSalarySlip ? 'Uploading Salary Slip...' :
+                     uploadingExperienceLetter ? 'Uploading Experience Letter...' :
+                     uploadingRelievingLetter ? 'Uploading Relieving Letter...' :
+                     'Submitting...'}
                   </>
                 ) : (
                   <>

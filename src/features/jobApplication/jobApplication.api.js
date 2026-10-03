@@ -18,6 +18,9 @@ export const jobApplicationApi = {
   create: (payload) =>
     api.post('/job-applications', payload).then((r) => r.data),
 
+  getByNumber: (applicationNumber) =>
+    api.get(`/job-applications/${applicationNumber}`).then((r) => r.data),
+
   // --- Follow-up / pipeline (stage d) ---
   listFollowUps: (applicationNumber) =>
     api.get(`/job-applications/${applicationNumber}/follow-ups`).then((r) => r.data),

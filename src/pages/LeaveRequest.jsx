@@ -3,10 +3,13 @@ import { Plus, X, Calendar, Clock, CheckCircle, AlertCircle, Filter, Search } fr
 import useAuthStore from '../store/authStore';
 import useDataStore from '../store/dataStore';
 import toast from 'react-hot-toast';
+import { api } from '../lib/api';
 
 const LeaveRequest = () => {
-  const { user } = useAuthStore();
-  const employeeId = user?.employee_id || user?.id || localStorage.getItem("employeeId");
+  const { user, isHOD } = useAuthStore();
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const userIsHOD = isHOD || userRoles.some(r => r.toLowerCase() === 'hod');
+  const employeeId = user?.employeeId || user?.employee_id || user?.id || localStorage.getItem("employeeId");
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [leavesData, setLeavesData] = useState([]);
@@ -15,12 +18,11 @@ const LeaveRequest = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState('all');
   const [employees, setEmployees] = useState([]);
-  const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
   const [hods, setHods] = useState([]);
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [formData, setFormData] = useState({
     employeeName: user?.name || user?.Name || '',
-    employeeId: user?.employee_id || user?.id || '',
+    employeeId: user?.employeeId || user?.employee_id || user?.id || '',
     department: '',
     departmentId: '',
     hodName: '',
@@ -33,34 +35,35 @@ const LeaveRequest = () => {
 
   const fetchEmployeeData = async () => {
     try {
-      const userName = user?.name || user?.Name;
-      if (!userName) return;
+      const result = await api.get('/employees/active');
 
-      const response = await fetch(`${API_URL}/employees/active?name=${encodeURIComponent(userName)}`);
-      const result = await response.json();
+      if (result.success && result.data && result.data.length > 0) {
+        const currentEmpId = user?.employeeId || user?.employee_id || user?.id;
+        const currentEmpCode = user?.employeeCode;
 
-      if (result.success && result.data.length > 0) {
-        const emp = result.data[0]; // Take the first matching employee
+        const emp = result.data.find(e =>
+          (currentEmpId && Number(e.employee_id) === Number(currentEmpId)) ||
+          (currentEmpCode && e.employee_code === currentEmpCode)
+        ) || result.data[0];
+
         if (emp) {
           setFormData(prev => ({
             ...prev,
-            employeeId: emp.employee_id,
-            department: emp.department?.department_name || '',
-            departmentId: emp.department_id || '',
-            hodName: emp.department?.hod_name || ''
+            employeeName: emp.name_as_per_aadhar || user?.name || user?.Name || prev.employeeName,
+            employeeId: emp.employee_id || prev.employeeId,
+            department: emp.department?.department_name || prev.department,
+            departmentId: emp.department_id || prev.departmentId,
+            hodName: emp.department?.hod_name || prev.hodName || (hods.length > 0 ? hods[0].name : '')
           }));
-          // Fetch leave data using the resolved employee_id
           fetchLeaveData(emp.employee_id);
-        } else {
-          // If no employee found, still try to fetch with what we have
-          fetchLeaveData(employeeId);
+          return;
         }
-      } else {
-        // If API fails, try with existing ID
-        fetchLeaveData(employeeId);
       }
+      fetchLeaveData(employeeId);
     } catch (error) {
-      console.error('Error fetching employee data:', error);
+      if (error?.status !== 403 && error?.status !== 401) {
+        console.error('Error fetching employee data:', error);
+      }
       fetchLeaveData(employeeId);
     }
   };
@@ -73,8 +76,7 @@ const LeaveRequest = () => {
   // Fetch HODs from backend
   const fetchHods = async () => {
     try {
-      const response = await fetch(`${API_URL}/leaves/hods`);
-      const result = await response.json();
+      const result = await api.get('/leaves/hods');
       if (result.success) {
         setHods(result.data);
       }
@@ -85,8 +87,7 @@ const LeaveRequest = () => {
 
   const fetchLeaveTypes = async () => {
     try {
-      const response = await fetch(`${API_URL}/leaves/policies`);
-      const result = await response.json();
+      const result = await api.get('/leaves/policies');
       if (result.success) {
         setLeaveTypes(result.data);
       }
@@ -212,8 +213,7 @@ const LeaveRequest = () => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_URL}/leaves/employee/${idToUse}`);
-      const result = await response.json();
+      const result = await api.get(`/leaves/employee/${idToUse}`);
 
       if (!result.success) {
         throw new Error(result.message || 'Failed to fetch leave data');
@@ -258,52 +258,63 @@ const LeaveRequest = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason || !formData.hodName) {
+    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason || (!userIsHOD && !formData.hodName)) {
       toast.error('Please fill all required fields');
       return;
     }
 
+    const selectedPolicy = leaveTypes.find(t => t.leaveName === formData.leaveType || t.leaveCode === formData.leaveCode);
+    if (selectedPolicy) {
+      const activeLeaves = leavesData.filter(leave =>
+        leave.status && !leave.status.toLowerCase().includes('reject') &&
+        (leave.leaveCode === selectedPolicy.leaveCode || leave.leaveType === selectedPolicy.leaveName)
+      );
+      const usedDays = activeLeaves.reduce((sum, l) => sum + (l.days || 0), 0);
+      const totalLimit = selectedPolicy.balance || 0;
+      const remaining = totalLimit - usedDays;
+      const reqDays = calculateDays(formData.fromDate, formData.toDate);
+
+      if (remaining <= 0) {
+        toast.error(`You have no leave balance left for ${formData.leaveType} (0 days remaining).`);
+        return;
+      }
+      if (reqDays > remaining) {
+        toast.error(`Cannot request ${reqDays} day(s). You only have ${remaining} day(s) of ${formData.leaveType} balance remaining.`);
+        return;
+      }
+    }
+
     try {
       setSubmitting(true);
-      const response = await fetch(`${API_URL}/leaves`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeId: formData.employeeId,
-          employeeName: formData.employeeName,
-          startDate: formData.fromDate,
-          endDate: formData.toDate,
-          remark: formData.reason,
-          leaveCode: formData.leaveCode,
-          hodName: formData.hodName,
-          departmentId: formData.departmentId
-        }),
+      const result = await api.post('/leaves', {
+        employeeId: formData.employeeId,
+        employeeName: formData.employeeName,
+        startDate: formData.fromDate,
+        endDate: formData.toDate,
+        remark: formData.reason,
+        leaveCode: formData.leaveCode,
+        hodName: userIsHOD ? 'N/A' : (formData.hodName || 'N/A'),
+        departmentId: formData.departmentId
       });
-
-      const result = await response.json();
 
       if (result.success) {
         toast.success('Leave Request submitted successfully!');
-        setFormData({
-          employeeId: employeeId,
-          employeeName: user.Name || user.name || '',
-          department: formData.department,
-          departmentId: formData.departmentId,
-          hodName: '',
+        setFormData(prev => ({
+          ...prev,
           leaveType: '',
           leaveCode: '',
           fromDate: '',
           toDate: '',
           reason: ''
-        });
+        }));
         setShowModal(false);
-        fetchLeaveData();
+        fetchLeaveData(formData.employeeId);
       } else {
         toast.error('Failed to submit: ' + (result.message || 'Unknown error'));
       }
     } catch (error) {
       console.error('Insert error:', error);
-      toast.error('Something went wrong!');
+      toast.error(error.message || 'Something went wrong!');
     } finally {
       setSubmitting(false);
     }
@@ -311,18 +322,15 @@ const LeaveRequest = () => {
 
 
 
-  // Calculate leave balances dynamically based on policies and approved leaves
+  // Calculate leave balances dynamically based on policies and approved/pending leaves
   const getLeaveStats = () => {
-    const approvedLeaves = leavesData.filter(leave =>
-      leave.status && leave.status.toLowerCase() === 'approved' &&
-      leave.employeeId?.toString() === employeeId?.toString() &&
-      (selectedMonth === 'all' ||
-        isDateInMonth(leave.startDate, selectedMonth) ||
-        isDateInMonth(leave.endDate, selectedMonth))
+    const activeLeaves = leavesData.filter(leave =>
+      leave.status && !leave.status.toLowerCase().includes('reject') &&
+      leave.employeeId?.toString() === employeeId?.toString()
     );
 
     return leaveTypes.map(policy => {
-      const used = approvedLeaves
+      const used = activeLeaves
         .filter(leave => leave.leaveCode === policy.leaveCode || leave.leaveType === policy.leaveName)
         .reduce((sum, leave) => sum + (leave.days || 0), 0);
       
@@ -551,21 +559,18 @@ const LeaveRequest = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name *</label>
-                <select
-                  name="hodName"
-                  value={formData.hodName}
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                >
-                  <option value="">Select HOD</option>
-                  {hods.map(hod => (
-                    <option key={hod.id} value={hod.name}>{hod.name}</option>
-                  ))}
-                </select>
-              </div>
+              {!userIsHOD && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name</label>
+                  <input
+                    type="text"
+                    name="hodName"
+                    value={formData.hodName || '—'}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
+                    readOnly
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Leave Type *</label>
@@ -589,6 +594,19 @@ const LeaveRequest = () => {
                     </>
                   )}
                 </select>
+                {formData.leaveType && (() => {
+                  const stat = leaveStats.find(s => s.leaveName === formData.leaveType || s.leaveCode === formData.leaveCode);
+                  if (!stat) return null;
+                  return stat.remaining <= 0 ? (
+                    <p className="text-xs text-red-600 font-semibold mt-1 flex items-center">
+                      ⚠️ No leave balance left for this leave type (0 days remaining).
+                    </p>
+                  ) : (
+                    <p className="text-xs text-emerald-600 font-medium mt-1">
+                      Available balance: {stat.remaining} day(s) remaining out of {stat.total}
+                    </p>
+                  );
+                })()}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
