@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Search, Download, Calendar } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { authFetch } from '../lib/api';
 
 const AttendanceMonthly = () => {
   const [attendanceData, setAttendanceData] = useState([]);
@@ -34,7 +35,7 @@ const AttendanceMonthly = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `${import.meta.env.VITE_API_URL || "/api/v1"}/attendance/monthly?month=${selectedMonth}&year=${selectedYear}&department=${selectedDepartment}&search=${encodeURIComponent(searchTerm)}`
       );
       if (!response.ok) throw new Error('Failed to fetch monthly attendance');

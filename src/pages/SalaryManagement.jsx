@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Check, X, ArrowUpRight, History, ShieldAlert, Users, Percent, IndianRupee, Layers, CheckSquare, Gift, CreditCard, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { authFetch } from '../lib/api';
 
 // Increments always start from the latest salary, even when the list shows an older month's rate
 const latestBase = (emp) => emp.latestBaseSalary ?? emp.baseSalary;
@@ -109,7 +110,7 @@ const SalaryManagement = () => {
 
   const fetchAdvanceRequests = async () => {
     try {
-      const res = await fetch(`${API_URL}/advances`);
+      const res = await authFetch(`${API_URL}/advances`);
       const result = await res.json();
       if (result.success) {
         setAdvanceRequests(result.data || []);
@@ -121,7 +122,7 @@ const SalaryManagement = () => {
 
   const fetchAdvanceRecoveries = async () => {
     try {
-      const res = await fetch(`${API_URL}/advances/recoveries`);
+      const res = await authFetch(`${API_URL}/advances/recoveries`);
       const result = await res.json();
       if (result.success) {
         setAdvanceRecoveries(result.data || []);
@@ -133,7 +134,7 @@ const SalaryManagement = () => {
 
   const fetchCalendarEvents = async () => {
     try {
-      const res = await fetch(`${API_URL}/calendar`);
+      const res = await authFetch(`${API_URL}/calendar`);
       const result = await res.json();
       if (result.success) {
         setCalendarEvents(result.data || []);
@@ -195,7 +196,7 @@ const SalaryManagement = () => {
       params.set("search", searchTerm.trim());
     }
     if (salaryMonth) params.set("month", salaryMonth);
-    const res = await fetch(`${API_URL}/salaries?${params.toString()}`);
+    const res = await authFetch(`${API_URL}/salaries?${params.toString()}`);
     const result = await res.json();
     if (result.success) {
       setSalaries(Array.isArray(result.data) ? result.data : []);
@@ -207,7 +208,7 @@ const SalaryManagement = () => {
   };
 
   const fetchRequests = async () => {
-    const res = await fetch(`${API_URL}/salaries/requests`);
+    const res = await authFetch(`${API_URL}/salaries/requests`);
     const result = await res.json();
     if (result.success) {
       setRequests(result.data);
@@ -222,7 +223,7 @@ const SalaryManagement = () => {
         limit: String(l),
       });
       if (q && q.trim()) params.append('search', q.trim());
-      const res = await fetch(`${API_URL}/salaries/history?${params.toString()}`);
+      const res = await authFetch(`${API_URL}/salaries/history?${params.toString()}`);
       const result = await res.json();
       if (result.success) {
         setHistory(Array.isArray(result.data) ? result.data : []);
@@ -239,7 +240,7 @@ const SalaryManagement = () => {
   };
 
   const fetchDepartments = async () => {
-    const res = await fetch(`${API_URL}/departments`);
+    const res = await authFetch(`${API_URL}/departments`);
     const result = await res.json();
     if (result.success) {
       setDepartments(result.data);
@@ -265,7 +266,7 @@ const SalaryManagement = () => {
     }
 
     try {
-      const res = await fetch(`${API_URL}/salaries/request`, {
+      const res = await authFetch(`${API_URL}/salaries/request`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -301,7 +302,7 @@ const SalaryManagement = () => {
     }
 
     try {
-      const res = await fetch(`${API_URL}/salaries/request`, {
+      const res = await authFetch(`${API_URL}/salaries/request`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -355,7 +356,7 @@ const SalaryManagement = () => {
   // Process approval workflow (HR / HOD)
   const processWorkflowAction = async (requestId, nextStatus) => {
     try {
-      const res = await fetch(`${API_URL}/salaries/request/${requestId}`, {
+      const res = await authFetch(`${API_URL}/salaries/request/${requestId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: nextStatus }),
@@ -1221,7 +1222,7 @@ const SalaryManagement = () => {
                                     <button
                                       onClick={async () => {
                                         try {
-                                          const res = await fetch(`${API_URL}/advances/${req.id}`, {
+                                          const res = await authFetch(`${API_URL}/advances/${req.id}`, {
                                             method: "PATCH",
                                             headers: { "Content-Type": "application/json" },
                                             body: JSON.stringify({ status: "Pending HR" }),
@@ -1240,7 +1241,7 @@ const SalaryManagement = () => {
                                     <button
                                       onClick={async () => {
                                         try {
-                                          const res = await fetch(`${API_URL}/advances/${req.id}`, {
+                                          const res = await authFetch(`${API_URL}/advances/${req.id}`, {
                                             method: "PATCH",
                                             headers: { "Content-Type": "application/json" },
                                             body: JSON.stringify({ status: "Rejected" }),
@@ -1263,7 +1264,7 @@ const SalaryManagement = () => {
                                     <button
                                       onClick={async () => {
                                         try {
-                                          const res = await fetch(`${API_URL}/advances/${req.id}`, {
+                                          const res = await authFetch(`${API_URL}/advances/${req.id}`, {
                                             method: "PATCH",
                                             headers: { "Content-Type": "application/json" },
                                             body: JSON.stringify({ status: "Approved" }),
@@ -1282,7 +1283,7 @@ const SalaryManagement = () => {
                                     <button
                                       onClick={async () => {
                                         try {
-                                          const res = await fetch(`${API_URL}/advances/${req.id}`, {
+                                          const res = await authFetch(`${API_URL}/advances/${req.id}`, {
                                             method: "PATCH",
                                             headers: { "Content-Type": "application/json" },
                                             body: JSON.stringify({ status: "Rejected" }),
@@ -1782,7 +1783,7 @@ const SalaryManagement = () => {
                   type="button"
                   onClick={async () => {
                     try {
-                      const res = await fetch(`${API_URL}/salaries/week-offs`, {
+                      const res = await authFetch(`${API_URL}/salaries/week-offs`, {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
@@ -1831,7 +1832,7 @@ const SalaryManagement = () => {
               onSubmit={async (e) => {
                 e.preventDefault();
                 try {
-                  const res = await fetch(`${API_URL}/advances`, {
+                  const res = await authFetch(`${API_URL}/advances`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(advanceForm),
@@ -1974,7 +1975,7 @@ const SalaryManagement = () => {
                   return;
                 }
                 try {
-                  const res = await fetch(`${API_URL}/advances/${selectedAdvance.id}/recover`, {
+                  const res = await authFetch(`${API_URL}/advances/${selectedAdvance.id}/recover`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(recoveryForm),

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Clock, Plus, Search, Calendar, User, X, CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
+import { authFetch } from '../lib/api';
 
 const MASTER_SHIFTS = [
   { id: "a", name: "a", startTime: "05:45", endTime: "14:15", label: "Shift A", timing: "5:45 AM - 2:15 PM", color: "bg-purple-100 text-purple-800 border-purple-200" },
@@ -38,7 +39,7 @@ const ShiftManagement = () => {
 
   const fetchMasterShifts = async () => {
     try {
-      const res = await fetch(`${API_URL}/attendance/shifts/master`);
+      const res = await authFetch(`${API_URL}/attendance/shifts/master`);
       const result = await res.json();
       if (result.success && result.data && result.data.length > 0) {
         // Merge timings info
@@ -60,7 +61,7 @@ const ShiftManagement = () => {
 
   const fetchShifts = async () => {
     try {
-      const res = await fetch(`${API_URL}/attendance/shifts`);
+      const res = await authFetch(`${API_URL}/attendance/shifts`);
       const result = await res.json();
       if (result.success) {
         setShifts(result.data || []);
@@ -73,7 +74,7 @@ const ShiftManagement = () => {
 
   const fetchEmployees = async () => {
     try {
-      const res = await fetch(`${API_URL}/employees/active`);
+      const res = await authFetch(`${API_URL}/employees/active`);
       const result = await res.json();
       if (result.success) {
         setEmployeesList(result.data || []);
@@ -109,7 +110,7 @@ const ShiftManagement = () => {
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_URL}/attendance/shifts`, {
+      const res = await authFetch(`${API_URL}/attendance/shifts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -3,10 +3,11 @@ import { toast } from 'react-hot-toast';
 import {
   Plus, Search, Edit2, Trash2, X, User, Shield, Key, UserPlus, Eye, EyeOff,
   Award, Building, ChevronLeft, ChevronRight, Users, CheckCircle, Sliders,
-  CheckSquare, Square, RotateCcw, Lock, Unlock, Layers, Check
+  CheckSquare, Square, RotateCcw, Lock, Unlock, Layers, Check, Utensils, Download, QrCode
 } from 'lucide-react';
 import api from '../lib/api';
 import SearchableEmployeeSelect from '../components/SearchableEmployeeSelect';
+import { generateCanteenQrPdf } from '../lib/generateCanteenQrPdf';
 import {
   SYSTEM_MODULES,
   ROLE_PAGE_PRESETS,
@@ -54,6 +55,13 @@ const Settings = () => {
   const [selectedRoleToAssign, setSelectedRoleToAssign] = useState('Employee');
   const [loadingRoles, setLoadingRoles] = useState(false);
   const [roleTabAllowedPages, setRoleTabAllowedPages] = useState([]);
+
+  // Canteen Manager state
+  const [selectedCanteenEmpId, setSelectedCanteenEmpId] = useState('');
+  const [savingCanteen, setSavingCanteen] = useState(false);
+  const [editingManager, setEditingManager] = useState(null);
+  const [qrDeptFilter, setQrDeptFilter] = useState('');
+  const [downloadingQrs, setDownloadingQrs] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -356,6 +364,120 @@ const Settings = () => {
     }
   };
 
+  // Canteen Manager helpers
+  const CANTEEN_PAGES = ['/canteen', '/canteen/scan'];
+
+  const canteenManagers = users
+    .filter((u) => u.role === 'CanteenManager')
+    .map((u) => {
+      const emp = employees.find((e) => String(e.employee_id) === String(u.employee_id));
+      const pages = Array.isArray(u.allowedPages) && u.allowedPages.length > 0 ? u.allowedPages : CANTEEN_PAGES;
+      return {
+        ...u,
+        code: emp?.employee_code || u.username,
+        designation: emp?.designation_name,
+        departmentName: emp?.department?.department_name,
+        hasDashboard: pages.includes('/canteen'),
+        hasScanner: pages.includes('/canteen/scan'),
+      };
+    });
+
+  const handleAddCanteenManager = async (e) => {
+    e.preventDefault();
+    if (!selectedCanteenEmpId) {
+      toast.error('Please select an employee');
+      return;
+    }
+    const existing = users.find((u) => String(u.employee_id) === String(selectedCanteenEmpId));
+    if (existing?.role === 'CanteenManager') {
+      toast.error('This employee is already a Canteen Manager');
+      return;
+    }
+    if (existing && existing.role !== 'Employee') {
+      toast.error(`This employee is currently ${existing.role}. Change their role from the Employee Roles tab first.`);
+      return;
+    }
+    try {
+      setSavingCanteen(true);
+      // null allowedPages => CanteenManager role preset (Dashboard + Scanner)
+      await api.post(`/employees/${selectedCanteenEmpId}/roles`, { role: 'CanteenManager', allowedPages: null });
+      toast.success('Canteen Manager added successfully');
+      setSelectedCanteenEmpId('');
+      fetchUsers();
+    } catch (error) {
+      console.error('Error adding canteen manager:', error);
+      toast.error(error.message || 'Failed to add Canteen Manager');
+    } finally {
+      setSavingCanteen(false);
+    }
+  };
+
+  const handleSaveCanteenManager = async (e) => {
+    e.preventDefault();
+    const { id, username, password, hasDashboard, hasScanner } = editingManager;
+    if (!username?.trim()) {
+      toast.error('Username is required');
+      return;
+    }
+    if (!hasDashboard && !hasScanner) {
+      toast.error('Enable at least one canteen page, or remove the manager instead');
+      return;
+    }
+    const pages = [hasDashboard && '/canteen', hasScanner && '/canteen/scan'].filter(Boolean);
+    try {
+      setSavingCanteen(true);
+      await api.put(`/users/${id}`, {
+        username: username.trim(),
+        ...(password ? { password } : {}),
+        role: 'CanteenManager',
+        allowedPages: pages.length === CANTEEN_PAGES.length ? null : pages,
+      });
+      toast.success('Canteen Manager updated successfully');
+      setEditingManager(null);
+      fetchUsers();
+    } catch (error) {
+      console.error('Error updating canteen manager:', error);
+      toast.error(error.message || 'Failed to update Canteen Manager');
+    } finally {
+      setSavingCanteen(false);
+    }
+  };
+
+  const handleDownloadAllQrs = async () => {
+    try {
+      setDownloadingQrs(true);
+      const result = await api.get('/canteen/qr/all');
+      const all = result?.data || [];
+      const list = qrDeptFilter ? all.filter((e) => e.department === qrDeptFilter) : all;
+      if (list.length === 0) {
+        toast.error('No employees found for this selection');
+        return;
+      }
+      const suffix = qrDeptFilter ? qrDeptFilter.replace(/[^a-z0-9]+/gi, '_') : 'All';
+      await generateCanteenQrPdf(list, `Canteen_QR_Codes_${suffix}.pdf`);
+      toast.success(`Downloaded ${list.length} employee QR codes`);
+    } catch (error) {
+      console.error('Error downloading QR codes:', error);
+      toast.error(error.message || 'Failed to download QR codes');
+    } finally {
+      setDownloadingQrs(false);
+    }
+  };
+
+  const handleRemoveCanteenManager = async (manager) => {
+    if (!window.confirm(`Remove ${manager.name} as Canteen Manager? They will go back to the normal Employee role.`)) {
+      return;
+    }
+    try {
+      await api.post(`/employees/${manager.id}/roles`, { role: 'Employee', allowedPages: null });
+      toast.success('Canteen Manager removed successfully');
+      fetchUsers();
+    } catch (error) {
+      console.error('Error removing canteen manager:', error);
+      toast.error(error.message || 'Failed to remove Canteen Manager');
+    }
+  };
+
   const filteredUsers = users.filter(user =>
     (user.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (user.username || '').toLowerCase().includes(searchTerm.toLowerCase())
@@ -421,6 +543,23 @@ const Settings = () => {
           >
             <Award size={16} className={activeTab === 'roles' ? 'text-indigo-600' : 'text-gray-400'} />
             Employee Roles
+          </button>
+
+          <button
+            onClick={() => setActiveTab('canteen')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+              activeTab === 'canteen'
+                ? 'bg-white text-indigo-700 shadow-sm border border-gray-200'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
+            }`}
+          >
+            <Utensils size={16} className={activeTab === 'canteen' ? 'text-indigo-600' : 'text-gray-400'} />
+            Canteen Management
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+              activeTab === 'canteen' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-200 text-gray-600'
+            }`}>
+              {canteenManagers.length}
+            </span>
           </button>
         </div>
       </div>
@@ -713,6 +852,194 @@ const Settings = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── TAB 4: Canteen Manager Panel ──────────────────────────────── */}
+      {activeTab === 'canteen' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 max-w-4xl mx-auto">
+          <div className="p-6 border-b border-gray-200 bg-gray-50/50 rounded-t-2xl">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <Utensils size={20} className="text-indigo-600" />
+              Canteen Management
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">Add, edit or remove Canteen Managers who run the canteen dashboard and QR scanner.</p>
+          </div>
+
+          <div className="p-6 space-y-6">
+            <form onSubmit={handleAddCanteenManager} className="space-y-4 bg-indigo-50/40 p-5 rounded-2xl border border-indigo-100">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Select Employee</label>
+                <SearchableEmployeeSelect
+                  employees={employees}
+                  selectedEmployeeId={selectedCanteenEmpId}
+                  onSelect={(emp) => setSelectedCanteenEmpId(emp ? emp.employee_id.toString() : '')}
+                  placeholder="Type name or code to search employee..."
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={savingCanteen}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <UserPlus size={16} />
+                {savingCanteen && !editingManager ? 'Adding...' : 'Add Canteen Manager'}
+              </button>
+            </form>
+
+            <div className="space-y-3 pt-2">
+              <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Current Canteen Managers</h3>
+              {loadingUsers ? (
+                <p className="text-sm text-gray-500 text-center py-6">Loading canteen managers...</p>
+              ) : canteenManagers.length > 0 ? (
+                <div className="divide-y divide-gray-100">
+                  {canteenManagers.map((m) => (
+                    <div key={m.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm hover:bg-gray-50 px-2 rounded-lg transition-colors">
+                      <div className="min-w-0">
+                        <span className="font-bold text-gray-900">{m.name}</span>
+                        <span className="ml-2 text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">{m.code}</span>
+                        <p className="text-xs font-medium text-gray-500 mt-0.5">
+                          {[m.designation, m.departmentName].filter(Boolean).join(' · ') || '—'} · Login: {m.username || '—'}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.hasDashboard ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400 line-through'}`}>Canteen Dashboard</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.hasScanner ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400 line-through'}`}>QR Scanner</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => setEditingManager({
+                            id: m.id,
+                            name: m.name,
+                            username: m.username || '',
+                            password: '',
+                            hasDashboard: m.hasDashboard,
+                            hasScanner: m.hasScanner,
+                          })}
+                          className="px-3 py-1 text-xs text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border border-indigo-200 rounded-lg font-bold transition-colors flex items-center gap-1"
+                        >
+                          <Edit2 size={12} /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleRemoveCanteenManager(m)}
+                          className="px-3 py-1 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 border border-red-200 rounded-lg font-bold transition-colors flex items-center gap-1"
+                        >
+                          <Trash2 size={12} /> Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 text-center py-6">No Canteen Managers assigned</p>
+              )}
+            </div>
+          </div>
+
+          <div className="px-6 pb-6">
+            <div className="bg-emerald-50/40 border border-emerald-100 rounded-2xl p-5 space-y-4">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                  <QrCode size={16} className="text-emerald-600" />
+                  Employee Canteen QR Codes
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Download a printable PDF of every active employee's canteen QR with their name and ID, for employees who don't have a mobile phone.
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <select
+                  value={qrDeptFilter}
+                  onChange={(e) => setQrDeptFilter(e.target.value)}
+                  className="flex-1 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white font-medium"
+                >
+                  <option value="">All Departments</option>
+                  {departments.map((dept) => (
+                    <option key={dept.id} value={dept.name}>{dept.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleDownloadAllQrs}
+                  disabled={downloadingQrs}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <Download size={16} />
+                  {downloadingQrs ? 'Generating PDF...' : 'Download QR Codes (PDF)'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {editingManager && (
+            <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+              <form onSubmit={handleSaveCanteenManager} className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+                <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+                  <h3 className="text-base font-bold text-gray-900">Edit Canteen Manager: <span className="text-indigo-700">{editingManager.name}</span></h3>
+                  <button type="button" onClick={() => setEditingManager(null)} className="text-gray-400 hover:text-gray-600">
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="p-5 space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Login Username</label>
+                    <input
+                      type="text"
+                      value={editingManager.username}
+                      onChange={(e) => setEditingManager({ ...editingManager, username: e.target.value })}
+                      className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">New Password</label>
+                    <input
+                      type="text"
+                      value={editingManager.password}
+                      onChange={(e) => setEditingManager({ ...editingManager, password: e.target.value })}
+                      placeholder="Leave blank to keep current password"
+                      className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Page Access</label>
+                    <div className="space-y-2">
+                      {[
+                        { key: 'hasDashboard', label: 'Canteen Dashboard' },
+                        { key: 'hasScanner', label: 'Canteen QR Scanner' },
+                      ].map((opt) => (
+                        <label key={opt.key} className="flex items-center gap-2.5 text-sm font-medium text-gray-800 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editingManager[opt.key]}
+                            onChange={(e) => setEditingManager({ ...editingManager, [opt.key]: e.target.checked })}
+                            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          {opt.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="p-5 border-t border-gray-200 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingManager(null)}
+                    className="px-4 py-2 border border-gray-300 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingCanteen}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm disabled:opacity-50"
+                  >
+                    {savingCanteen ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
       )}
 
