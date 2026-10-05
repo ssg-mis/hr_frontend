@@ -3,7 +3,7 @@ import { toast } from 'react-hot-toast';
 import {
   Plus, Search, Edit2, Trash2, X, User, Shield, Key, UserPlus, Eye, EyeOff,
   Award, Building, ChevronLeft, ChevronRight, Users, CheckCircle, Sliders,
-  CheckSquare, Square, RotateCcw, Lock, Unlock, Layers, Check, Utensils, Download, QrCode
+  CheckSquare, Square, RotateCcw, Lock, Unlock, Layers, Check, Utensils, Download, QrCode, History
 } from 'lucide-react';
 import api from '../lib/api';
 import SearchableEmployeeSelect from '../components/SearchableEmployeeSelect';
@@ -146,6 +146,10 @@ const Settings = () => {
   const [qrDeptFilter, setQrDeptFilter] = useState('');
   const [downloadingQrs, setDownloadingQrs] = useState(false);
 
+  // HOD change history (audit)
+  const [hodLogs, setHodLogs] = useState([]);
+  const [hodLogDeptFilter, setHodLogDeptFilter] = useState('');
+
   // External (non-employee) Canteen Managers
   const [canteenMode, setCanteenMode] = useState('employee');
   const [externalUsers, setExternalUsers] = useState([]);
@@ -205,11 +209,21 @@ const Settings = () => {
       setLoadingDepts(true);
       const result = await api.get('/departments');
       setDepartments(result.data || []);
+      fetchHodLogs(); // HOD assign/remove also refreshes departments, so keep the history in step
     } catch (error) {
       console.error('Error fetching departments:', error);
       toast.error('Failed to fetch departments');
     } finally {
       setLoadingDepts(false);
+    }
+  };
+
+  const fetchHodLogs = async () => {
+    try {
+      const result = await api.get('/departments/hod-logs');
+      setHodLogs(result.data || []);
+    } catch (error) {
+      console.error('Error fetching HOD history:', error);
     }
   };
 
@@ -1035,6 +1049,64 @@ const Settings = () => {
                   <p className="text-sm text-gray-500 text-center py-6">No departments found</p>
                 )}
               </div>
+            </div>
+
+            <div className="space-y-3 pt-4 border-t border-gray-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                  <History size={16} className="text-indigo-600" /> HOD Change History
+                </h3>
+                <select
+                  value={hodLogDeptFilter}
+                  onChange={(e) => setHodLogDeptFilter(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">All Departments</option>
+                  {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </div>
+              {(() => {
+                const rows = hodLogDeptFilter ? hodLogs.filter((l) => String(l.departmentId) === String(hodLogDeptFilter)) : hodLogs;
+                if (rows.length === 0) {
+                  return <p className="text-sm text-gray-500 text-center py-6">No HOD changes recorded yet</p>;
+                }
+                const person = (name, code) => (name ? `${name}${code ? ` (${code})` : ''}` : '—');
+                const badge = {
+                  ASSIGN: 'bg-emerald-50 text-emerald-700',
+                  CHANGE: 'bg-amber-50 text-amber-700',
+                  REMOVE: 'bg-red-50 text-red-700',
+                };
+                return (
+                  <div className="max-h-[360px] overflow-auto border border-gray-100 rounded-xl">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 text-gray-600 uppercase tracking-wide sticky top-0">
+                        <tr>
+                          <th className="text-left px-3 py-2">Date &amp; Time</th>
+                          <th className="text-left px-3 py-2">Department</th>
+                          <th className="text-left px-3 py-2">Action</th>
+                          <th className="text-left px-3 py-2">Previous HOD</th>
+                          <th className="text-left px-3 py-2">New HOD</th>
+                          <th className="text-left px-3 py-2">Changed By</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {rows.map((l) => (
+                          <tr key={l.id} className="hover:bg-gray-50">
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-600">{new Date(l.createdAt).toLocaleString('en-IN')}</td>
+                            <td className="px-3 py-2 font-semibold text-gray-900">{l.departmentName}</td>
+                            <td className="px-3 py-2">
+                              <span className={`px-2 py-0.5 rounded-full font-bold ${badge[l.action] || 'bg-gray-100 text-gray-600'}`}>{l.action}</span>
+                            </td>
+                            <td className="px-3 py-2 text-gray-700">{person(l.previousHodName, l.previousHodCode)}</td>
+                            <td className="px-3 py-2 text-gray-700">{person(l.newHodName, l.newHodCode)}</td>
+                            <td className="px-3 py-2 text-gray-700">{l.performedByName || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
