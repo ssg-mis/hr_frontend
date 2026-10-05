@@ -13,9 +13,92 @@ import {
   ROLE_PAGE_PRESETS,
   getDefaultPagesForRole,
   getAllPagePaths,
+  CANTEEN_FEATURES,
+  CANTEEN_REPORT_FEATURES,
+  normalizeCanteenPages,
 } from '../data/pagePermissions';
 
 const ITEMS_PER_PAGE = 20;
+
+const CANTEEN_PAGES = ['/canteen', '/canteen/scan'];
+const CANTEEN_TOGGLE_PATHS = [...CANTEEN_FEATURES, ...CANTEEN_REPORT_FEATURES].map((f) => f.path);
+const isCanteenPage = (p) => CANTEEN_TOGGLE_PATHS.includes(p) || p === '/report';
+const featureLabel = (path) => [...CANTEEN_FEATURES, ...CANTEEN_REPORT_FEATURES].find((f) => f.path === path)?.label || path;
+
+// Canteen + canteen report feature switches, shared by the employee and external Canteen Manager forms
+const CanteenAccessToggles = ({ pages, onChange }) => {
+  const allOn = CANTEEN_TOGGLE_PATHS.every((p) => pages.includes(p));
+
+  const toggle = (path, on) => {
+    let next = on ? [...pages, path] : pages.filter((p) => p !== path);
+    // The dashboard holds the other canteen tabs, so switching it off switches them off too
+    if (!on && path === '/canteen') next = next.filter((p) => !p.startsWith('/canteen/') || p === '/canteen/scan');
+    if (!on && path === '/report/canteen') next = next.filter((p) => p !== '/report');
+    onChange(normalizeCanteenPages(next));
+  };
+
+  const toggleAll = (on) => {
+    onChange(on
+      ? normalizeCanteenPages([...pages, ...CANTEEN_TOGGLE_PATHS])
+      : pages.filter((p) => !isCanteenPage(p)));
+  };
+
+  const renderGroup = (title, features) => (
+    <div>
+      <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1.5">{title}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+        {features.map((f) => (
+          <label key={f.path} className="flex items-start gap-2.5 text-sm font-medium text-gray-800 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={pages.includes(f.path)}
+              onChange={(e) => toggle(f.path, e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span>
+              {f.label}
+              {f.hint && <span className="block text-[11px] font-normal text-gray-500">{f.hint}</span>}
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="block text-xs font-bold text-gray-700 uppercase tracking-wide">Feature Access</span>
+        <label className="flex items-center gap-2 text-xs font-bold text-indigo-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={allOn}
+            onChange={(e) => toggleAll(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          Select All
+        </label>
+      </div>
+      {renderGroup('Canteen Management page (sidebar → Canteen Management)', CANTEEN_FEATURES)}
+      {renderGroup('Reports & Analytics', CANTEEN_REPORT_FEATURES)}
+    </div>
+  );
+};
+
+const FeatureBadges = ({ pages }) => (
+  <div className="flex flex-wrap gap-1.5 mt-1.5">
+    {CANTEEN_TOGGLE_PATHS.map((path) => (
+      <span
+        key={path}
+        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${pages.includes(path) ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400 line-through'}`}
+      >
+        {featureLabel(path)}
+      </span>
+    ))}
+  </div>
+);
+
+const EMPTY_EXTERNAL = { name: '', mobile: '', companyName: '', password: '', pages: CANTEEN_PAGES };
 
 const Settings = () => {
   const [users, setUsers] = useState([]);
@@ -63,10 +146,18 @@ const Settings = () => {
   const [qrDeptFilter, setQrDeptFilter] = useState('');
   const [downloadingQrs, setDownloadingQrs] = useState(false);
 
+  // External (non-employee) Canteen Managers
+  const [canteenMode, setCanteenMode] = useState('employee');
+  const [externalUsers, setExternalUsers] = useState([]);
+  const [loadingExternal, setLoadingExternal] = useState(true);
+  const [newExternal, setNewExternal] = useState(EMPTY_EXTERNAL);
+  const [editingExternal, setEditingExternal] = useState(null);
+
   useEffect(() => {
     fetchUsers();
     fetchEmployees();
     fetchDepartments();
+    fetchExternalUsers();
   }, []);
 
   useEffect(() => {
@@ -93,6 +184,19 @@ const Settings = () => {
       toast.error(error.message || 'Failed to fetch users');
     } finally {
       setLoadingUsers(false);
+    }
+  };
+
+  const fetchExternalUsers = async () => {
+    try {
+      setLoadingExternal(true);
+      const result = await api.get('/external-users');
+      setExternalUsers(result.data || []);
+    } catch (error) {
+      console.error('Error fetching external users:', error);
+      toast.error(error.message || 'Failed to fetch external users');
+    } finally {
+      setLoadingExternal(false);
     }
   };
 
@@ -365,8 +469,6 @@ const Settings = () => {
   };
 
   // Canteen Manager helpers
-  const CANTEEN_PAGES = ['/canteen', '/canteen/scan'];
-
   const canteenManagers = users
     .filter((u) => u.role === 'CanteenManager')
     .map((u) => {
@@ -377,8 +479,7 @@ const Settings = () => {
         code: emp?.employee_code || u.username,
         designation: emp?.designation_name,
         departmentName: emp?.department?.department_name,
-        hasDashboard: pages.includes('/canteen'),
-        hasScanner: pages.includes('/canteen/scan'),
+        pages,
       };
     });
 
@@ -414,23 +515,27 @@ const Settings = () => {
 
   const handleSaveCanteenManager = async (e) => {
     e.preventDefault();
-    const { id, username, password, hasDashboard, hasScanner } = editingManager;
+    const { id, username, password, pages, otherPages } = editingManager;
     if (!username?.trim()) {
       toast.error('Username is required');
       return;
     }
-    if (!hasDashboard && !hasScanner) {
-      toast.error('Enable at least one canteen page, or remove the manager instead');
+    const canteenPages = normalizeCanteenPages(pages);
+    if (!canteenPages.some((p) => CANTEEN_TOGGLE_PATHS.includes(p))) {
+      toast.error('Enable at least one canteen feature, or remove the manager instead');
       return;
     }
-    const pages = [hasDashboard && '/canteen', hasScanner && '/canteen/scan'].filter(Boolean);
+    // Pages given from the Employee Roles tab are kept; only the canteen switches change here
+    const isPreset = otherPages.length === 0
+      && canteenPages.length === CANTEEN_PAGES.length
+      && CANTEEN_PAGES.every((p) => canteenPages.includes(p));
     try {
       setSavingCanteen(true);
       await api.put(`/users/${id}`, {
         username: username.trim(),
         ...(password ? { password } : {}),
         role: 'CanteenManager',
-        allowedPages: pages.length === CANTEEN_PAGES.length ? null : pages,
+        allowedPages: isPreset ? null : [...otherPages, ...canteenPages],
       });
       toast.success('Canteen Manager updated successfully');
       setEditingManager(null);
@@ -440,6 +545,86 @@ const Settings = () => {
       toast.error(error.message || 'Failed to update Canteen Manager');
     } finally {
       setSavingCanteen(false);
+    }
+  };
+
+  const handleAddExternalUser = async (e) => {
+    e.preventDefault();
+    const { name, password, pages } = newExternal;
+    if (!name.trim() || !password) {
+      toast.error('Name and password are required');
+      return;
+    }
+    if (!pages.some((p) => CANTEEN_TOGGLE_PATHS.includes(p))) {
+      toast.error('Enable at least one canteen feature');
+      return;
+    }
+    try {
+      setSavingCanteen(true);
+      const result = await api.post('/external-users', { ...newExternal, allowedPages: normalizeCanteenPages(pages) });
+      const loginId = result?.data?.username;
+      toast.success(`External Canteen Manager added. Login ID: ${loginId}`, { duration: 8000 });
+      setNewExternal(EMPTY_EXTERNAL);
+      fetchExternalUsers();
+    } catch (error) {
+      console.error('Error adding external user:', error);
+      toast.error(error.message || 'Failed to add external user');
+    } finally {
+      setSavingCanteen(false);
+    }
+  };
+
+  const handleSaveExternalUser = async (e) => {
+    e.preventDefault();
+    const { id, name, mobile, companyName, password, pages, isActive } = editingExternal;
+    if (!name.trim()) {
+      toast.error('Name is required');
+      return;
+    }
+    if (!pages.some((p) => CANTEEN_TOGGLE_PATHS.includes(p))) {
+      toast.error('Enable at least one canteen feature, or delete the user instead');
+      return;
+    }
+    try {
+      setSavingCanteen(true);
+      await api.put(`/external-users/${id}`, {
+        name, mobile, companyName, isActive,
+        ...(password ? { password } : {}),
+        allowedPages: normalizeCanteenPages(pages),
+      });
+      toast.success('External user updated successfully');
+      setEditingExternal(null);
+      fetchExternalUsers();
+    } catch (error) {
+      console.error('Error updating external user:', error);
+      toast.error(error.message || 'Failed to update external user');
+    } finally {
+      setSavingCanteen(false);
+    }
+  };
+
+  const handleToggleExternalActive = async (ext) => {
+    try {
+      await api.put(`/external-users/${ext.id}`, { isActive: !ext.isActive });
+      toast.success(ext.isActive ? `${ext.name} deactivated` : `${ext.name} activated`);
+      fetchExternalUsers();
+    } catch (error) {
+      console.error('Error changing external user status:', error);
+      toast.error(error.message || 'Failed to change status');
+    }
+  };
+
+  const handleDeleteExternalUser = async (ext) => {
+    if (!window.confirm(`Delete external user ${ext.name}? They will no longer be able to log in.`)) {
+      return;
+    }
+    try {
+      await api.delete(`/external-users/${ext.id}`);
+      toast.success('External user deleted');
+      fetchExternalUsers();
+    } catch (error) {
+      console.error('Error deleting external user:', error);
+      toast.error(error.message || 'Failed to delete external user');
     }
   };
 
@@ -863,48 +1048,104 @@ const Settings = () => {
               <Utensils size={20} className="text-indigo-600" />
               Canteen Management
             </h2>
-            <p className="text-sm text-gray-500 mt-1">Add, edit or remove Canteen Managers who run the canteen dashboard and QR scanner.</p>
+            <p className="text-sm text-gray-500 mt-1">Add company employees or external people (e.g. canteen vendor staff) as Canteen Managers, and choose which canteen features and reports each one can use.</p>
           </div>
 
           <div className="p-6 space-y-6">
-            <form onSubmit={handleAddCanteenManager} className="space-y-4 bg-indigo-50/40 p-5 rounded-2xl border border-indigo-100">
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Select Employee</label>
-                <SearchableEmployeeSelect
-                  employees={employees}
-                  selectedEmployeeId={selectedCanteenEmpId}
-                  onSelect={(emp) => setSelectedCanteenEmpId(emp ? emp.employee_id.toString() : '')}
-                  placeholder="Type name or code to search employee..."
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={savingCanteen}
-                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                <UserPlus size={16} />
-                {savingCanteen && !editingManager ? 'Adding...' : 'Add Canteen Manager'}
-              </button>
-            </form>
+            <div className="flex items-center gap-1.5 bg-gray-100/90 p-1.5 rounded-xl border border-gray-200/60 w-fit">
+              {[
+                { id: 'employee', label: 'Company Employee' },
+                { id: 'external', label: 'External Person' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setCanteenMode(opt.id)}
+                  className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
+                    canteenMode === opt.id ? 'bg-white text-indigo-700 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {canteenMode === 'employee' ? (
+              <form onSubmit={handleAddCanteenManager} className="space-y-4 bg-indigo-50/40 p-5 rounded-2xl border border-indigo-100">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Select Employee</label>
+                  <SearchableEmployeeSelect
+                    employees={employees}
+                    selectedEmployeeId={selectedCanteenEmpId}
+                    onSelect={(emp) => setSelectedCanteenEmpId(emp ? emp.employee_id.toString() : '')}
+                    placeholder="Type name or code to search employee..."
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1.5">Starts with Dashboard + QR Scanner. Use Edit to switch on more features.</p>
+                </div>
+                <button
+                  type="submit"
+                  disabled={savingCanteen}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <UserPlus size={16} />
+                  {savingCanteen && !editingManager ? 'Adding...' : 'Add Canteen Manager'}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleAddExternalUser} className="space-y-4 bg-amber-50/40 p-5 rounded-2xl border border-amber-100">
+                <p className="text-xs text-gray-600">For someone who is not a company employee (e.g. canteen vendor staff). They get a login only for the features switched on below, and never appear in employee, payroll or attendance lists.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Full Name *</label>
+                    <input type="text" value={newExternal.name} onChange={(e) => setNewExternal({ ...newExternal, name: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" required />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Mobile</label>
+                    <input type="tel" value={newExternal.mobile} onChange={(e) => setNewExternal({ ...newExternal, mobile: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Company / Vendor Name</label>
+                    <input type="text" value={newExternal.companyName} onChange={(e) => setNewExternal({ ...newExternal, companyName: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Login ID</label>
+                    <div className="w-full border border-dashed border-gray-300 rounded-xl px-3.5 py-2.5 text-sm text-gray-500 bg-gray-50">Auto-generated (EXT001, EXT002…)</div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Password *</label>
+                    <input type="text" autoComplete="new-password" value={newExternal.password} onChange={(e) => setNewExternal({ ...newExternal, password: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" required />
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl border border-amber-100 p-4">
+                  <CanteenAccessToggles pages={newExternal.pages} onChange={(pages) => setNewExternal({ ...newExternal, pages })} />
+                </div>
+                <button
+                  type="submit"
+                  disabled={savingCanteen}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <UserPlus size={16} />
+                  {savingCanteen && !editingExternal ? 'Adding...' : 'Add External Canteen Manager'}
+                </button>
+              </form>
+            )}
 
             <div className="space-y-3 pt-2">
               <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Current Canteen Managers</h3>
-              {loadingUsers ? (
+              {loadingUsers || loadingExternal ? (
                 <p className="text-sm text-gray-500 text-center py-6">Loading canteen managers...</p>
-              ) : canteenManagers.length > 0 ? (
+              ) : canteenManagers.length + externalUsers.length > 0 ? (
                 <div className="divide-y divide-gray-100">
                   {canteenManagers.map((m) => (
-                    <div key={m.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm hover:bg-gray-50 px-2 rounded-lg transition-colors">
+                    <div key={`emp-${m.id}`} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm hover:bg-gray-50 px-2 rounded-lg transition-colors">
                       <div className="min-w-0">
                         <span className="font-bold text-gray-900">{m.name}</span>
                         <span className="ml-2 text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">{m.code}</span>
+                        <span className="ml-1.5 text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">Employee</span>
                         <p className="text-xs font-medium text-gray-500 mt-0.5">
                           {[m.designation, m.departmentName].filter(Boolean).join(' · ') || '—'} · Login: {m.username || '—'}
                         </p>
-                        <div className="flex flex-wrap gap-1.5 mt-1.5">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.hasDashboard ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400 line-through'}`}>Canteen Dashboard</span>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.hasScanner ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400 line-through'}`}>QR Scanner</span>
-                        </div>
+                        <FeatureBadges pages={m.pages} />
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <button
@@ -913,8 +1154,8 @@ const Settings = () => {
                             name: m.name,
                             username: m.username || '',
                             password: '',
-                            hasDashboard: m.hasDashboard,
-                            hasScanner: m.hasScanner,
+                            pages: m.pages.filter(isCanteenPage),
+                            otherPages: (Array.isArray(m.allowedPages) ? m.allowedPages : []).filter((p) => !isCanteenPage(p)),
                           })}
                           className="px-3 py-1 text-xs text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border border-indigo-200 rounded-lg font-bold transition-colors flex items-center gap-1"
                         >
@@ -925,6 +1166,49 @@ const Settings = () => {
                           className="px-3 py-1 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 border border-red-200 rounded-lg font-bold transition-colors flex items-center gap-1"
                         >
                           <Trash2 size={12} /> Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {externalUsers.map((x) => (
+                    <div key={`ext-${x.id}`} className={`py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm hover:bg-gray-50 px-2 rounded-lg transition-colors ${x.isActive ? '' : 'opacity-60'}`}>
+                      <div className="min-w-0">
+                        <span className="font-bold text-gray-900">{x.name}</span>
+                        <span className="ml-2 text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">{x.username}</span>
+                        <span className="ml-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">External</span>
+                        {!x.isActive && <span className="ml-1.5 text-[10px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded-full">Inactive</span>}
+                        <p className="text-xs font-medium text-gray-500 mt-0.5">
+                          {[x.companyName, x.mobile].filter(Boolean).join(' · ') || '—'} · Login ID: {x.username}
+                        </p>
+                        <FeatureBadges pages={x.allowedPages || []} />
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => setEditingExternal({
+                            id: x.id,
+                            name: x.name || '',
+                            mobile: x.mobile || '',
+                            companyName: x.companyName || '',
+                            username: x.username || '',
+                            password: '',
+                            isActive: x.isActive,
+                            pages: x.allowedPages || [],
+                          })}
+                          className="px-3 py-1 text-xs text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border border-indigo-200 rounded-lg font-bold transition-colors flex items-center gap-1"
+                        >
+                          <Edit2 size={12} /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleToggleExternalActive(x)}
+                          className="px-3 py-1 text-xs text-gray-700 hover:bg-gray-100 border border-gray-300 rounded-lg font-bold transition-colors flex items-center gap-1"
+                        >
+                          {x.isActive ? <><Lock size={12} /> Deactivate</> : <><Unlock size={12} /> Activate</>}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteExternalUser(x)}
+                          className="px-3 py-1 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 border border-red-200 rounded-lg font-bold transition-colors flex items-center gap-1"
+                        >
+                          <Trash2 size={12} /> Delete
                         </button>
                       </div>
                     </div>
@@ -973,7 +1257,7 @@ const Settings = () => {
 
           {editingManager && (
             <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-              <form onSubmit={handleSaveCanteenManager} className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+              <form onSubmit={handleSaveCanteenManager} className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
                 <div className="p-5 border-b border-gray-200 flex items-center justify-between">
                   <h3 className="text-base font-bold text-gray-900">Edit Canteen Manager: <span className="text-indigo-700">{editingManager.name}</span></h3>
                   <button type="button" onClick={() => setEditingManager(null)} className="text-gray-400 hover:text-gray-600">
@@ -1001,30 +1285,75 @@ const Settings = () => {
                       className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Page Access</label>
-                    <div className="space-y-2">
-                      {[
-                        { key: 'hasDashboard', label: 'Canteen Dashboard' },
-                        { key: 'hasScanner', label: 'Canteen QR Scanner' },
-                      ].map((opt) => (
-                        <label key={opt.key} className="flex items-center gap-2.5 text-sm font-medium text-gray-800 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={editingManager[opt.key]}
-                            onChange={(e) => setEditingManager({ ...editingManager, [opt.key]: e.target.checked })}
-                            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                          />
-                          {opt.label}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
+                  <CanteenAccessToggles pages={editingManager.pages} onChange={(pages) => setEditingManager({ ...editingManager, pages })} />
                 </div>
                 <div className="p-5 border-t border-gray-200 flex justify-end gap-2">
                   <button
                     type="button"
                     onClick={() => setEditingManager(null)}
+                    className="px-4 py-2 border border-gray-300 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingCanteen}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm disabled:opacity-50"
+                  >
+                    {savingCanteen ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {editingExternal && (
+            <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+              <form onSubmit={handleSaveExternalUser} className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                <div className="p-5 border-b border-gray-200 flex items-center justify-between">
+                  <h3 className="text-base font-bold text-gray-900">Edit External User: <span className="text-indigo-700">{editingExternal.name}</span></h3>
+                  <button type="button" onClick={() => setEditingExternal(null)} className="text-gray-400 hover:text-gray-600">
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="p-5 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Full Name</label>
+                      <input type="text" value={editingExternal.name} onChange={(e) => setEditingExternal({ ...editingExternal, name: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" required />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Mobile</label>
+                      <input type="tel" value={editingExternal.mobile} onChange={(e) => setEditingExternal({ ...editingExternal, mobile: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Company / Vendor Name</label>
+                      <input type="text" value={editingExternal.companyName} onChange={(e) => setEditingExternal({ ...editingExternal, companyName: e.target.value })} className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">Login ID</label>
+                      <div className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm font-bold text-gray-700 bg-gray-50">{editingExternal.username}</div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">New Password</label>
+                      <input type="text" autoComplete="new-password" value={editingExternal.password} onChange={(e) => setEditingExternal({ ...editingExternal, password: e.target.value })} placeholder="Leave blank to keep current" className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white" />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2.5 text-sm font-medium text-gray-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editingExternal.isActive}
+                      onChange={(e) => setEditingExternal({ ...editingExternal, isActive: e.target.checked })}
+                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    Active (can log in)
+                  </label>
+                  <CanteenAccessToggles pages={editingExternal.pages} onChange={(pages) => setEditingExternal({ ...editingExternal, pages })} />
+                </div>
+                <div className="p-5 border-t border-gray-200 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingExternal(null)}
                     className="px-4 py-2 border border-gray-300 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl text-sm"
                   >
                     Cancel

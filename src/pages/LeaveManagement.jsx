@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Check, Clock, Calendar, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useAuthStore from '../store/authStore';
+import HodInfo, { HodLabel } from '../components/HodInfo';
 import { api } from '../lib/api';
 
 const LeaveManagement = () => {
@@ -57,7 +58,8 @@ const LeaveManagement = () => {
           employeeCode: selfEmp.employeeCode,
           department: selfEmp.department,
           departmentId: selfEmp.departmentId,
-          hodName: selfEmp.hodName
+          hodName: selfEmp.hodName,
+          hodCode: selfEmp.hodCode
         }));
       }
     }
@@ -112,7 +114,8 @@ const LeaveManagement = () => {
           name: emp.name_as_per_aadhar,
           department: emp.department?.department_name || '',
           departmentId: emp.department_id || '',
-          hodName: emp.department?.hod_name || ''
+          hodName: emp.department?.hod_name || '',
+          hodCode: emp.department?.hod_code || ''
         })));
       }
     } catch (error) {
@@ -155,7 +158,8 @@ const LeaveManagement = () => {
       employeeCode: selectedEmployee ? selectedEmployee.employeeCode : '',
       department: selectedEmployee ? selectedEmployee.department : '',
       departmentId: selectedEmployee ? selectedEmployee.departmentId : '',
-      hodName: selectedEmployee ? selectedEmployee.hodName : ''
+      hodName: selectedEmployee ? selectedEmployee.hodName : '',
+      hodCode: selectedEmployee ? selectedEmployee.hodCode : ''
     }));
   };
 
@@ -245,7 +249,7 @@ const LeaveManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason || (!userIsHOD && !formData.hodName)) {
+    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason) {
       toast.error('Please fill all required fields');
       return;
     }
@@ -347,6 +351,7 @@ const LeaveManagement = () => {
         status: leave.status,
         leaveType: leave.leaveType,
         hodName: leave.hodName,
+        hodCode: leave.hodCode,
         department: leave.department
       }));
 
@@ -466,6 +471,7 @@ const LeaveManagement = () => {
                 }`}>
                   {item.status}
                 </span>
+                {item.status === 'Pending HOD' && <HodLabel hodName={item.hodName} hodCode={item.hodCode} />}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 <div className="flex space-x-2">
@@ -867,17 +873,13 @@ const LeaveManagement = () => {
                 />
               </div>
 
-              {!userIsHOD && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name</label>
-                  <input
-                    type="text"
-                    name="hodName"
-                    value={formData.hodName || '—'}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
-                    readOnly
-                  />
-                </div>
+              {formData.employeeName && (
+                <HodInfo
+                  hodName={formData.hodName}
+                  hodCode={formData.hodCode}
+                  departmentName={formData.department}
+                  isSelfHod={!!formData.hodCode && formData.hodCode === formData.employeeCode}
+                />
               )}
 
               <div>

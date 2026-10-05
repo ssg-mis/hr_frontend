@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, X, Calendar, Clock, CheckCircle, AlertCircle, Filter, Search } from 'lucide-react';
 import useAuthStore from '../store/authStore';
+import HodInfo, { HodLabel } from '../components/HodInfo';
 import useDataStore from '../store/dataStore';
 import toast from 'react-hot-toast';
 import { api } from '../lib/api';
@@ -53,7 +54,8 @@ const LeaveRequest = () => {
             employeeId: emp.employee_id || prev.employeeId,
             department: emp.department?.department_name || prev.department,
             departmentId: emp.department_id || prev.departmentId,
-            hodName: emp.department?.hod_name || prev.hodName || (hods.length > 0 ? hods[0].name : '')
+            hodName: emp.department?.hod_name || '',
+            hodCode: emp.department?.hod_code || ''
           }));
           fetchLeaveData(emp.employee_id);
           return;
@@ -231,7 +233,8 @@ const LeaveRequest = () => {
         status: leave.status,
         leaveType: leave.leaveType,
         appliedDate: new Date(leave.createdAt).toLocaleDateString(),
-        hodName: leave.hodName
+        hodName: leave.hodName,
+        hodCode: leave.hodCode
       }));
 
       setLeavesData(processedData);
@@ -258,7 +261,7 @@ const LeaveRequest = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason || (!userIsHOD && !formData.hodName)) {
+    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason) {
       toast.error('Please fill all required fields');
       return;
     }
@@ -497,6 +500,7 @@ const LeaveRequest = () => {
                            }`}>
                              {request.status}
                            </span>
+                           {request.status === 'Pending HOD' && <HodLabel hodName={request.hodName} hodCode={request.hodCode} />}
                          </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {request.appliedDate}
@@ -559,18 +563,14 @@ const LeaveRequest = () => {
                 />
               </div>
 
-              {!userIsHOD && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name</label>
-                  <input
-                    type="text"
-                    name="hodName"
-                    value={formData.hodName || '—'}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
-                    readOnly
-                  />
-                </div>
-              )}
+              <div className="md:col-span-2">
+                <HodInfo
+                  hodName={formData.hodName}
+                  hodCode={formData.hodCode}
+                  departmentName={formData.department}
+                  isSelfHod={userIsHOD}
+                />
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Leave Type *</label>

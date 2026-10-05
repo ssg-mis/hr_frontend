@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Plus, Calendar, Clock, Download, Trash2, Edit2, Check, X, Filter, BarChart3, CreditCard, Receipt, Settings, Utensils, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Plus, Calendar, Clock, Download, Trash2, Edit2, Check, X, Filter, BarChart3, CreditCard, Receipt, Settings, Utensils, RefreshCw, ChevronLeft, ChevronRight, QrCode } from 'lucide-react';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell } from 'recharts';
 import useAuthStore from '../store/authStore';
+import { generateCanteenQrPdf } from '../lib/generateCanteenQrPdf';
 
 const CanteenDashboard = () => {
   const user = useAuthStore((state) => state.user);
@@ -13,8 +14,21 @@ const CanteenDashboard = () => {
   const isAdmin = useAuthStore((state) => state.isAdmin);
   const isCanteenManager = useAuthStore((state) => state.isCanteenManager);
   const isEmployeeOrManager = isEmployeeOnly || isCanteenManager;
+  const hasPageAccess = useAuthStore((state) => state.hasPageAccess);
 
-  const [activeTab, setActiveTab] = useState(isEmployeeOrManager ? "logs" : "analytics");
+  // Admin/HR get every tab; others get the tabs switched on for them (Settings → Canteen Management).
+  // Analytics and salary deductions stay Admin/HR only.
+  const canUseTab = (id) => {
+    if (isAdmin || isHR) return true;
+    if (id === 'analytics' || id === 'deductions') return false;
+    if (id === 'logs') return isEmployeeOrManager || hasPageAccess('/canteen');
+    return hasPageAccess(`/canteen/${id}`);
+  };
+  const canSeeTotals = isAdmin || isHR;
+  const canOpenScanner = isAdmin || isHR || hasPageAccess('/canteen/scan');
+  const defaultTab = canUseTab('analytics') ? 'analytics' : 'logs';
+
+  const [activeTab, setActiveTab] = useState(defaultTab);
   const [loading, setLoading] = useState(false);
   const [meals, setMeals] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -34,6 +48,11 @@ const CanteenDashboard = () => {
   const [editingMeal, setEditingMeal] = useState(null); // null means adding new
   const [mealForm, setMealForm] = useState({ name: "", price: "", companyPrice: "" });
   const [submittingMeal, setSubmittingMeal] = useState(false);
+
+  // Employee QR codes download
+  const [departments, setDepartments] = useState([]);
+  const [qrDeptFilter, setQrDeptFilter] = useState('');
+  const [downloadingQrs, setDownloadingQrs] = useState(false);
 
   // Pagination for logs
   const [logPage, setLogPage] = useState(1);
@@ -85,18 +104,40 @@ const CanteenDashboard = () => {
 
   useEffect(() => {
     if (user) {
-      setActiveTab(isEmployeeOrManager ? "logs" : "analytics");
+      setActiveTab(defaultTab);
     }
-  }, [user, isEmployeeOrManager]);
+  }, [user, defaultTab]);
 
   useEffect(() => {
     if (!user) return;
     if (activeTab === "logs") {
       loadLogs();
-    } else if ((activeTab === "deductions" || activeTab === "analytics") && (isAdmin || isHR)) {
+    } else if ((activeTab === "deductions" || activeTab === "analytics") && canUseTab(activeTab)) {
       loadDeductions();
+    } else if (activeTab === "qr" && departments.length === 0) {
+      api.get('/departments').then((res) => setDepartments(res?.data || [])).catch(() => setDepartments([]));
     }
   }, [activeTab, selectedMonth, user, isEmployeeOrManager, isAdmin, isHR]);
+
+  const handleDownloadAllQrs = async () => {
+    try {
+      setDownloadingQrs(true);
+      const result = await api.get('/canteen/qr/all');
+      const all = result?.data || [];
+      const list = qrDeptFilter ? all.filter((e) => e.department === qrDeptFilter) : all;
+      if (list.length === 0) {
+        toast.error('No employees found for this selection');
+        return;
+      }
+      const suffix = qrDeptFilter ? qrDeptFilter.replace(/[^a-z0-9]+/gi, '_') : 'All';
+      await generateCanteenQrPdf(list, `Canteen_QR_Codes_${suffix}.pdf`);
+      toast.success(`Downloaded ${list.length} employee QR codes`);
+    } catch (error) {
+      toast.error(error.message || 'Failed to download QR codes');
+    } finally {
+      setDownloadingQrs(false);
+    }
+  };
 
   // Filter logs locally by search
   const filteredLogs = logs.filter(log => {
@@ -280,7 +321,7 @@ const CanteenDashboard = () => {
               className="pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
-          {(isAdmin || isHR || isCanteenManager) && (
+          {canOpenScanner && (
             <a
               href="/canteen/scan"
               target="_blank"
@@ -294,7 +335,7 @@ const CanteenDashboard = () => {
       </div>
 
       {/* 2. Key Metrics Summary cards */}
-      {!isEmployeeOrManager && (
+      {canSeeTotals && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
           <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4 shadow-sm">
             <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
@@ -381,13 +422,9 @@ const CanteenDashboard = () => {
             { id: "analytics", label: "Analytics Dashboard", icon: BarChart3 },
             { id: "deductions", label: "Monthly Deductions", icon: CreditCard },
             { id: "logs", label: "Scanned Logs History", icon: Clock },
-            { id: "meals", label: "Meal Rates Config", icon: Settings }
-          ].filter(tab => {
-            if (isEmployeeOrManager) {
-              return tab.id === 'logs';
-            }
-            return true;
-          }).map(tab => (
+            { id: "meals", label: "Meal Rates Config", icon: Settings },
+            { id: "qr", label: "Employee QR Codes", icon: QrCode }
+          ].filter(tab => canUseTab(tab.id)).map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -748,6 +785,42 @@ const CanteenDashboard = () => {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 5: Employee QR Codes */}
+        {activeTab === "qr" && (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4 max-w-3xl">
+            <div>
+              <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                <QrCode size={16} className="text-emerald-600" />
+                Employee Canteen QR Codes
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Download a printable PDF of every active employee's canteen QR with their name and ID, for employees who don't have a mobile phone.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <select
+                value={qrDeptFilter}
+                onChange={(e) => setQrDeptFilter(e.target.value)}
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+              >
+                <option value="">All Departments</option>
+                {departments.map((dept) => (
+                  <option key={dept.id} value={dept.name}>{dept.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleDownloadAllQrs}
+                disabled={downloadingQrs}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <Download size={16} />
+                {downloadingQrs ? 'Generating PDF...' : 'Download QR Codes (PDF)'}
+              </button>
             </div>
           </div>
         )}

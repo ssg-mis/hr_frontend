@@ -6,9 +6,11 @@ import {
 import toast from "react-hot-toast";
 import api from "../lib/api";
 import useAuthStore from "../store/authStore";
+import HodInfo, { useMyHod, HodLabel } from "../components/HodInfo";
 
 const OvertimeManagement = () => {
   const { user, isAdmin, isHR, isHOD } = useAuthStore();
+  const { hod: myHod, loading: hodLoading } = useMyHod();
   const todayStr = new Date().toISOString().slice(0, 10);
 
   const [loading, setLoading] = useState(false);
@@ -96,7 +98,7 @@ const OvertimeManagement = () => {
           employeeName: currentEmp.candidateName || user?.name || "",
           employeeCode: currentEmp.biometricEmployeeCode || "",
           department: currentEmp.departmentName || "",
-          hodName: currentEmp.hodName || "Department HOD",
+          hodName: currentEmp.hodName || "",
         }));
       }
     } catch (err) {
@@ -446,6 +448,7 @@ const OvertimeManagement = () => {
                         }`}>
                           {req.status}
                         </span>
+                        {req.status === "Pending HOD" && <HodLabel hodName={req.assignedHodName} hodCode={req.assignedHodCode} />}
                       </td>
                       <td className="py-3 px-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1.5">
@@ -538,6 +541,14 @@ const OvertimeManagement = () => {
                   <span className="font-medium text-indigo-700">HOD Verification ➔ HR Final Approval</span>
                 </div>
               </div>
+
+              <HodInfo
+                hodName={myHod?.hodName}
+                hodCode={myHod?.hodCode}
+                departmentName={myHod?.departmentName || formData.department}
+                isSelfHod={myHod?.isSelfHod}
+                loading={hodLoading}
+              />
 
               {/* OT Date */}
               <div>

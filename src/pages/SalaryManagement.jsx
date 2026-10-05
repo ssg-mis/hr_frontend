@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Plus, Check, X, ArrowUpRight, History, ShieldAlert, Users, Percent, IndianRupee, Layers, CheckSquare, Gift, CreditCard, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { authFetch } from '../lib/api';
+import HodInfo, { HodLabel } from '../components/HodInfo';
 
 // Increments always start from the latest salary, even when the list shows an older month's rate
 const latestBase = (emp) => emp.latestBaseSalary ?? emp.baseSalary;
@@ -736,6 +737,7 @@ const SalaryManagement = () => {
                               }`}>
                               {req.status}
                             </span>
+                            {req.status === 'Pending HOD' && <HodLabel hodName={req.assignedHodName} hodCode={req.assignedHodCode} />}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500 font-medium">
                             {new Date(req.createdAt).toLocaleDateString()}
@@ -1211,6 +1213,7 @@ const SalaryManagement = () => {
                                 }`}>
                                 {req.status}
                               </span>
+                              {req.status === 'Pending HOD' && <HodLabel hodName={req.assignedHodName} hodCode={req.assignedHodCode} />}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-center text-xs text-slate-500 font-medium">
                               {new Date(req.createdAt).toLocaleDateString()}
@@ -1865,6 +1868,18 @@ const SalaryManagement = () => {
                   ))}
                 </select>
               </div>
+
+              {advanceForm.employeeId && (() => {
+                const emp = salaries.find((e) => String(e.employeeId) === String(advanceForm.employeeId));
+                return emp ? (
+                  <HodInfo
+                    hodName={emp.hodName}
+                    hodCode={emp.hodCode}
+                    departmentName={emp.departmentName}
+                    isSelfHod={!!emp.hodCode && emp.hodCode === emp.employeeCode}
+                  />
+                ) : null;
+              })()}
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Advance Amount (₹) *</label>

@@ -3,6 +3,7 @@ import { Search, CreditCard, IndianRupee, Calendar, Filter, Eye, Plus, X, ArrowU
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 import useAuthStore from '../store/authStore';
+import HodInfo, { useMyHod, HodLabel } from '../components/HodInfo';
 
 const groupPaymentsByDay = (payments) => {
     const groups = {};
@@ -41,6 +42,7 @@ const formatInstallments = (list) => {
 
 const EMIManagement = () => {
     const user = useAuthStore((state) => state.user);
+    const { hod: myHod, loading: hodLoading } = useMyHod();
     const isEmployeeOnly = useAuthStore((state) => state.isEmployeeOnly);
     const isHOD = useAuthStore((state) => state.isHOD);
     const isHR = useAuthStore((state) => state.isHR);
@@ -464,6 +466,7 @@ const EMIManagement = () => {
                                             }`}>
                                                 {item.status}
                                             </span>
+                                            {item.status === 'Pending HOD' && <HodLabel hodName={item.assignedHodName} hodCode={item.assignedHodCode} />}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right">
                                             <div className="flex justify-end gap-2 items-center">
@@ -591,6 +594,15 @@ const EMIManagement = () => {
                             </button>
                         </div>
                         <form onSubmit={handleAddEmi} className="p-6 space-y-4 overflow-y-auto pr-1 flex-1">
+                            {isSelfRequest && (
+                                <HodInfo
+                                    hodName={myHod?.hodName}
+                                    hodCode={myHod?.hodCode}
+                                    departmentName={myHod?.departmentName}
+                                    isSelfHod={myHod?.isSelfHod || hasHODRole}
+                                    loading={hodLoading}
+                                />
+                            )}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID *</label>

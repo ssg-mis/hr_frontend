@@ -100,6 +100,8 @@ export const SYSTEM_MODULES = [
     pages: [
       { id: '/canteen', label: 'Canteen Dashboard', path: '/canteen', description: 'Daily and monthly dining consumption records' },
       { id: '/canteen/scan', label: 'Canteen QR Scanner', path: '/canteen/scan', description: 'Dining entrance live badge/QR code scanner' },
+      { id: '/canteen/meals', label: 'Canteen Meal Rates', path: '/canteen/meals', description: 'Add and edit meals and prices (tab inside Canteen Dashboard)' },
+      { id: '/canteen/qr', label: 'Canteen Employee QR Codes', path: '/canteen/qr', description: 'Download printable employee canteen QR codes (tab inside Canteen Dashboard)' },
     ],
   },
   {
@@ -108,6 +110,7 @@ export const SYSTEM_MODULES = [
     description: 'Comprehensive business reports and data exports',
     pages: [
       { id: '/report', label: 'Reports & Analytics', path: '/report', description: 'Generate consolidated attendance and HR reports' },
+      { id: '/report/canteen', label: 'Canteen Report', path: '/report/canteen', description: 'Only the Canteen tab of Reports (Admin/HR always see every report)' },
     ],
   },
   {
@@ -184,7 +187,10 @@ export const ROLE_PAGE_PRESETS = {
     '/gate-pass',
     '/canteen',
     '/canteen/scan',
+    '/canteen/meals',
+    '/canteen/qr',
     '/report',
+    '/report/canteen',
     '/master-data',
   ],
 
@@ -235,6 +241,29 @@ export const ROLE_PAGE_PRESETS = {
 };
 
 /**
+ * Canteen feature toggles shown on the Canteen Manager forms (Settings → Canteen Management).
+ * '/canteen' is the dashboard itself (scanned logs); the other tabs live inside it.
+ */
+export const CANTEEN_FEATURES = [
+  { path: '/canteen', label: 'Scanned Logs History', hint: 'Who took which meal, and when' },
+  { path: '/canteen/scan', label: 'QR Scanner', hint: 'Scan employee QR to serve a meal' },
+  { path: '/canteen/meals', label: 'Meal Rates Config', hint: 'Add / edit meals and prices' },
+  { path: '/canteen/qr', label: 'Employee QR Codes', hint: 'Download printable QR codes of employees' },
+];
+
+export const CANTEEN_REPORT_FEATURES = [
+  { path: '/report/canteen', label: 'Canteen Report', hint: 'Only the Canteen tab in Reports & Analytics' },
+];
+
+/** Keeps a canteen page list consistent: tabs need the dashboard, the canteen report needs the reports page */
+export const normalizeCanteenPages = (pages) => {
+  const list = new Set(pages);
+  if ([...list].some((p) => p.startsWith('/canteen/') && p !== '/canteen/scan')) list.add('/canteen');
+  if (list.has('/report/canteen')) list.add('/report');
+  return [...list];
+};
+
+/**
  * Helper to get default page array for a given role name.
  */
 // Pages limited to specific roles no matter what custom page list a user has (Admin always has access)
@@ -250,7 +279,7 @@ export const getRoleDisplayLabel = (user) => {
   if (roles.includes('hod')) display.push('Department HOD');
   if (roles.includes('hr')) display.push('HR Specialist');
   if (display.length > 0) return display.join(' · ');
-  if (roles.includes('canteenmanager')) return 'Canteen Manager';
+  if (roles.includes('canteenmanager')) return user?.userType === 'external' ? 'Canteen Manager (External)' : 'Canteen Manager';
   return 'Employee';
 };
 

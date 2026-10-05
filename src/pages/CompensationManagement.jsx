@@ -21,9 +21,11 @@ import {
 import toast from "react-hot-toast";
 import api from "../lib/api";
 import useAuthStore from "../store/authStore";
+import HodInfo, { useMyHod } from "../components/HodInfo";
 
 const CompensationManagement = () => {
-  const { user, isAdmin, isHR, isHOD } = useAuthStore();
+  const { user, isAdmin, isHR, isHOD, isMyDepartment } = useAuthStore();
+  const { hod: myHod, loading: hodLoading } = useMyHod();
 
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -330,7 +332,7 @@ const CompensationManagement = () => {
               <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
                 {requests.map((item) => {
                   const canHodApprove =
-                    (isAdmin || isHR || (isHOD && item.departmentId === user?.departmentId)) &&
+                    (isAdmin || isHR || (isHOD && isMyDepartment(item.departmentId))) &&
                     item.status === "Pending HOD";
                   const canHrApprove = (isAdmin || isHR) && (item.status === "Pending HR" || item.status === "Pending HOD");
                   const canDelete =
@@ -367,6 +369,9 @@ const CompensationManagement = () => {
                             }`}
                           >
                             HOD: {item.hodStatus}
+                            {item.hodStatus === "Approved" || item.hodStatus === "Rejected"
+                              ? (item.hodName ? ` · ${item.hodName}` : "")
+                              : ` · ${item.assignedHodName || "not assigned"}`}
                           </span>
                           <ChevronRight size={14} className="text-slate-300" />
                           {/* HR stage badge */}
@@ -465,6 +470,27 @@ const CompensationManagement = () => {
                   </select>
                 </div>
               )}
+
+              {(() => {
+                // HOD of the selected employee (Admin/HR raising on behalf), else the logged-in employee's own HOD
+                const emp = form.employeeId ? employeesList.find((e) => String(e.id) === String(form.employeeId)) : null;
+                return emp ? (
+                  <HodInfo
+                    hodName={emp.hodName}
+                    hodCode={emp.hodCode}
+                    departmentName={emp.departmentName}
+                    isSelfHod={!!emp.hodCode && emp.hodCode === emp.biometricEmployeeCode}
+                  />
+                ) : (
+                  <HodInfo
+                    hodName={myHod?.hodName}
+                    hodCode={myHod?.hodCode}
+                    departmentName={myHod?.departmentName}
+                    isSelfHod={myHod?.isSelfHod}
+                    loading={hodLoading}
+                  />
+                );
+              })()}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

@@ -13,6 +13,7 @@ const useAuthStore = create(
       let isHOD = false;
       let isEmployeeOnly = false;
       let isCanteenManager = false;
+      let isExternal = false;
 
       try {
         const userStr = localStorage.getItem('user');
@@ -26,6 +27,7 @@ const useAuthStore = create(
           isHR = roles.includes('hr');
           isHOD = roles.includes('hod');
           isCanteenManager = roles.includes('canteenmanager');
+          isExternal = initialUser.userType === 'external';
           isEmployeeOnly = roles.includes('employee') &&
             !isHR &&
             !isHOD &&
@@ -44,6 +46,8 @@ const useAuthStore = create(
         isHOD,
         isEmployeeOnly,
         isCanteenManager,
+        // Logged in from external_users (not a company employee)
+        isExternal,
 
         login: (userObj) => {
           const roles = (userObj?.roles || []).map(r => r.toLowerCase().replace(/[^a-z0-9]/g, ""));
@@ -69,6 +73,7 @@ const useAuthStore = create(
             isHOD,
             isEmployeeOnly,
             isCanteenManager,
+            isExternal: userObj?.userType === 'external',
           });
         },
 
@@ -83,6 +88,7 @@ const useAuthStore = create(
             isHOD: false,
             isEmployeeOnly: false,
             isCanteenManager: false,
+            isExternal: false,
           });
         },
 
@@ -123,6 +129,14 @@ const useAuthStore = create(
           const role = user.role || (user.roles && user.roles[0]) || 'Employee';
           const defaultPages = getDefaultPagesForRole(role);
           return defaultPages.includes(path);
+        },
+
+        /** True when a department id is one the logged-in HOD heads (a HOD can head several) */
+        isMyDepartment: (deptId) => {
+          const user = get().user;
+          if (!user || deptId == null) return false;
+          const ids = user.departmentIds?.length ? user.departmentIds : [user.departmentId];
+          return ids.filter((x) => x != null).map(String).includes(String(deptId));
         },
 
         setUserAllowedPages: (allowedPages) => {
