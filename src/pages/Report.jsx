@@ -13,6 +13,7 @@ import MonthlyAttendanceReport from '../features/reports/MonthlyAttendanceReport
 import LeaveReport from '../features/reports/LeaveReport';
 import DailyExceptionReport from '../features/reports/DailyExceptionReport';
 import { currentMonthStr, monthStartStr, todayStr } from '../features/reports/reportUtils';
+import useAuthStore from '../store/authStore';
 
 const PfReport = (props) => <StatutoryReport kind="pf" {...props} />;
 const EsicReport = (props) => <StatutoryReport kind="esic" {...props} />;
@@ -46,7 +47,13 @@ const REPORTS = [
 ];
 
 const Report = () => {
-  const [activeId, setActiveId] = useState('employees');
+  const isAdmin = useAuthStore((state) => state.isAdmin);
+  const isHR = useAuthStore((state) => state.isHR);
+  const hasPageAccess = useAuthStore((state) => state.hasPageAccess);
+  // Admin/HR see every report; anyone else only the reports switched on for them (e.g. '/report/canteen')
+  const visibleReports = REPORTS.filter((r) => isAdmin || isHR || hasPageAccess(`/report/${r.id}`));
+
+  const [activeId, setActiveId] = useState(() => visibleReports[0]?.id);
   const [departments, setDepartments] = useState([]);
   const [employeeOptions, setEmployeeOptions] = useState([]);
   const [departmentId, setDepartmentId] = useState('');
@@ -71,8 +78,8 @@ const Report = () => {
     return employeeOptions.filter((e) => e.department_name === deptName);
   }, [employeeOptions, departments, departmentId]);
 
-  const active = REPORTS.find((r) => r.id === activeId);
-  const ActiveReport = active.Component;
+  const active = visibleReports.find((r) => r.id === activeId) || visibleReports[0];
+  const ActiveReport = active?.Component;
 
   const handleRangeChange = (key, value) => {
     setRange((prev) => {
@@ -81,28 +88,38 @@ const Report = () => {
     });
   };
 
-  const monthRange = monthRanges[activeId];
+  const monthRange = monthRanges[active?.id];
   const handleMonthRangeChange = (key, value) => {
     setMonthRanges((prev) => {
-      const next = { ...prev[activeId], [key]: value };
-      return { ...prev, [activeId]: next.from > next.to ? { from: next.to, to: next.from } : next };
+      const next = { ...prev[active.id], [key]: value };
+      return { ...prev, [active.id]: next.from > next.to ? { from: next.to, to: next.from } : next };
     });
   };
+
+  if (!active) {
+    return (
+      <div className="max-w-[1600px] mx-auto p-2 sm:p-4">
+        <div className="bg-white rounded-2xl p-10 border border-gray-200/80 shadow-sm text-center text-sm text-gray-500">
+          No reports are enabled for your login.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto p-2 sm:p-4">
       <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-sm space-y-4">
         <div className="flex flex-wrap items-center gap-1.5 bg-gray-100/90 p-1.5 rounded-xl border border-gray-200/60 w-fit max-w-full">
-          {REPORTS.map(({ id, label, icon: Icon }) => (
+          {visibleReports.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               type="button"
               onClick={() => setActiveId(id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
-                activeId === id ? 'bg-white text-indigo-700 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
+                active.id === id ? 'bg-white text-indigo-700 shadow-sm border border-gray-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
               }`}
             >
-              <Icon size={16} className={activeId === id ? 'text-indigo-600' : 'text-gray-400'} />
+              <Icon size={16} className={active.id === id ? 'text-indigo-600' : 'text-gray-400'} />
               {label}
             </button>
           ))}
@@ -194,7 +211,7 @@ const Report = () => {
 
       <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-sm">
         <ActiveReport
-          key={activeId}
+          key={active.id}
           departmentId={departmentId}
           employeeId={employeeId}
           search={search}

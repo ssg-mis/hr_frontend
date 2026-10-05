@@ -8,6 +8,7 @@ import useAuthStore from '../../store/authStore';
 
 const VacancyApprovalPage = () => {
   const user = useAuthStore((state) => state.user);
+  const isMyDepartment = useAuthStore((state) => state.isMyDepartment);
   const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
   const isAdmin = userRoles.some((r) => r.toLowerCase() === 'admin');
   const isHR = userRoles.some((r) => r.toLowerCase() === 'hr');
@@ -382,7 +383,7 @@ const VacancyApprovalPage = () => {
                 const isPendingHOD = reviewingVacancy.approvalStatus === 'Pending';
                 const isPendingHR = reviewingVacancy.approvalStatus === 'Pending HR';
 
-                const canActHOD = isPendingHOD && (isAdmin || (isHOD && String(user?.departmentId) === String(reviewingVacancy.departmentId)));
+                const canActHOD = isPendingHOD && (isAdmin || (isHOD && isMyDepartment(reviewingVacancy.departmentId)));
                 const canActHR = isPendingHR && (isAdmin || isHR);
 
                 const canTakeAction = (canActHOD || canActHR) && !showRejectForm;
@@ -597,7 +598,7 @@ const VacancyApprovalPage = () => {
                       )}
                       <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium sticky right-0 bg-white border-l border-gray-200">
                         {(() => {
-                          const canActHOD = item.approvalStatus === 'Pending' && (isAdmin || (isHOD && String(user?.departmentId) === String(item.departmentId)));
+                          const canActHOD = item.approvalStatus === 'Pending' && (isAdmin || (isHOD && isMyDepartment(item.departmentId)));
                           const canActHR = item.approvalStatus === 'Pending HR' && (isAdmin || isHR);
                           const canAct = canActHOD || canActHR;
                           return (

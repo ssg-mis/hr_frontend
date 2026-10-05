@@ -28,9 +28,12 @@ const ProtectedRoute = ({ children, allowedRoles, pagePath }) => {
 
   // Dynamic page permission check
   const currentPath = pagePath || location.pathname;
+  // Canteen managers land on the first canteen page they are allowed to open
+  const canteenHome = ['/canteen', '/canteen/scan', '/report'].find((p) => hasPageAccess(p));
+
   if (currentPath && currentPath !== '/' && !hasPageAccess(currentPath)) {
-    if (isCanteenManager) {
-      return <Navigate to="/canteen" replace />;
+    if (isCanteenManager && canteenHome && canteenHome !== currentPath) {
+      return <Navigate to={canteenHome} replace />;
     }
     if (hasPageAccess('/my-profile')) {
       return <Navigate to="/my-profile" replace />;
@@ -43,8 +46,8 @@ const ProtectedRoute = ({ children, allowedRoles, pagePath }) => {
     if (hasPageAccess('/my-profile')) {
       return <Navigate to="/my-profile" replace />;
     }
-    if (isCanteenManager) {
-      return <Navigate to="/canteen" replace />;
+    if (isCanteenManager && canteenHome) {
+      return <Navigate to={canteenHome} replace />;
     }
   }
 

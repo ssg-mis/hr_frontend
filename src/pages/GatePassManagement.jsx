@@ -32,6 +32,7 @@ import {
 import toast from "react-hot-toast";
 import api from "../lib/api";
 import useAuthStore from "../store/authStore";
+import HodInfo, { HodLabel } from "../components/HodInfo";
 
 const GatePassManagement = () => {
   const user = useAuthStore((state) => state.user);
@@ -648,7 +649,10 @@ const GatePassManagement = () => {
                     </td>
 
                     {/* Status */}
-                    <td className="px-6 py-4">{getStatusBadge(pass.status)}</td>
+                    <td className="px-6 py-4">
+                      {getStatusBadge(pass.status)}
+                      {pass.status === "PENDING_HOD" && <HodLabel hodName={pass.assignedHodName} hodCode={pass.assignedHodCode} />}
+                    </td>
 
                     {/* Actions */}
                     <td className="px-6 py-4 text-right">
@@ -961,6 +965,20 @@ const GatePassManagement = () => {
                         </select>
                       </div>
                     </div>
+                    {form.departmentId && (() => {
+                      // The pass goes to the HOD of its department
+                      const dept = departmentsList.find((d) => String(d.id) === String(form.departmentId));
+                      const empCode = employeesList.find((e) => String(e.employee_id ?? e.id) === String(form.employeeId))?.employee_code;
+                      return (
+                        <HodInfo
+                          className="mt-3"
+                          hodName={dept?.hodName}
+                          hodCode={dept?.hodCode}
+                          departmentName={dept?.name}
+                          isSelfHod={!!dept?.hodCode && (dept.hodCode === empCode || dept.hodCode === user?.employeeCode)}
+                        />
+                      );
+                    })()}
                   </>
                 ) : (
                   /* Visitor Pass Form Fields */
@@ -1277,7 +1295,7 @@ const GatePassManagement = () => {
                         ? `${selectedPass.hodApprovedByName} (${formatDateTime(selectedPass.hodApprovedAt)})`
                         : selectedPass.passType === "VISITOR"
                         ? "N/A (Visitor Direct to HR)"
-                        : "Pending HOD Stage"}
+                        : `Pending HOD Stage · ${selectedPass.assignedHodName ? `${selectedPass.assignedHodName}${selectedPass.assignedHodCode ? ` (${selectedPass.assignedHodCode})` : ""}` : "HOD not assigned"}`}
                     </span>
                   </div>
                   <div className="flex justify-between text-[11px]">
