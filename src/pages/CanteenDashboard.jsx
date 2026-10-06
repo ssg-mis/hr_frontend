@@ -46,7 +46,7 @@ const CanteenDashboard = () => {
   // Modal states for meal crud
   const [showMealModal, setShowMealModal] = useState(false);
   const [editingMeal, setEditingMeal] = useState(null); // null means adding new
-  const [mealForm, setMealForm] = useState({ name: "", price: "", companyPrice: "" });
+  const [mealForm, setMealForm] = useState({ name: "", price: "", companyPrice: "", startTime: "", endTime: "" });
   const [submittingMeal, setSubmittingMeal] = useState(false);
 
   // Employee QR codes download
@@ -160,10 +160,10 @@ const CanteenDashboard = () => {
   const openMealModal = (meal = null) => {
     if (meal) {
       setEditingMeal(meal);
-      setMealForm({ name: meal.name, price: Number(meal.price).toString(), companyPrice: Number(meal.companyPrice || 0).toString() });
+      setMealForm({ name: meal.name, price: Number(meal.price).toString(), companyPrice: Number(meal.companyPrice || 0).toString(), startTime: meal.startTime || "", endTime: meal.endTime || "" });
     } else {
       setEditingMeal(null);
-      setMealForm({ name: "", price: "", companyPrice: "" });
+      setMealForm({ name: "", price: "", companyPrice: "", startTime: "", endTime: "" });
     }
     setShowMealModal(true);
   };
@@ -179,6 +179,10 @@ const CanteenDashboard = () => {
       toast.error("Company price must be 0 or more");
       return;
     }
+    if (!mealForm.startTime !== !mealForm.endTime || (mealForm.startTime && mealForm.startTime >= mealForm.endTime)) {
+      toast.error("Enter both serving times, with start before end");
+      return;
+    }
 
     setSubmittingMeal(true);
     try {
@@ -187,7 +191,9 @@ const CanteenDashboard = () => {
         await api.put(`/canteen/meals/${editingMeal.id}`, {
           name: mealForm.name,
           price: Number(mealForm.price),
-          companyPrice: companyPriceValue
+          companyPrice: companyPriceValue,
+          startTime: mealForm.startTime,
+          endTime: mealForm.endTime
         });
         toast.success("Meal updated successfully!");
       } else {
@@ -195,7 +201,9 @@ const CanteenDashboard = () => {
         await api.post("/canteen/meals", {
           name: mealForm.name,
           price: Number(mealForm.price),
-          companyPrice: companyPriceValue
+          companyPrice: companyPriceValue,
+          startTime: mealForm.startTime,
+          endTime: mealForm.endTime
         });
         toast.success("Meal added successfully!");
       }
@@ -745,6 +753,7 @@ const CanteenDashboard = () => {
                   <tr>
                     <th className="px-6 py-3">Meal ID</th>
                     <th className="px-6 py-3">Meal Name</th>
+                    <th className="px-6 py-3">Serving Time</th>
                     <th className="px-6 py-3 text-right">Employee Pays</th>
                     <th className="px-6 py-3 text-right">Company Pays</th>
                     <th className="px-6 py-3 text-right">Total Price</th>
@@ -757,6 +766,9 @@ const CanteenDashboard = () => {
                     <tr key={meal.id} className="hover:bg-gray-50/80 transition-colors">
                       <td className="px-6 py-4 text-xs font-mono text-gray-400">#{meal.id}</td>
                       <td className="px-6 py-4 font-bold text-gray-900">{meal.name}</td>
+                      <td className="px-6 py-4 text-xs font-semibold text-gray-700 whitespace-nowrap">
+                        {meal.startTime && meal.endTime ? `${meal.startTime} – ${meal.endTime}` : <span className="text-amber-600">Not set</span>}
+                      </td>
                       <td className="px-6 py-4 text-right font-bold text-indigo-600">₹{Number(meal.price).toFixed(2)}</td>
                       <td className="px-6 py-4 text-right font-bold text-emerald-600">₹{Number(meal.companyPrice || 0).toFixed(2)}</td>
                       <td className="px-6 py-4 text-right font-extrabold text-gray-900">₹{(Number(meal.price) + Number(meal.companyPrice || 0)).toFixed(2)}</td>
@@ -880,6 +892,26 @@ const CanteenDashboard = () => {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
                 <p className="text-[11px] text-gray-400 mt-1">Company's contribution per meal. Leave blank for 0.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Serving Time</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="time"
+                    value={mealForm.startTime}
+                    onChange={(e) => setMealForm(prev => ({ ...prev, startTime: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <span className="text-gray-400 text-sm">to</span>
+                  <input
+                    type="time"
+                    value={mealForm.endTime}
+                    onChange={(e) => setMealForm(prev => ({ ...prev, endTime: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">A QR scan in this window is charged as this meal automatically.</p>
               </div>
 
               <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm">

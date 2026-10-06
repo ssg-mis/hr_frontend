@@ -5,10 +5,36 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 
+const toMinutes = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+
+// Current minute of the day in India (matches the server, whatever the phone's timezone)
+const istMinutesNow = () => {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
+  const get = (type) => Number(parts.find((p) => p.type === type)?.value || 0);
+  return get('hour') * 60 + get('minute');
+};
+
+const formatTime = (t) => {
+  if (!t) return '';
+  const h = Number(t.slice(0, 2));
+  return `${h % 12 || 12}:${t.slice(3, 5)} ${h < 12 ? 'AM' : 'PM'}`;
+};
+
+const timedMeals = (meals) => meals.filter((m) => m.startTime && m.endTime);
+
+const findActiveMeal = (meals, nowMin) =>
+  timedMeals(meals).find((m) => toMinutes(m.startTime) <= nowMin && nowMin <= toMinutes(m.endTime)) || null;
+
+// Next meal to open today, or tomorrow's first meal after the last one closes
+const findNextMeal = (meals, nowMin) => {
+  const sorted = timedMeals(meals).sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+  return sorted.find((m) => toMinutes(m.startTime) > nowMin) || sorted[0] || null;
+};
+
 const CanteenScanner = () => {
   const navigate = useNavigate();
   const [meals, setMeals] = useState([]);
-  const [selectedMealId, setSelectedMealId] = useState("");
+  const [nowMin, setNowMin] = useState(istMinutesNow);
   const [loading, setLoading] = useState(true);
   const [cameraActive, setCameraActive] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -16,10 +42,20 @@ const CanteenScanner = () => {
   // Success result popup state
   const [scanResult, setScanResult] = useState(null);
   const [duplicateScan, setDuplicateScan] = useState(null); // same meal already served today
+  const [closedScan, setClosedScan] = useState(false); // scanned outside every meal window
   const [recentScans, setRecentScans] = useState([]);
   
   const qrCodeReaderRef = useRef(null);
   const scannerContainerId = "qr-reader-container";
+
+  // Meal is picked automatically from the canteen timings; re-checked every 15s
+  useEffect(() => {
+    const timer = setInterval(() => setNowMin(istMinutesNow()), 15000);
+    return () => clearInterval(timer);
+  }, []);
+  const activeMeal = findActiveMeal(meals, nowMin);
+  const nextMeal = activeMeal ? null : findNextMeal(meals, nowMin);
+  const selectedMealId = activeMeal ? String(activeMeal.id) : "";
 
   // Load meals
   useEffect(() => {
@@ -70,17 +106,10 @@ const CanteenScanner = () => {
 
   // Submit scan to backend
   const handleScanLogged = async (empCode) => {
-    if (!selectedMealId) {
-      toast.error("Please select a meal first");
-      return;
-    }
-    
     setIsSubmitting(true);
     try {
-      const res = await api.post("/canteen/scan", {
-        employeeCode: empCode,
-        mealId: Number(selectedMealId)
-      });
+      // Server decides the meal from its own clock
+      const res = await api.post("/canteen/scan", { employeeCode: empCode });
       
       if (res.success && res.data) {
         const loggedData = res.data;
@@ -102,11 +131,14 @@ const CanteenScanner = () => {
         setDuplicateScan(err.body.data || { message: err.message });
         return;
       }
-      toast.error(err.message || "Failed to log canteen meal");
-      // Restart camera scanner on error if a meal is selected
-      if (selectedMealId) {
-        startCamera();
+      if (err.body?.code === "NO_ACTIVE_MEAL") {
+        // Nothing charged; popup explains it and the camera restarts when it is dismissed
+        setNowMin(istMinutesNow());
+        setClosedScan(true);
+        return;
       }
+      toast.error(err.message || "Failed to log canteen meal");
+      startCamera();
     } finally {
       setIsSubmitting(false);
     }
@@ -156,36 +188,31 @@ const CanteenScanner = () => {
     setCameraActive(false);
   };
 
-  // Start/stop camera based on meal selection
+  // Camera stays on all day; the server decides the meal at scan time
   useEffect(() => {
-    if (selectedMealId) {
-      startCamera();
-    } else {
-      stopCamera();
-    }
+    startCamera();
     return () => {
       stopCamera();
     };
-  }, [selectedMealId]);
+  }, []);
 
   // Restart camera after dismissing scan popup
   const dismissResultPopup = () => {
     setScanResult(null);
     setDuplicateScan(null);
-    if (selectedMealId) {
-      startCamera();
-    }
+    setClosedScan(false);
+    startCamera();
   };
 
   // Auto dismiss popup after 2.5 seconds
   useEffect(() => {
-    if (scanResult || duplicateScan) {
+    if (scanResult || duplicateScan || closedScan) {
       const timer = setTimeout(() => {
         dismissResultPopup();
-      }, duplicateScan ? 4000 : 2500);
+      }, duplicateScan || closedScan ? 4000 : 2500);
       return () => clearTimeout(timer);
     }
-  }, [scanResult, duplicateScan]);
+  }, [scanResult, duplicateScan, closedScan]);
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col font-sans select-none relative overflow-hidden">
@@ -217,11 +244,24 @@ const CanteenScanner = () => {
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto p-4 flex flex-col space-y-4 z-10">
         
-        {/* 1. Meal Selection Dropdown (Selection-Based, No Default) */}
+        {/* 1. Active meal — selected automatically by canteen timings */}
         <section className="bg-slate-800/50 rounded-2xl border border-slate-700 p-4">
-          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-            Select Active Meal
-          </label>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Active Meal (Auto)
+            </span>
+            {!loading && (
+              activeMeal ? (
+                <span className="text-[11px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-full px-2.5 py-0.5">
+                  Serving {activeMeal.name} until {formatTime(activeMeal.endTime)}
+                </span>
+              ) : (
+                <span className="text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-full px-2.5 py-0.5">
+                  Canteen closed{nextMeal ? ` · ${nextMeal.name} at ${formatTime(nextMeal.startTime)}` : ''}
+                </span>
+              )
+            )}
+          </div>
           {loading ? (
             <div className="h-10 flex items-center justify-center">
               <RefreshCw size={16} className="animate-spin text-slate-400 mr-2" />
@@ -234,19 +274,20 @@ const CanteenScanner = () => {
                 const co = Number(meal.companyPrice || 0);
                 const selected = String(meal.id) === String(selectedMealId);
                 return (
-                  <button
+                  <div
                     key={meal.id}
-                    type="button"
-                    onClick={() => setSelectedMealId(selected ? '' : String(meal.id))}
-                    className={`text-left rounded-2xl border p-3 transition-all cursor-pointer ${selected
+                    className={`text-left rounded-2xl border p-3 transition-all ${selected
                       ? 'bg-indigo-600/20 border-indigo-400 ring-2 ring-indigo-400/60'
-                      : 'bg-slate-800/60 border-slate-700 hover:border-slate-500'
+                      : 'bg-slate-800/60 border-slate-700 opacity-60'
                       }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-bold text-white">{meal.name}</span>
                       {selected && <CheckCircle size={16} className="text-indigo-300" />}
                     </div>
+                    <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                      {meal.startTime && meal.endTime ? `${formatTime(meal.startTime)} – ${formatTime(meal.endTime)}` : 'No timing set'}
+                    </p>
                     <p className="text-lg font-extrabold text-white mt-1">₹{(emp + co).toFixed(2)}</p>
                     <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold -mt-0.5">Total price</p>
                     <div className="mt-2 pt-2 border-t border-slate-700/70 space-y-0.5 text-[11px] sm:text-xs">
@@ -259,13 +300,13 @@ const CanteenScanner = () => {
                         <span className="font-bold text-indigo-200">₹{emp.toFixed(2)}</span>
                       </div>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
           )}
-          {!loading && !selectedMealId && meals.length > 0 && (
-            <p className="text-[11px] text-slate-400 mt-2">Tap a meal to unlock the scanner. Only the employee's share is deducted from salary.</p>
+          {!loading && meals.length > 0 && (
+            <p className="text-[11px] text-slate-400 mt-2">The meal is picked automatically from the canteen timings. Only the employee's share is deducted from salary.</p>
           )}
         </section>
 
@@ -300,26 +341,14 @@ const CanteenScanner = () => {
               
               {!cameraActive && (
                 <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-4 text-center">
-                  {!selectedMealId ? (
-                    <>
-                      <Utensils size={36} className="text-indigo-500/80 mb-2 animate-pulse" />
-                      <span className="text-xs font-semibold text-slate-300">Scanner Locked</span>
-                      <span className="text-[11px] text-slate-500 mt-1.5 max-w-[200px]">
-                        Please select an active meal option from the dropdown above to unlock the camera.
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera size={36} className="text-slate-600 mb-2 animate-bounce" />
-                      <span className="text-xs text-slate-400">Camera offline</span>
-                      <button 
-                        onClick={startCamera}
-                        className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold transition-all shadow-md"
-                      >
-                        Start Camera
-                      </button>
-                    </>
-                  )}
+                  <Camera size={36} className="text-slate-600 mb-2 animate-bounce" />
+                  <span className="text-xs text-slate-400">Camera offline</span>
+                  <button
+                    onClick={startCamera}
+                    className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold transition-all shadow-md"
+                  >
+                    Start Camera
+                  </button>
                 </div>
               )}
             </div>
@@ -336,6 +365,27 @@ const CanteenScanner = () => {
           </div>
 
           {/* Overlay Pop-up Notification (Success Scan Screen) */}
+          {closedScan && (
+            <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center animate-fade-in z-20">
+              <div className="w-16 h-16 bg-amber-500/10 border-2 border-amber-500/30 text-amber-400 rounded-full flex items-center justify-center mb-4 animate-scale-up">
+                <Utensils size={30} />
+              </div>
+              <h3 className="text-lg font-bold text-amber-400">Canteen Closed</h3>
+              <p className="text-xs text-slate-400 mt-1">No meal is served at this time · Not charged</p>
+              {nextMeal && (
+                <p className="text-xs text-slate-300 mt-4">
+                  Next: <span className="font-bold text-white">{nextMeal.name}</span> at {formatTime(nextMeal.startTime)}
+                </p>
+              )}
+              <button
+                onClick={dismissResultPopup}
+                className="mt-5 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-xl border border-slate-700 transition-colors cursor-pointer"
+              >
+                Scan Next
+              </button>
+            </div>
+          )}
+
           {duplicateScan && (
             <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center animate-fade-in z-20">
               <div className="w-16 h-16 bg-amber-500/10 border-2 border-amber-500/30 text-amber-400 rounded-full flex items-center justify-center mb-4 animate-scale-up">
