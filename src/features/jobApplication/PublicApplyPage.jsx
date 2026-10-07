@@ -401,7 +401,7 @@ const PublicApplyPage = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1">Last / Current Employer</label>
+                  <label className="block text-xs font-bold text-gray-755 uppercase tracking-wider mb-1">Last / Current Company</label>
                   <input type="text" name="previousCompany" value={formData.previousCompany} onChange={handleInputChange} placeholder="e.g. Tech Solutions Pvt Ltd" className="w-full border border-gray-250 rounded-xl px-3.5 py-2.5 text-sm bg-white placeholder-gray-400 text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
 
