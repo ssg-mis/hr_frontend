@@ -165,7 +165,21 @@ const AfterLeavingWork = () => {
     });
   };
 
+  // Pending Salary and Final Settlement Amount are compulsory; Bonus/Advance/Canteen may stay blank (= 0)
+  const validateSettlement = () => {
+    if (String(settlementForm.pendingSalary ?? '').trim() === '') {
+      toast.error('Please enter Pending Salary (enter 0 if nothing is pending)');
+      return false;
+    }
+    if (String(settlementForm.finalSettlementAmount ?? '').trim() === '') {
+      toast.error('Please enter Final Settlement Amount');
+      return false;
+    }
+    return true;
+  };
+
   const saveSettlement = async () => {
+    if (!validateSettlement()) return;
     setSubmitting(true);
     try {
       await resignationApi.update(settling.id, {
@@ -183,6 +197,14 @@ const AfterLeavingWork = () => {
   };
 
   const markRelieved = async () => {
+    const checklist = settling?.clearanceChecklist || {};
+    const isHodApproved = checklist.handoverStatus === 'Approved' || checklist.handover === true;
+    if (!isHodApproved) {
+      toast.error('Cannot mark as relieved: Task handover has not been approved by the HOD yet.');
+      return;
+    }
+    if (!validateSettlement()) return;
+
     setSubmitting(true);
     try {
       await resignationApi.update(settling.id, {
@@ -351,7 +373,7 @@ const AfterLeavingWork = () => {
             <div className="px-8 py-6 space-y-6 overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Pending Salary</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Pending Salary <span className="text-red-500">*</span></label>
                   <input type="text" name="pendingSalary" value={settlementForm.pendingSalary} onChange={handleSettlementChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
                 <div>
@@ -368,7 +390,7 @@ const AfterLeavingWork = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Final Settlement Amount</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Final Settlement Amount <span className="text-red-500">*</span></label>
                 <input type="text" name="finalSettlementAmount" value={settlementForm.finalSettlementAmount} onChange={handleSettlementChange} placeholder="Net amount payable/recoverable" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div>
@@ -436,7 +458,7 @@ const AfterLeavingWork = () => {
                   
                   {checklist.handover && (
                     <div className="pl-6 pt-1">
-                      <label className="block text-[10px] font-semibold text-gray-500 mb-1">Handover Employee</label>
+                      <label className="block text-[10px] font-semibold text-gray-500 mb-1">Handover Employee <span className="text-red-500">*</span></label>
                       <select value={checklist.handoverEmployeeId} onChange={(e) => setChecklist(prev => ({ ...prev, handoverEmployeeId: e.target.value }))} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500">
                         <option value="">-- Choose Employee --</option>
                         <option value="none">No task handover needed</option>

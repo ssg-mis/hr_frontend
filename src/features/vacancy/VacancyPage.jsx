@@ -1,9 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, X, ChevronLeft, ChevronRight, Search, Trash2, Edit2, Link, Briefcase, Calendar, MapPin, IndianRupee, Award, Layers, Users, Info, AlertCircle, Clock, Lock } from 'lucide-react';
+import { Plus, X, ChevronLeft, ChevronRight, Search, Trash2, Edit2, Link, Copy, Briefcase, Calendar, MapPin, IndianRupee, Award, Layers, Users, Info, AlertCircle, Clock, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { vacancyApi } from './vacancy.api';
 import { designationApi } from '../designation/designation.api';
 import { departmentApi } from '../department/department.api';
+import { companyBranchApi } from '../companyBranch/companyBranch.api';
+
+const WhatsAppIcon = ({ size = 15, className = '' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+  </svg>
+);
+
 
 const VacancyPage = () => {
   const [showModal, setShowModal] = useState(false);
@@ -15,6 +23,7 @@ const VacancyPage = () => {
     vacancyName: '',
     designationId: '',
     departmentId: '',
+    branchId: '',
     salaryCriteria: '',
     preferredQualification: '',
     preferredLocation: '',
@@ -55,6 +64,7 @@ const VacancyPage = () => {
   const [selectedPlatforms, setSelectedPlatforms] = useState([]);
   const [designations, setDesignations] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [formError, setFormError] = useState('');
   const formScrollRef = useRef(null);
 
@@ -89,7 +99,7 @@ const VacancyPage = () => {
     });
   };
 
-  // Master data (designations + departments) loads once on mount.
+  // Master data (designations + departments + branches) loads once on mount.
   useEffect(() => {
     loadMasters();
   }, []);
@@ -101,15 +111,17 @@ const VacancyPage = () => {
 
   const loadMasters = async () => {
     try {
-      const [desigs, depts] = await Promise.all([
+      const [desigs, depts, branchList] = await Promise.all([
         designationApi.list(),
         departmentApi.list(),
+        companyBranchApi.list(),
       ]);
       setDesignations(desigs || []);
       setDepartments(depts || []);
+      setBranches(branchList || []);
     } catch (error) {
       console.error('Error loading master data:', error);
-      toast.error('Could not load designations/departments');
+      toast.error('Could not load designations/departments/branches');
     }
   };
 
@@ -231,9 +243,9 @@ const VacancyPage = () => {
 
     // Validate Salary Criteria if provided
     if (formData.salaryCriteria && formData.salaryCriteria.trim()) {
-      const salaryRegex = /^\s*\d+(?:,\d+)*(?:\.\d+)?\s*[kK]?\s*(?:-\s*\d+(?:,\d+)*(?:\.\d+)?\s*[kK]?)?\s*(?:LPA|PM|Monthly|Per Month|Per Annum|Lakhs|L)\s*$/i;
+      const salaryRegex = /^\s*\d+(?:,\d+)*(?:\.\d+)?\s*(?:-\s*\d+(?:,\d+)*(?:\.\d+)?\s*)?$/;
       if (!salaryRegex.test(formData.salaryCriteria)) {
-        setFormError('Salary must be a number or range followed by a unit (e.g., "20,000 - 25,000 PM" or "8 - 12 LPA")');
+        setFormError('Salary must be a number or range (e.g., "25000" or "20000 - 25000")');
         if (formScrollRef.current) formScrollRef.current.scrollTop = 0;
         return;
       }
@@ -284,22 +296,29 @@ const VacancyPage = () => {
 
       const hasSocialPlatforms = finalPlatforms.length > 0;
 
+      // Format salaryCriteria with " (PM)" if input is provided
+      let formattedSalary = formData.salaryCriteria ? formData.salaryCriteria.trim() : null;
+      if (formattedSalary && !formattedSalary.endsWith(' (PM)')) {
+        formattedSalary = `${formattedSalary} (PM)`;
+      }
+
       const payload = {
         vacancyName: formData.vacancyName || null,
         designationId: Number(formData.designationId),
         departmentId: Number(formData.departmentId),
+        branchId: formData.branchId ? Number(formData.branchId) : null,
         gender: formData.gender,
         numberOfPosts: parseInt(formData.numberOfPost, 10),
         completionDate: new Date(formData.competitionDate).toISOString(),
-        salaryCriteria: formData.salaryCriteria || null,
+        salaryCriteria: formattedSalary,
         jobDescription: formData.jobDescription || null,
         preferredQualification: formData.preferredQualification || null,
         preferredLocation: formData.preferredLocation || null,
         experienceRequired: formData.experienceRequired,
-        socialPlatforms: hasSocialPlatforms ? finalPlatforms.join(', ') : null,
-        postingLinks: Object.keys(cleanedLinks).length > 0 ? cleanedLinks : null,
+        socialPlatforms: isEditing && hasSocialPlatforms ? finalPlatforms.join(', ') : null,
+        postingLinks: isEditing && Object.keys(cleanedLinks).length > 0 ? cleanedLinks : null,
         priority: formData.priority || 'Medium',
-        status: formData.status || 'NeedMore',
+        status: isEditing ? (formData.status || 'NeedMore') : 'NeedMore',
         remarks: formData.remarks || null,
       };
 
@@ -370,36 +389,125 @@ const VacancyPage = () => {
       formattedDate = new Date(item.completionDate).toISOString().split('T')[0];
     }
 
-    setFormData({
-      vacancyName: item.vacancyName || '',
-      designationId: item.designationId ? String(item.designationId) : '',
-      departmentId: item.departmentId ? String(item.departmentId) : '',
-      salaryCriteria: item.salaryCriteria || '',
-      preferredQualification: item.preferredQualification || '',
-      preferredLocation: item.preferredLocation || '',
-      remarks: item.remarks || '',
-      jobDescription: item.jobDescription || '',
-      gender: item.gender || '',
-      numberOfPost: item.numberOfPosts || '',
-      competitionDate: formattedDate,
-      priority: item.priority || 'Medium',
-      status: item.status || 'NeedMore',
-      experienceRequired: !!item.experienceRequired,
-      postingLinks: {
-        LinkedIn: item.postingLinks?.LinkedIn || '',
-        Naukri: item.postingLinks?.Naukri || '',
-        Indeed: item.postingLinks?.Indeed || '',
-        Facebook: item.postingLinks?.Facebook || '',
-      },
-    });
-    setShowModal(true);
-  };
+      const desig = designations.find(d => String(d.id) === String(item.designationId));
+      const itemDeptId = desig ? String(desig.departmentId) : '';
+
+      const match = (item.salaryCriteria || '').match(/^\s*[\d\s,.-]+/);
+      const cleanedSalary = match ? match[0].trim() : '';
+
+      setFormData({
+        vacancyName: item.vacancyName || '',
+        designationId: item.designationId ? String(item.designationId) : '',
+        departmentId: itemDeptId,
+        branchId: item.branchId ? String(item.branchId) : '',
+        salaryCriteria: cleanedSalary,
+        preferredQualification: item.preferredQualification || '',
+        preferredLocation: item.preferredLocation || '',
+        remarks: item.remarks || '',
+        jobDescription: item.jobDescription || '',
+        gender: item.gender || '',
+        numberOfPost: item.numberOfPosts || '',
+        competitionDate: formattedDate,
+        priority: item.priority || 'Medium',
+        status: item.status || 'NeedMore',
+        experienceRequired: !!item.experienceRequired,
+        postingLinks: {
+          LinkedIn: item.postingLinks?.LinkedIn || '',
+          Naukri: item.postingLinks?.Naukri || '',
+          Indeed: item.postingLinks?.Indeed || '',
+          Facebook: item.postingLinks?.Facebook || '',
+        },
+      });
+      setShowModal(true);
+    };
+
+    const handleDuplicateClick = (item) => {
+      setIsEditing(false);
+      setEditingVacancyNumber(null);
+
+      const activePlatforms = item.socialPlatforms
+        ? item.socialPlatforms.split(',').map((s) => s.trim())
+        : [];
+
+      const selected = [];
+      let hasCustom = false;
+      let customName = '';
+      let customUrl = '';
+
+      activePlatforms.forEach((p) => {
+        if (standardPlatforms.includes(p)) {
+          selected.push(p);
+        } else if (p) {
+          hasCustom = true;
+          customName = p;
+          customUrl = item.postingLinks?.[p] || '';
+        }
+      });
+
+      if (item.postingLinks) {
+        Object.keys(item.postingLinks).forEach((key) => {
+          if (!standardPlatforms.includes(key) && key) {
+            hasCustom = true;
+            customName = key;
+            customUrl = item.postingLinks[key];
+          }
+        });
+      }
+
+      if (hasCustom) {
+        selected.push('Others');
+        setCustomPlatformName(customName);
+        setCustomLinkUrl(customUrl);
+      } else {
+        setCustomPlatformName('');
+        setCustomLinkUrl('');
+      }
+
+      setSelectedPlatforms(selected);
+
+      let formattedDate = '';
+      if (item.completionDate) {
+        formattedDate = new Date(item.completionDate).toISOString().split('T')[0];
+      }
+
+      const desig = designations.find(d => String(d.id) === String(item.designationId));
+      const itemDeptId = desig ? String(desig.departmentId) : '';
+
+      const match = (item.salaryCriteria || '').match(/^\s*[\d\s,.-]+/);
+      const cleanedSalary = match ? match[0].trim() : '';
+
+      setFormData({
+        vacancyName: item.vacancyName || '',
+        designationId: item.designationId ? String(item.designationId) : '',
+        departmentId: itemDeptId,
+        branchId: item.branchId ? String(item.branchId) : '',
+        salaryCriteria: cleanedSalary,
+        preferredQualification: item.preferredQualification || '',
+        preferredLocation: item.preferredLocation || '',
+        remarks: item.remarks || '',
+        jobDescription: item.jobDescription || '',
+        gender: item.gender || '',
+        numberOfPost: item.numberOfPosts || '',
+        competitionDate: formattedDate,
+        priority: item.priority || 'Medium',
+        status: 'NeedMore',
+        experienceRequired: !!item.experienceRequired,
+        postingLinks: {
+          LinkedIn: item.postingLinks?.LinkedIn || '',
+          Naukri: item.postingLinks?.Naukri || '',
+          Indeed: item.postingLinks?.Indeed || '',
+          Facebook: item.postingLinks?.Facebook || '',
+        },
+      });
+      setShowModal(true);
+    };
 
   const handleCancel = () => {
     setFormData({
       vacancyName: '',
       designationId: '',
       departmentId: '',
+      branchId: '',
       salaryCriteria: '',
       preferredQualification: '',
       preferredLocation: '',
@@ -454,11 +562,31 @@ const VacancyPage = () => {
       });
   };
 
+  const handleShareWhatsApp = (item) => {
+    const token = item.shareToken || item.vacancyNumber;
+    const publicUrl = `${window.location.origin}/apply/${token}`;
+    const title = item.vacancyName || item.designationName || 'Job Opening';
+    const lines = [
+      `*We're Hiring: ${title}*`,
+      item.designationName && item.designationName !== title ? `Designation: ${item.designationName}` : null,
+      item.numberOfPosts ? `Openings: ${item.numberOfPosts}` : null,
+      item.completionDate ? `Apply before: ${new Date(item.completionDate).toLocaleDateString('en-IN')}` : null,
+      '',
+      `Apply here: ${publicUrl}`,
+    ].filter((l) => l !== null);
+    window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener,noreferrer');
+  };
+
   // Client-side filters on top of the current page for snappy UX.
   const filteredVacancyData = vacancyData.filter((item) => {
     if (statusFilter && item.status !== statusFilter) return false;
     if (priorityFilter && item.priority !== priorityFilter) return false;
-    if (deptFilter && String(item.departmentId) !== String(deptFilter)) return false;
+    
+    if (deptFilter) {
+      const desig = designations.find((d) => String(d.id) === String(item.designationId));
+      const itemDeptId = desig ? String(desig.departmentId) : '';
+      if (itemDeptId !== String(deptFilter)) return false;
+    }
     return true;
   });
 
@@ -683,7 +811,13 @@ const VacancyPage = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-semibold text-gray-800">{item.designationName || '—'}</div>
-                        <div className="text-xs text-gray-400 font-medium">{item.departmentName || '—'}</div>
+                        <div className="text-xs text-gray-400 font-medium">
+                          {(() => {
+                            const desig = designations.find(d => String(d.id) === String(item.designationId));
+                            const dept = desig ? departments.find(d => String(d.id) === String(desig.departmentId)) : null;
+                            return dept ? dept.name : '—';
+                          })()}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="inline-flex items-center gap-1">
@@ -711,9 +845,9 @@ const VacancyPage = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         <span
                           title={item.approvalStatus === 'Rejected' ? `Rejection Reason: ${item.rejectionRemark}` : ''}
-                          className={`px-2 py-0.5 rounded-full text-xs font-semibold ${item.approvalStatus === 'Approved' ? 'bg-green-50 text-green-700 border border-green-155' : item.approvalStatus === 'Rejected' ? 'bg-red-50 text-red-700 border border-red-155' : 'bg-gray-100 text-gray-600 border border-gray-200'}`}
+                          className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${item.approvalStatus === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' : item.approvalStatus === 'Rejected' ? 'bg-red-50 text-red-700 border-red-200' : item.approvalStatus === 'Pending HR' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}
                         >
-                          {item.approvalStatus}
+                          {item.approvalStatus === 'Pending' ? 'HOD Pending' : item.approvalStatus}
                         </span>
                         {item.approvalStatus === 'Rejected' && item.rejectionRemark && (
                           <p className="text-[10px] text-red-500 font-medium mt-0.5 max-w-[120px] truncate" title={item.rejectionRemark}>
@@ -732,17 +866,26 @@ const VacancyPage = () => {
                               <Link size={15} />
                             </button>
                           )}
+                          {item.approvalStatus === 'Approved' && (
+                            <button
+                              onClick={() => handleShareWhatsApp(item)}
+                              className="text-gray-400 hover:text-green-600 p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+                              title="Share on WhatsApp"
+                            >
+                              <WhatsAppIcon size={15} />
+                            </button>
+                          )}
                           <button
-                            onClick={() => handleEditClick(item)}
+                            onClick={() => handleDuplicateClick(item)}
                             className="text-gray-400 hover:text-blue-600 p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
-                            title="Edit Vacancy"
+                            title="Duplicate Vacancy"
                           >
-                            <Edit2 size={15} />
+                            <Copy size={15} />
                           </button>
                           <button
-                            onClick={() => handleDelete(item)}
-                            className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
-                            title="Delete Vacancy"
+                            disabled
+                            className="text-gray-300 p-1.5 rounded-lg cursor-not-allowed opacity-50"
+                            title="Delete Vacancy (Disabled)"
                           >
                             <Trash2 size={15} />
                           </button>
@@ -894,7 +1037,7 @@ const VacancyPage = () => {
                         ))}
                       </select>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className={isEditing ? "grid grid-cols-2 gap-3" : ""}>
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-1">Priority</label>
                         <select
@@ -908,20 +1051,22 @@ const VacancyPage = () => {
                           <option value="High">High</option>
                         </select>
                       </div>
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-1">Status</label>
-                        <select
-                          name="status"
-                          value={formData.status}
-                          onChange={handleInputChange}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                        >
-                          <option value="NeedMore">Open</option>
-                          <option value="Interviewing">Interviewing</option>
-                          <option value="OnHold">On Hold</option>
-                          <option value="Closed">Closed</option>
-                        </select>
-                      </div>
+                      {isEditing && (
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Status</label>
+                          <select
+                            name="status"
+                            value={formData.status}
+                            onChange={handleInputChange}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+                          >
+                            <option value="NeedMore">Open</option>
+                            <option value="Interviewing">Interviewing</option>
+                            <option value="OnHold">On Hold</option>
+                            <option value="Closed">Closed</option>
+                          </select>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -931,14 +1076,14 @@ const VacancyPage = () => {
                   <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3">Candidate Specifications</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-1">Salary Criteria</label>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Salary Criteria (PM)</label>
                       <input
                         type="text"
                         name="salaryCriteria"
                         value={formData.salaryCriteria}
                         onChange={handleInputChange}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                        placeholder="e.g. 20,000 - 25,000 PM or 8 - 12 LPA"
+                        placeholder="e.g. 25000 or 20000 - 25000"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -983,15 +1128,28 @@ const VacancyPage = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-1">Preferred Location</label>
-                      <input
-                        type="text"
-                        name="preferredLocation"
-                        value={formData.preferredLocation}
-                        onChange={handleInputChange}
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Company Branch</label>
+                      <select
+                        name="branchId"
+                        value={formData.branchId}
+                        onChange={(e) => {
+                          const bId = e.target.value;
+                          const selectedB = branches.find((b) => String(b.id) === String(bId));
+                          setFormData((prev) => ({
+                            ...prev,
+                            branchId: bId,
+                            preferredLocation: selectedB ? `${selectedB.name}\n${selectedB.address || ''}` : prev.preferredLocation,
+                          }));
+                        }}
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                        placeholder="e.g. Noida / Gurugram"
-                      />
+                      >
+                        <option value="">Select Branch</option>
+                        {branches.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name} ({b.address})
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="md:col-span-2">
                       <label className="block text-sm font-semibold text-gray-700 mb-1">Preferred Qualification</label>
@@ -1021,89 +1179,91 @@ const VacancyPage = () => {
                 </div>
 
                 {/* Section 3: Job Distribution Channels */}
-                <div className="border-t border-gray-150 pt-6">
-                  <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3">Publish & Job Board Integration</h4>
-                  <div className="space-y-4">
-                    <p className="text-xs text-gray-500">
-                      Select which platforms you are publishing on. Checking a platform will enable a job post link input.
-                    </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {platforms.map((platform) => {
-                        const isSelected = selectedPlatforms.includes(platform);
-                        return (
-                          <button
-                            type="button"
-                            key={platform}
-                            onClick={() => handlePlatformChange(platform)}
-                            className={`flex items-center space-x-2 p-2.5 rounded-xl border text-left transition-all ${isSelected ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold' : 'bg-white border-gray-250 text-gray-650 hover:bg-gray-50'
-                              }`}
-                          >
-                            <span className={`w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-blue-600' : 'bg-gray-300'}`} />
-                            <span className="text-sm">{platform}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {selectedPlatforms.length > 0 && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-gray-50 p-4 rounded-xl border border-gray-200 animate-in fade-in duration-300">
-                        {selectedPlatforms.map((platform) => {
-                          if (platform === 'Others') {
-                            return (
-                              <div key="Others" className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3 bg-white rounded-lg border border-dashed border-gray-300 animate-in slide-in-from-top-2 duration-200">
-                                <div>
-                                  <label className="block text-xs font-semibold text-gray-700 mb-1">Platform Name <span className="text-red-500">*</span></label>
-                                  <input
-                                    type="text"
-                                    placeholder="e.g. ZipRecruiter, Glassdoor"
-                                    value={customPlatformName}
-                                    onChange={(e) => setCustomPlatformName(e.target.value)}
-                                    className="w-full border border-gray-350 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                                    required={selectedPlatforms.includes('Others')}
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-semibold text-gray-700 mb-1">Link URL <span className="text-red-500">*</span></label>
-                                  <div className="relative">
-                                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
-                                      <Link size={14} />
-                                    </span>
-                                    <input
-                                      type="url"
-                                      placeholder="https://example.com/jobs/view/..."
-                                      value={customLinkUrl}
-                                      onChange={(e) => setCustomLinkUrl(e.target.value)}
-                                      className="w-full border border-gray-350 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                                      required={selectedPlatforms.includes('Others')}
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          }
-
+                {isEditing && (
+                  <div className="border-t border-gray-150 pt-6">
+                    <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3">Publish & Job Board Integration</h4>
+                    <div className="space-y-4">
+                      <p className="text-xs text-gray-500">
+                        Select which platforms you are publishing on. Checking a platform will enable a job post link input.
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {platforms.map((platform) => {
+                          const isSelected = selectedPlatforms.includes(platform);
                           return (
-                            <div key={platform} className="animate-in slide-in-from-top-2 duration-200">
-                              <label className="block text-xs font-semibold text-gray-700 mb-1">{platform} Link URL</label>
-                              <div className="relative">
-                                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
-                                  <Link size={14} />
-                                </span>
-                                <input
-                                  type="url"
-                                  placeholder={`https://${platform.toLowerCase()}.com/jobs/view/...`}
-                                  value={formData.postingLinks[platform] || ''}
-                                  onChange={(e) => handleLinkChange(platform, e.target.value)}
-                                  className="w-full border border-gray-350 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                                />
-                              </div>
-                            </div>
+                            <button
+                              type="button"
+                              key={platform}
+                              onClick={() => handlePlatformChange(platform)}
+                              className={`flex items-center space-x-2 p-2.5 rounded-xl border text-left transition-all ${isSelected ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold' : 'bg-white border-gray-250 text-gray-650 hover:bg-gray-50'
+                                }`}
+                            >
+                              <span className={`w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-blue-600' : 'bg-gray-300'}`} />
+                              <span className="text-sm">{platform}</span>
+                            </button>
                           );
                         })}
                       </div>
-                    )}
+
+                      {selectedPlatforms.length > 0 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-gray-50 p-4 rounded-xl border border-gray-200 animate-in fade-in duration-300">
+                          {selectedPlatforms.map((platform) => {
+                            if (platform === 'Others') {
+                              return (
+                                <div key="Others" className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3 bg-white rounded-lg border border-dashed border-gray-300 animate-in slide-in-from-top-2 duration-200">
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Platform Name <span className="text-red-500">*</span></label>
+                                    <input
+                                      type="text"
+                                      placeholder="e.g. ZipRecruiter, Glassdoor"
+                                      value={customPlatformName}
+                                      onChange={(e) => setCustomPlatformName(e.target.value)}
+                                      className="w-full border border-gray-350 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+                                      required={selectedPlatforms.includes('Others')}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Link URL <span className="text-red-500">*</span></label>
+                                    <div className="relative">
+                                      <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+                                        <Link size={14} />
+                                      </span>
+                                      <input
+                                        type="url"
+                                        placeholder="https://example.com/jobs/view/..."
+                                        value={customLinkUrl}
+                                        onChange={(e) => setCustomLinkUrl(e.target.value)}
+                                        className="w-full border border-gray-350 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+                                        required={selectedPlatforms.includes('Others')}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div key={platform} className="animate-in slide-in-from-top-2 duration-200">
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">{platform} Link URL</label>
+                                <div className="relative">
+                                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
+                                    <Link size={14} />
+                                  </span>
+                                  <input
+                                    type="url"
+                                    placeholder={`https://${platform.toLowerCase()}.com/jobs/view/...`}
+                                    value={formData.postingLinks[platform] || ''}
+                                    onChange={(e) => handleLinkChange(platform, e.target.value)}
+                                    className="w-full border border-gray-350 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Section 4: Extra Details */}
                 <div className="border-t border-gray-150 pt-6">
@@ -1195,7 +1355,13 @@ const VacancyPage = () => {
                     <Layers size={14} />
                     <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Department</span>
                   </div>
-                  <p className="text-sm font-semibold text-gray-800">{viewingVacancy.departmentName}</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {(() => {
+                      const desig = designations.find(d => String(d.id) === String(viewingVacancy.designationId));
+                      const dept = desig ? departments.find(d => String(d.id) === String(desig.departmentId)) : null;
+                      return dept ? dept.name : '—';
+                    })()}
+                  </p>
                 </div>
 
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
@@ -1229,7 +1395,7 @@ const VacancyPage = () => {
                     <MapPin size={14} />
                     <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Location</span>
                   </div>
-                  <p className="text-sm font-semibold text-gray-800">{viewingVacancy.preferredLocation || '—'}</p>
+                  <p className="text-sm font-semibold text-gray-800 whitespace-pre-line">{viewingVacancy.preferredLocation || '—'}</p>
                 </div>
               </div>
 
@@ -1248,8 +1414,8 @@ const VacancyPage = () => {
                 </div>
                 <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
                   <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 block mb-1">Approval</span>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${viewingVacancy.approvalStatus === 'Approved' ? 'bg-green-50 text-green-700 border-green-155' : viewingVacancy.approvalStatus === 'Rejected' ? 'bg-red-50 text-red-700 border-red-155' : 'bg-gray-100 text-gray-600 border border-gray-200'}`}>
-                    {viewingVacancy.approvalStatus}
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${viewingVacancy.approvalStatus === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' : viewingVacancy.approvalStatus === 'Rejected' ? 'bg-red-50 text-red-700 border-red-200' : viewingVacancy.approvalStatus === 'Pending HR' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                    {viewingVacancy.approvalStatus === 'Pending' ? 'HOD Pending' : viewingVacancy.approvalStatus}
                   </span>
                 </div>
               </div>
@@ -1319,19 +1485,40 @@ const VacancyPage = () => {
             </div>
 
             <div className="flex justify-between items-center p-6 border-t border-gray-200 bg-gray-50/50">
-              <div>
+              <div className="flex flex-wrap gap-2">
                 {viewingVacancy.approvalStatus === 'Approved' && (
                   <button
                     type="button"
-                    onClick={() => handleCopyLink(viewingVacancy.vacancyNumber)}
+                    onClick={() => handleCopyLink(viewingVacancy.shareToken || viewingVacancy.vacancyNumber)}
                     className="px-4 py-2 border border-green-250 text-green-650 bg-white rounded-xl font-bold hover:bg-green-50 transition-colors flex items-center text-sm shadow-sm"
                   >
                     <Link size={14} className="mr-1.5" />
                     Copy Public Apply Link
                   </button>
                 )}
+                {viewingVacancy.approvalStatus === 'Approved' && (
+                  <button
+                    type="button"
+                    onClick={() => handleShareWhatsApp(viewingVacancy)}
+                    className="px-4 py-2 border border-green-200 text-green-700 bg-white rounded-xl font-bold hover:bg-green-50 transition-colors inline-flex items-center text-sm shadow-sm"
+                  >
+                    <WhatsAppIcon size={14} className="mr-1.5" />
+                    Share on WhatsApp
+                  </button>
+                )}
               </div>
               <div className="flex space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDuplicateClick(viewingVacancy);
+                    setViewingVacancy(null);
+                  }}
+                  className="px-4 py-2 border border-blue-250 text-blue-650 bg-white rounded-xl font-bold hover:bg-blue-50 transition-colors flex items-center text-sm shadow-sm"
+                >
+                  <Copy size={14} className="mr-1.5" />
+                  Duplicate Vacancy
+                </button>
                 <button
                   type="button"
                   onClick={() => setViewingVacancy(null)}
@@ -1339,17 +1526,7 @@ const VacancyPage = () => {
                 >
                   Close
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewingVacancy(null);
-                    handleEditClick(viewingVacancy);
-                  }}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-md shadow-blue-100 transition-all duration-150 text-sm flex items-center"
-                >
-                  <Edit2 size={14} className="mr-2" />
-                  Edit Vacancy
-                </button>
+
               </div>
             </div>
           </div>

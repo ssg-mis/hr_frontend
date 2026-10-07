@@ -201,7 +201,7 @@ const Joining = () => {
       {/* Confirm Joining modal */}
       {joining && createPortal(
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 flex flex-col overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 flex flex-col max-h-[85vh]">
             <div className="flex justify-between items-center p-6 border-b border-gray-200">
               <div>
                 <h3 className="text-lg font-bold text-gray-900">Confirm Joining</h3>
@@ -209,8 +209,8 @@ const Joining = () => {
               </div>
               <button onClick={() => setJoining(null)} className="text-gray-500 hover:text-gray-700"><X size={20} /></button>
             </div>
-            <form onSubmit={confirmJoining} className="flex flex-col">
-              <div className="p-6 space-y-4">
+            <form onSubmit={confirmJoining} className="flex-1 flex flex-col min-h-0">
+              <div className="p-6 space-y-4 overflow-y-auto flex-1">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Joining Date *</label>
                   <input type="date" name="joiningDate" required value={form.joiningDate} onChange={handleChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
