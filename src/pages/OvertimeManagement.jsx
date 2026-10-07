@@ -1,17 +1,45 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Clock, Plus, Search, CheckCircle2, XCircle, AlertCircle, 
-  Calendar, User, Building2, Filter, Eye, Check, X, ShieldCheck, ChevronRight
+  Calendar, User, Building2, Filter, Eye, Check, X, ShieldCheck, ChevronRight, Pencil
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../lib/api";
 import useAuthStore from "../store/authStore";
 import HodInfo, { useMyHod, HodLabel } from "../components/HodInfo";
 
+const IST = "Asia/Kolkata";
+
+// "YYYY-MM-DD" + n days, without going through the browser's timezone
+const addDays = (dateStr, n) => {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+// IST start/end timestamps for an OT slot; an end time at or before the start is the next day (night OT)
+const otSlot = (workDate, fromTime, toTime) => ({
+  startDate: `${workDate}T${fromTime}:00+05:30`,
+  endDate: `${toTime <= fromTime ? addDays(workDate, 1) : workDate}T${toTime}:00+05:30`,
+});
+
+// Stored timestamp → IST "YYYY-MM-DD" / "HH:mm" for form inputs
+const istDate = (v) => new Date(v).toLocaleDateString("en-CA", { timeZone: IST });
+const istTime = (v) => new Date(v).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: IST });
+
+// Punch text from the API is IST wall clock "YYYY-MM-DD HH:mm"; flag a punch on the next day
+const formatPunch = (punch, workDate) => {
+  if (!punch) return null;
+  const [d, t] = punch.split(" ");
+  const [h, m] = t.split(":").map(Number);
+  const time = `${String(h % 12 || 12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${h >= 12 ? "pm" : "am"}`;
+  return workDate && d !== istDate(workDate) ? `${time} (+1)` : time;
+};
+
 const OvertimeManagement = () => {
   const { user, isAdmin, isHR, isHOD } = useAuthStore();
   const { hod: myHod, loading: hodLoading } = useMyHod();
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: IST });
 
   const [loading, setLoading] = useState(false);
   const [requests, setRequests] = useState([]);
@@ -25,6 +53,10 @@ const OvertimeManagement = () => {
   const [submitting, setSubmitting] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+
+  // HR edit modal state
+  const [editForm, setEditForm] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Approval modal state
   const [approvalModal, setApprovalModal] = useState({
@@ -184,8 +216,7 @@ const OvertimeManagement = () => {
       const payload = {
         employeeId: formData.employeeId,
         workDate: formData.workDate,
-        startDate: `${formData.workDate}T${formData.fromTime}:00`,
-        endDate: `${formData.workDate}T${formData.toTime}:00`,
+        ...otSlot(formData.workDate, formData.fromTime, formData.toTime),
         hours: formData.hours,
         compensationType: "Overtime Allowance",
         reason: formData.reason,
@@ -210,6 +241,58 @@ const OvertimeManagement = () => {
       toast.error(err.message || "Failed to submit request");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const openEdit = (req) => {
+    setEditForm({
+      id: req.id,
+      ref: req.compensationNumber || `OT-${req.id}`,
+      employeeName: req.employeeName,
+      workDate: req.workDate ? istDate(req.workDate) : todayStr,
+      fromTime: req.startDate ? istTime(req.startDate) : "18:00",
+      toTime: req.endDate ? istTime(req.endDate) : "21:30",
+      hours: Number(req.hours || 0).toFixed(2),
+      reason: req.reason || "",
+    });
+  };
+
+  const handleEditTimeChange = (field, val) => {
+    const updated = { ...editForm, [field]: val };
+    updated.hours = calculateHours(updated.fromTime, updated.toTime);
+    setEditForm(updated);
+  };
+
+  // HR/Admin saves corrections to an OT request
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editForm.reason.trim()) {
+      toast.error("Please provide a valid work description / reason");
+      return;
+    }
+    if (Number(editForm.hours) <= 0) {
+      toast.error("Total OT hours must be greater than 0");
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const res = await api.patch(`/compensation/${editForm.id}`, {
+        workDate: editForm.workDate,
+        ...otSlot(editForm.workDate, editForm.fromTime, editForm.toTime),
+        hours: editForm.hours,
+        reason: editForm.reason,
+      });
+      if (res.success || res.data) {
+        toast.success("Overtime request updated");
+        setEditForm(null);
+        loadData();
+      }
+    } catch (err) {
+      console.error("Failed to update overtime request:", err);
+      toast.error(err.message || "Failed to update request");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -366,6 +449,8 @@ const OvertimeManagement = () => {
                   <th className="py-3 px-4">Employee</th>
                   <th className="py-3 px-4">Department</th>
                   <th className="py-3 px-4">Work Date</th>
+                  <th className="py-3 px-4 text-center">Punch In</th>
+                  <th className="py-3 px-4 text-center">Punch Out</th>
                   <th className="py-3 px-4 text-center">Time Slot</th>
                   <th className="py-3 px-4 text-center">Hours</th>
                   <th className="py-3 px-4">Reason / Work</th>
@@ -378,17 +463,20 @@ const OvertimeManagement = () => {
               <tbody className="divide-y divide-gray-100">
                 {filteredRequests.map((req) => {
                   const workDateFormatted = req.workDate 
-                    ? new Date(req.workDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                    ? new Date(req.workDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: IST })
                     : "—";
 
-                  const startFormatted = req.startDate ? new Date(req.startDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—";
-                  const endFormatted = req.endDate ? new Date(req.endDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "—";
+                  const startFormatted = req.startDate ? new Date(req.startDate).toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: IST }) : "—";
+                  const endFormatted = req.endDate ? new Date(req.endDate).toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: IST }) : "—";
 
                   const isEmpHOD = isHOD || isAdmin;
                   const isEmpHR = isHR || isAdmin;
                   const isOwnRequest = Number(req.employeeId) === Number(user?.employeeId) || req.biometricEmployeeCode === user?.biometricEmployeeCode;
                   const canHodApprove = isEmpHOD && req.status === "Pending HOD" && !isOwnRequest;
                   const canHrApprove = isEmpHR && req.status === "Pending HR" && !isOwnRequest;
+                  const canHrEdit = isEmpHR && (isAdmin || !isOwnRequest);
+                  const punchInText = formatPunch(req.punchIn, req.workDate);
+                  const punchOutText = formatPunch(req.punchOut, req.workDate);
 
                   return (
                     <tr key={req.id} className="hover:bg-gray-50/80 transition-colors">
@@ -404,6 +492,12 @@ const OvertimeManagement = () => {
                       </td>
                       <td className="py-3 px-4 text-gray-700 whitespace-nowrap font-medium">
                         {workDateFormatted}
+                      </td>
+                      <td className="py-3 px-4 text-center font-mono text-emerald-700 whitespace-nowrap">
+                        {punchInText || <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="py-3 px-4 text-center font-mono text-rose-700 whitespace-nowrap">
+                        {punchOutText || <span className="text-gray-300">—</span>}
                       </td>
                       <td className="py-3 px-4 text-center font-mono text-gray-600 whitespace-nowrap">
                         {startFormatted} – {endFormatted}
@@ -488,6 +582,16 @@ const OvertimeManagement = () => {
                                 <X size={14} />
                               </button>
                             </>
+                          )}
+
+                          {canHrEdit && (
+                            <button
+                              onClick={() => openEdit(req)}
+                              className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-colors"
+                              title="Edit OT (HR)"
+                            >
+                              <Pencil size={14} />
+                            </button>
                           )}
 
                           <button
@@ -630,6 +734,111 @@ const OvertimeManagement = () => {
         </div>
       )}
 
+      {/* HR Edit Modal */}
+      {editForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-gray-100">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-base font-bold text-gray-900">Edit Overtime — {editForm.ref}</h3>
+              </div>
+              <button
+                onClick={() => setEditForm(null)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-200/60 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs">
+                <span className="text-gray-500 block">Employee:</span>
+                <span className="font-semibold text-gray-900">{editForm.employeeName || "—"}</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Overtime Date *</label>
+                <input
+                  type="date"
+                  value={editForm.workDate}
+                  onChange={(e) => setEditForm({ ...editForm, workDate: e.target.value })}
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Start Time (From) *</label>
+                  <input
+                    type="time"
+                    value={editForm.fromTime}
+                    onChange={(e) => handleEditTimeChange("fromTime", e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">End Time (To) *</label>
+                  <input
+                    type="time"
+                    value={editForm.toTime}
+                    onChange={(e) => handleEditTimeChange("toTime", e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">OT Hours *</label>
+                <input
+                  type="number"
+                  step="0.25"
+                  min="0.25"
+                  value={editForm.hours}
+                  onChange={(e) => setEditForm({ ...editForm, hours: e.target.value })}
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  required
+                />
+                <p className="text-[11px] text-gray-400 mt-1">Auto-calculated from the time slot; HR can adjust it.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Work Description / Reason *</label>
+                <textarea
+                  rows={3}
+                  value={editForm.reason}
+                  onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })}
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setEditForm(null)}
+                  className="px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className={`px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm transition-all ${
+                    savingEdit ? "opacity-70 cursor-not-allowed" : ""
+                  }`}
+                >
+                  {savingEdit ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Approval Confirmation Modal */}
       {approvalModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
@@ -729,7 +938,13 @@ const OvertimeManagement = () => {
                 <div>
                   <span className="text-gray-500 block">Work Date:</span>
                   <span className="font-semibold text-gray-900">
-                    {selectedRequest.workDate ? new Date(selectedRequest.workDate).toLocaleDateString() : "—"}
+                    {selectedRequest.workDate ? new Date(selectedRequest.workDate).toLocaleDateString("en-IN", { timeZone: IST }) : "—"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500 block">Punch In / Out:</span>
+                  <span className="font-mono font-semibold text-gray-900">
+                    {formatPunch(selectedRequest.punchIn, selectedRequest.workDate) || "—"} / {formatPunch(selectedRequest.punchOut, selectedRequest.workDate) || "—"}
                   </span>
                 </div>
                 <div>
@@ -751,13 +966,13 @@ const OvertimeManagement = () => {
                 <div className="flex items-center justify-between text-[11px] pt-1">
                   <span>HOD Review: <strong>{selectedRequest.hodStatus || "Pending"}</strong></span>
                   <span className="text-gray-400">
-                    {selectedRequest.hodApprovedAt ? new Date(selectedRequest.hodApprovedAt).toLocaleDateString() : ""}
+                    {selectedRequest.hodApprovedAt ? new Date(selectedRequest.hodApprovedAt).toLocaleString("en-IN", { timeZone: IST }) : ""}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-[11px] pt-1 border-t border-gray-200/60">
                   <span>HR Review: <strong>{selectedRequest.hrStatus || "Pending"}</strong></span>
                   <span className="text-gray-400">
-                    {selectedRequest.hrApprovedAt ? new Date(selectedRequest.hrApprovedAt).toLocaleDateString() : ""}
+                    {selectedRequest.hrApprovedAt ? new Date(selectedRequest.hrApprovedAt).toLocaleString("en-IN", { timeZone: IST }) : ""}
                   </span>
                 </div>
               </div>
