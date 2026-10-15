@@ -1,8 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Calendar, User, FileText, Info, Users, UserCheck, UserX, Clock, Plus, X, Pencil, Check } from 'lucide-react';
+import { Search, Calendar, User, FileText, Info, Users, UserCheck, UserX, Clock, Plus, X, Pencil, Check, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useAuthStore from '../store/authStore';
 import { api } from '../lib/api';
+
+// Local YYYY-MM-DD for <input type="date">
+const toDateInput = (d) => {
+    const dt = new Date(d);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+};
+
+const LEAVE_STATUS_STYLES = {
+    'Approved': 'bg-green-100 text-green-800',
+    'Rejected': 'bg-red-100 text-red-800',
+    'Pending HOD': 'bg-amber-100 text-amber-800',
+    'Pending HR': 'bg-blue-100 text-blue-800',
+};
 
 const LeavePolicy = () => {
     const { user, isAdmin, isHR, isEmployeeOnly } = useAuthStore();
@@ -34,6 +47,14 @@ const LeavePolicy = () => {
         total: 0,
         totalPages: 1
     });
+
+    // Manage an employee's leave entries (edit / delete) — HR/Admin only
+    const [managingEmp, setManagingEmp] = useState(null); // summary row
+    const [empLeaveEntries, setEmpLeaveEntries] = useState([]);
+    const [entriesLoading, setEntriesLoading] = useState(false);
+    const [editingEntry, setEditingEntry] = useState(null); // original leave row
+    const [entryForm, setEntryForm] = useState({ startDate: '', endDate: '', leaveCode: '', status: '', remark: '' });
+    const [savingEntry, setSavingEntry] = useState(false);
 
     const isFirstRunSearch = React.useRef(true);
 
@@ -154,6 +175,92 @@ const LeavePolicy = () => {
         emp.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
         emp.designation.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    const loadEmpLeaveEntries = async (emp) => {
+        setEntriesLoading(true);
+        try {
+            const res = await api.get(`/leaves/employee/${emp.employeeId}`);
+            const rows = (res.data || []).filter(l => new Date(l.startDate).getFullYear() === Number(selectedYear));
+            rows.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+            setEmpLeaveEntries(rows);
+        } catch (error) {
+            toast.error(error.message || 'Failed to load leave entries');
+            setEmpLeaveEntries([]);
+        } finally {
+            setEntriesLoading(false);
+        }
+    };
+
+    const openManageLeaves = (emp) => {
+        setManagingEmp(emp);
+        setEditingEntry(null);
+        setEmpLeaveEntries([]);
+        loadEmpLeaveEntries(emp);
+    };
+
+    const closeManageLeaves = () => {
+        setManagingEmp(null);
+        setEditingEntry(null);
+    };
+
+    const startEditEntry = (entry) => {
+        setEditingEntry(entry);
+        setEntryForm({
+            startDate: toDateInput(entry.startDate),
+            endDate: toDateInput(entry.endDate),
+            leaveCode: entry.leaveCode,
+            status: entry.status,
+            remark: entry.remark || '',
+        });
+    };
+
+    const saveEntry = async () => {
+        if (!entryForm.startDate || !entryForm.endDate) {
+            toast.error('Start and end date are required');
+            return;
+        }
+        if (entryForm.endDate < entryForm.startDate) {
+            toast.error('End date cannot be before start date');
+            return;
+        }
+        // Send only what changed, so untouched dates are not re-written.
+        const payload = {};
+        if (entryForm.startDate !== toDateInput(editingEntry.startDate)) payload.startDate = entryForm.startDate;
+        if (entryForm.endDate !== toDateInput(editingEntry.endDate)) payload.endDate = entryForm.endDate;
+        if (entryForm.leaveCode !== editingEntry.leaveCode) payload.leaveCode = entryForm.leaveCode;
+        if (entryForm.status !== editingEntry.status) payload.status = entryForm.status;
+        if (entryForm.remark !== (editingEntry.remark || '')) payload.remark = entryForm.remark;
+        if (Object.keys(payload).length === 0) {
+            setEditingEntry(null);
+            return;
+        }
+        setSavingEntry(true);
+        try {
+            await api.put(`/leaves/${editingEntry.id}/record`, payload);
+            toast.success('Leave entry updated');
+            setEditingEntry(null);
+            loadEmpLeaveEntries(managingEmp);
+            fetchLeaveSummary();
+        } catch (error) {
+            toast.error(error.message || 'Failed to update leave entry');
+        } finally {
+            setSavingEntry(false);
+        }
+    };
+
+    const deleteEntry = async (entry) => {
+        const range = `${new Date(entry.startDate).toLocaleDateString('en-GB')} – ${new Date(entry.endDate).toLocaleDateString('en-GB')}`;
+        if (!window.confirm(`Delete ${entry.leaveCode} leave (${range}) for ${managingEmp.name}? This cannot be undone.`)) return;
+        try {
+            await api.delete(`/leaves/${entry.id}`);
+            toast.success('Leave entry deleted');
+            if (editingEntry?.id === entry.id) setEditingEntry(null);
+            loadEmpLeaveEntries(managingEmp);
+            fetchLeaveSummary();
+        } catch (error) {
+            toast.error(error.message || 'Failed to delete leave entry');
+        }
+    };
 
     const handleEditPolicy = (policy) => {
         if (!isAdmin && !isHR) return;
@@ -440,6 +547,9 @@ const LeavePolicy = () => {
                                         </th>
                                     ))}
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider text-center font-bold text-indigo-600">Total Taken</th>
+                                    {(isAdmin || isHR) && (
+                                        <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-center">Action</th>
+                                    )}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white">
@@ -458,11 +568,21 @@ const LeavePolicy = () => {
                                                 );
                                             })}
                                             <td className="px-6 py-4 whitespace-nowrap text-center font-bold text-indigo-700 bg-indigo-50/30">{emp.total}</td>
+                                            {(isAdmin || isHR) && (
+                                                <td className="px-6 py-4 whitespace-nowrap text-center">
+                                                    <button
+                                                        onClick={() => openManageLeaves(emp)}
+                                                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors"
+                                                    >
+                                                        <Pencil size={13} /> Edit / Delete
+                                                    </button>
+                                                </td>
+                                            )}
                                         </tr>
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan={4 + leavePolicies.length} className="px-6 py-12 text-center text-gray-500">No employee leave record found.</td>
+                                        <td colSpan={4 + leavePolicies.length + (isAdmin || isHR ? 1 : 0)} className="px-6 py-12 text-center text-gray-500">No employee leave record found.</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -612,6 +732,101 @@ const LeavePolicy = () => {
                     )}
                 </div>
             </div>
+
+            {/* Manage Employee Leave Entries Modal */}
+            {managingEmp && (
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[85vh]">
+                        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-800">Leave Entries – {selectedYear}</h2>
+                                <p className="text-sm text-gray-500 mt-0.5">{managingEmp.name} · {managingEmp.id}</p>
+                            </div>
+                            <button onClick={closeManageLeaves} className="text-gray-400 hover:text-gray-600">
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto flex-1">
+                            {entriesLoading ? (
+                                <p className="text-center text-gray-500 py-10">Loading...</p>
+                            ) : empLeaveEntries.length === 0 ? (
+                                <p className="text-center text-gray-500 py-10">No leave entries for {selectedYear}.</p>
+                            ) : (
+                                <div className="overflow-x-auto rounded-lg border border-gray-100">
+                                    <table className="min-w-full divide-y divide-gray-100 text-sm">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">From</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">To</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Remark</th>
+                                                <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {empLeaveEntries.map((entry) => editingEntry?.id === entry.id ? (
+                                                <tr key={entry.id} className="bg-indigo-50/40">
+                                                    <td className="px-4 py-2">
+                                                        <input type="date" value={entryForm.startDate} onChange={(e) => setEntryForm({ ...entryForm, startDate: e.target.value })} className="border border-gray-300 rounded-md px-2 py-1 bg-white text-gray-700" />
+                                                    </td>
+                                                    <td className="px-4 py-2">
+                                                        <input type="date" value={entryForm.endDate} min={entryForm.startDate} onChange={(e) => setEntryForm({ ...entryForm, endDate: e.target.value })} className="border border-gray-300 rounded-md px-2 py-1 bg-white text-gray-700" />
+                                                    </td>
+                                                    <td className="px-4 py-2">
+                                                        <select value={entryForm.leaveCode} onChange={(e) => setEntryForm({ ...entryForm, leaveCode: e.target.value })} className="border border-gray-300 rounded-md px-2 py-1 bg-white text-gray-700">
+                                                            {leavePolicies.map((p) => (
+                                                                <option key={p.leaveCode} value={p.leaveCode}>{p.leaveCode}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                    <td className="px-4 py-2">
+                                                        <select value={entryForm.status} onChange={(e) => setEntryForm({ ...entryForm, status: e.target.value })} className="border border-gray-300 rounded-md px-2 py-1 bg-white text-gray-700">
+                                                            {Object.keys(LEAVE_STATUS_STYLES).map((st) => (
+                                                                <option key={st} value={st}>{st}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                    <td className="px-4 py-2">
+                                                        <input type="text" value={entryForm.remark} onChange={(e) => setEntryForm({ ...entryForm, remark: e.target.value })} className="w-full border border-gray-300 rounded-md px-2 py-1 bg-white text-gray-700" />
+                                                    </td>
+                                                    <td className="px-4 py-2 whitespace-nowrap text-center">
+                                                        <button onClick={saveEntry} disabled={savingEntry} title="Save" className="p-1.5 text-green-600 hover:bg-green-50 rounded-md disabled:opacity-50">
+                                                            <Check size={16} />
+                                                        </button>
+                                                        <button onClick={() => setEditingEntry(null)} disabled={savingEntry} title="Cancel" className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-md">
+                                                            <X size={16} />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                <tr key={entry.id} className="text-gray-700">
+                                                    <td className="px-4 py-2 whitespace-nowrap">{new Date(entry.startDate).toLocaleDateString('en-GB')}</td>
+                                                    <td className="px-4 py-2 whitespace-nowrap">{new Date(entry.endDate).toLocaleDateString('en-GB')}</td>
+                                                    <td className="px-4 py-2 whitespace-nowrap font-medium">{entry.leaveCode}</td>
+                                                    <td className="px-4 py-2 whitespace-nowrap">
+                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${LEAVE_STATUS_STYLES[entry.status] || 'bg-gray-100 text-gray-700'}`}>{entry.status}</span>
+                                                    </td>
+                                                    <td className="px-4 py-2 max-w-[200px] truncate" title={entry.remark || ''}>{entry.remark || '—'}</td>
+                                                    <td className="px-4 py-2 whitespace-nowrap text-center">
+                                                        <button onClick={() => startEditEntry(entry)} title="Edit" className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md">
+                                                            <Pencil size={16} />
+                                                        </button>
+                                                        <button onClick={() => deleteEntry(entry)} title="Delete" className="p-1.5 text-red-600 hover:bg-red-50 rounded-md">
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Add Holiday Modal */}
             {showHolidayModal && (
