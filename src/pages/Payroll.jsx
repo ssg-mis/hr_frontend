@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import AdjustPayrollButton from "../features/adjustment-payroll/AdjustPayrollButton";
 import {
   Search, Calendar, Clock, Download, Plus, Check, X, FileText,
   BarChart3, CreditCard, Calculator, Filter, Eye, Trash2, Save,
@@ -2209,6 +2210,14 @@ const Payroll = () => {
 
   const isSavedRun = savedPayrollRuns && savedPayrollRuns.length > 0;
 
+  // Adjustment Payroll: read-only fetch of ALL saved rows of the month, mapped exactly like the table.
+  const getAllRowsForAdjustment = async () => {
+    const params = new URLSearchParams({ period: selectedMonth, type: "Monthly", limit: "10000" });
+    const res = await api.get(`/salaries/payroll?${params.toString()}`);
+    const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+    return list.map(mapSavedPayrollRunToRow);
+  };
+
   // Filter rows based on search term, department, company, and payMode
   const filteredRows = useMemo(() => {
     if (isSavedRun) {
@@ -2371,6 +2380,16 @@ const Payroll = () => {
               Bulk Payslips PDF
             </button>
             */}
+            <AdjustPayrollButton
+              period={selectedMonth}
+              getPayrollRows={getAllRowsForAdjustment}
+              disabledReason={
+                activeMode !== "Monthly" ? "Adjust Payroll is available for the Monthly form only."
+                  : loading || ratesLoading ? "Payroll is still loading, please wait."
+                  : !isSavedRun ? "Save the payroll run for this month first, then click Adjust Payroll."
+                  : ""
+              }
+            />
             <button
               onClick={handleSavePayroll}
               disabled={saving || ratesLoading || payrollRows.length === 0}

@@ -40,6 +40,7 @@ import PublicVisitorPassRequest from './pages/PublicVisitorPassRequest';
 
 const SalaryManagement = lazy(() => import('./pages/SalaryManagement'));
 const Payroll = lazy(() => import('./pages/Payroll'));
+const AdjustmentPayroll = lazy(() => import('./pages/AdjustmentPayroll'));
 const EMIManagement = lazy(() => import('./pages/EMIManagement'));
 const CompensationManagement = lazy(() => import('./pages/CompensationManagement'));
 const PFManagement = lazy(() => import('./pages/PFManagement'));
@@ -104,6 +105,7 @@ function App() {
               <Route path="settings" element={<ProtectedRoute allowedRoles={['Admin']}><Settings /></ProtectedRoute>} />
               <Route path="salary" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><SalaryManagement /></ProtectedRoute>} />
               <Route path="payroll" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Payroll /></ProtectedRoute>} />
+              <Route path="payroll-adjustment" element={<ProtectedRoute allowedRoles={['Admin', 'HR']} pagePath="/payroll"><AdjustmentPayroll /></ProtectedRoute>} />
               <Route path="pf-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><PFManagement /></ProtectedRoute>} />
               <Route path="esic-management" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><ESICManagement /></ProtectedRoute>} />
               <Route path="gate-pass" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD', 'Employee']}><GatePassManagement /></ProtectedRoute>} />
