@@ -3,13 +3,13 @@ import { createPortal } from 'react-dom';
 import { X, FileText, Download, AlertTriangle, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import offerLetterApi from './offerLetter.api';
-import { buildSnapshot, toDataUrl } from './offerLetter.utils';
+import { buildSnapshot, toDataUrl, resolveDefaultSettings } from './offerLetter.utils';
 import { renderLetterToPdf } from './offerLetterPdf';
 import OfferLetterDocument from './OfferLetterDocument';
 import { uploadFile } from '../upload/upload.api';
 
 // Sample candidate used by "Preview Format" (nothing is saved in this mode).
-const sampleApplication = () => {
+const sampleApplication = (branch) => {
   const joining = new Date();
   joining.setDate(joining.getDate() + 7);
   return {
@@ -25,17 +25,9 @@ const sampleApplication = () => {
     offeredAllowanceSalary: 3000,
     offeredSalary: 15000,
     offeredJoiningDate: joining.toISOString(),
-    branchName: '',
-    branchAddress: '',
+    branchName: branch?.name || '',
+    branchAddress: branch?.address || '',
   };
-};
-
-// Built-in defaults ⊕ saved "default" settings row (same rule as the server).
-const resolveDefaultSettings = ({ rows = [], defaults = {} }) => {
-  const out = { ...defaults };
-  const row = rows.find((r) => r.scopeKey === 'default');
-  if (row) for (const [k, v] of Object.entries(row)) if (k in defaults && v !== null && v !== '') out[k] = v;
-  return out;
 };
 
 const fmtDateTime = (d) => (d ? new Date(d).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
@@ -56,8 +48,9 @@ const OfferLetterModal = ({ application, onClose, sample = false }) => {
     try {
       let prep;
       if (sample) {
-        const app = sampleApplication();
-        prep = { application: app, settings: resolveDefaultSettings(await offerLetterApi.getSettings()), nextRefNo: `OL/${new Date().getFullYear()}/${app.applicationNumber}` };
+        const settingsRes = await offerLetterApi.getSettings();
+        const app = sampleApplication(settingsRes.branches?.[0]); // company falls back to the first company in Master Data
+        prep = { application: app, settings: resolveDefaultSettings(settingsRes), nextRefNo: `OL/${new Date().getFullYear()}/${app.applicationNumber}` };
       } else {
         const [p, list] = await Promise.all([offerLetterApi.prepare(application.id), offerLetterApi.list(application.id)]);
         prep = p;
