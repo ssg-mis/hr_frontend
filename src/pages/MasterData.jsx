@@ -17,10 +17,12 @@ import {
   MapPin,
   FileSpreadsheet,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  FileText
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../lib/api';
+import OfferLetterSettings from '../features/offer-letter/OfferLetterSettings';
 
 const ITEMS_PER_PAGE = 25;
 
@@ -269,6 +271,18 @@ const MasterData = () => {
           <MapPin className="h-4 w-4" />
           Company Branches ({branches.length})
         </button>
+
+        <button
+          onClick={() => setActiveTab('offerLetter')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+            activeTab === 'offerLetter'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <FileText className="h-4 w-4" />
+          Offer Letter
+        </button>
       </div>
 
       {/* EMPLOYEES TAB CONTENT */}
@@ -498,6 +512,9 @@ const MasterData = () => {
           </div>
         </div>
       )}
+
+      {/* OFFER LETTER SETTINGS TAB CONTENT */}
+      {activeTab === 'offerLetter' && <OfferLetterSettings />}
 
       {/* BRANCHES TAB CONTENT */}
       {activeTab === 'branches' && (

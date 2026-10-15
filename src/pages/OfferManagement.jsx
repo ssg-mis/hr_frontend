@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, FileCheck, CheckCircle, X, Send, ThumbsUp, ThumbsDown, Mail, ExternalLink } from 'lucide-react';
+import { Search, FileCheck, CheckCircle, X, Send, ThumbsUp, ThumbsDown, Mail, ExternalLink, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { jobApplicationApi } from '../features/jobApplication/jobApplication.api';
 import { encodeAppNumber } from '../lib/token';
+import OfferLetterModal from '../features/offer-letter/OfferLetterModal';
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
 
@@ -34,6 +35,8 @@ const OfferManagement = () => {
   const [submitting, setSubmitting] = useState(false);
 
   const [offering, setOffering] = useState(null); // candidate row being offered/responded to
+  const [letterFor, setLetterFor] = useState(null); // candidate row whose offer letter is open
+  const [showFormat, setShowFormat] = useState(false); // sample offer letter format preview
   const [form, setForm] = useState({ offeredDesignation: '', offeredSalary: '', offeredBaseSalary: '', offeredAllowanceSalary: '', offeredJoiningDate: '', offerRemark: '' });
 
   const copyUploadLink = (appNum) => {
@@ -157,6 +160,9 @@ const OfferManagement = () => {
             <h2 className="text-lg font-bold tracking-tight text-gray-900">Offer Management</h2>
             <p className="mt-0.5 text-sm text-gray-500">Release offers to selected candidates and track their response</p>
           </div>
+          <button onClick={() => setShowFormat(true)} className="ml-auto inline-flex items-center gap-1.5 px-4 py-2 border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-xl text-sm font-semibold shrink-0">
+            <FileText size={16} /> Preview Format
+          </button>
         </div>
       </div>
 
@@ -252,6 +258,9 @@ const OfferManagement = () => {
                           </button>
                         ) : (
                           <div className="flex items-center gap-2 justify-center">
+                            <button onClick={() => setLetterFor(c)} title="Offer Letter" className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-lg text-xs font-semibold transition-colors">
+                              <FileText size={13} /> Letter
+                            </button>
                             <button onClick={() => recordResponse(c, true)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-green-200 text-green-700 hover:bg-green-50 rounded-lg text-xs font-semibold transition-colors">
                               <ThumbsUp size={13} /> Accepted
                             </button>
@@ -261,7 +270,12 @@ const OfferManagement = () => {
                           </div>
                         )
                       ) : (
-                        offerBadge(c.stage)
+                        <div className="flex items-center gap-2 justify-center">
+                          {offerBadge(c.stage)}
+                          <button onClick={() => setLetterFor(c)} title="Offer Letter" className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                            <FileText size={15} />
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -357,6 +371,9 @@ const OfferManagement = () => {
         </div>,
         document.body
       )}
+
+      {letterFor && <OfferLetterModal application={letterFor} onClose={() => setLetterFor(null)} />}
+      {showFormat && <OfferLetterModal sample onClose={() => setShowFormat(false)} />}
     </div>
   );
 };

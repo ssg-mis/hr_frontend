@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, CreditCard, IndianRupee, Calendar, Filter, Eye, Plus, X, ArrowUpRight, ArrowDownRight, Pencil, Info } from 'lucide-react';
+import { Search, CreditCard, IndianRupee, Calendar, Filter, Eye, Plus, X, ArrowUpRight, ArrowDownRight, Pencil, Info, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 import useAuthStore from '../store/authStore';
@@ -82,8 +82,12 @@ const EMIManagement = () => {
     });
 
     const [updateFormData, setUpdateFormData] = useState({
-        paidEmis: 0,
-        status: ''
+        loanType: '',
+        loanAmount: '',
+        emiAmount: '',
+        interestRate: '',
+        tenure: '',
+        paidEmis: 0
     });
 
     const fetchEmployees = async () => {
@@ -274,8 +278,12 @@ const EMIManagement = () => {
     const handleEditClick = (emi) => {
         setSelectedEmi(emi);
         setUpdateFormData({
-            paidEmis: emi.paidEmis,
-            status: emi.status
+            loanType: emi.loanType,
+            loanAmount: emi.loanAmount,
+            emiAmount: emi.emiAmount,
+            interestRate: emi.interestRate,
+            tenure: emi.tenure,
+            paidEmis: emi.paidEmis
         });
         setShowUpdateModal(true);
     };
@@ -298,8 +306,25 @@ const EMIManagement = () => {
     const handleUpdateEmi = async (e) => {
         e.preventDefault();
         try {
+            const loanAmount = Number(updateFormData.loanAmount);
+            const emiAmount = Number(updateFormData.emiAmount);
+            const tenure = Number(updateFormData.tenure);
+            const paidEmis = Number(updateFormData.paidEmis);
+            if (emiAmount > loanAmount) {
+                toast.error("EMI amount cannot be greater than the loan amount");
+                return;
+            }
+            if (paidEmis > tenure) {
+                toast.error(`Paid EMIs cannot be more than tenure (${tenure})`);
+                return;
+            }
             const payload = {
-                paidEmis: Number(updateFormData.paidEmis),
+                loanType: updateFormData.loanType.trim(),
+                loanAmount,
+                emiAmount,
+                interestRate: Number(updateFormData.interestRate || 0),
+                tenure,
+                paidEmis,
             };
             const res = await api.patch(`/emis/${selectedEmi.id}`, payload);
             if (res.success) {
@@ -311,6 +336,24 @@ const EMIManagement = () => {
         } catch (error) {
             console.error("Failed to update EMI:", error);
             toast.error(error.message || "Failed to update EMI");
+        }
+    };
+
+    const handleDeleteEmi = async (emi) => {
+        const ok = window.confirm(
+            `Delete ${emi.loanType} of ₹${Number(emi.loanAmount).toLocaleString('en-IN')} for ${emi.name} (${emi.empId})?\n\nIts payment history will also be deleted. This cannot be undone.`
+        );
+        if (!ok) return;
+        try {
+            const res = await api.delete(`/emis/${emi.id}`);
+            if (res.success) {
+                toast.success("EMI deleted successfully!");
+                fetchEmis();
+                fetchPayments();
+            }
+        } catch (error) {
+            console.error("Failed to delete EMI:", error);
+            toast.error(error.message || "Failed to delete EMI");
         }
     };
 
@@ -513,9 +556,18 @@ const EMIManagement = () => {
                                                     <button
                                                         onClick={() => handleEditClick(item)}
                                                         className="text-amber-600 hover:text-amber-800 transition-colors p-2 rounded-lg hover:bg-amber-50"
-                                                        title="Update EMI"
+                                                        title="Edit EMI"
                                                     >
                                                         <Pencil size={18} />
+                                                    </button>
+                                                )}
+                                                {(hasHRRole || hasAdminRole) && (
+                                                    <button
+                                                        onClick={() => handleDeleteEmi(item)}
+                                                        className="text-red-600 hover:text-red-800 transition-colors p-2 rounded-lg hover:bg-red-50"
+                                                        title="Delete EMI"
+                                                    >
+                                                        <Trash2 size={18} />
                                                     </button>
                                                 )}
                                             </div>
@@ -774,7 +826,7 @@ const EMIManagement = () => {
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh] animate-in fade-in zoom-in duration-200">
                         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-indigo-50/30">
                             <div>
-                                <h2 className="text-xl font-bold text-gray-800">Update EMI</h2>
+                                <h2 className="text-xl font-bold text-gray-800">Edit EMI</h2>
                                 <p className="text-xs text-gray-500">{selectedEmi?.name} ({selectedEmi?.empId})</p>
                             </div>
                             <button onClick={() => setShowUpdateModal(false)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100">
@@ -783,11 +835,37 @@ const EMIManagement = () => {
                         </div>
                         <form onSubmit={handleUpdateEmi} className="p-6 space-y-4 overflow-y-auto pr-1 flex-1">
                             <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Loan Type *</label>
+                                <input type="text" required value={updateFormData.loanType} onChange={(e) => setUpdateFormData({ ...updateFormData, loanType: e.target.value })} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Loan Amount *</label>
+                                    <input type="number" required min="1" step="0.01" value={updateFormData.loanAmount} onChange={(e) => setUpdateFormData({ ...updateFormData, loanAmount: e.target.value })} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">EMI Amount *</label>
+                                    <input type="number" required min="1" step="0.01" value={updateFormData.emiAmount} onChange={(e) => setUpdateFormData({ ...updateFormData, emiAmount: e.target.value })} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Interest Rate (%)</label>
+                                    <input type="number" min="0" step="0.01" value={updateFormData.interestRate} onChange={(e) => setUpdateFormData({ ...updateFormData, interestRate: e.target.value })} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tenure (Months) *</label>
+                                    <input type="number" required min="1" step="1" value={updateFormData.tenure} onChange={(e) => setUpdateFormData({ ...updateFormData, tenure: e.target.value })} className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                </div>
+                            </div>
+                            <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Paid EMIs (Current: {selectedEmi?.paidEmis}/{selectedEmi?.tenure})</label>
                                 <input
                                     type="number"
-                                    max={selectedEmi?.tenure}
+                                    max={updateFormData.tenure || undefined}
                                     min="0"
+                                    step="1"
+                                    required
                                     value={updateFormData.paidEmis}
                                     onChange={(e) => setUpdateFormData({ ...updateFormData, paidEmis: e.target.value })}
                                     className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -796,7 +874,7 @@ const EMIManagement = () => {
                             {/* Status dropdown removed as status is managed automatically */}
                             <div className="pt-4 flex gap-3">
                                 <button type="button" onClick={() => setShowUpdateModal(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50">Cancel</button>
-                                <button type="submit" className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 shadow-md">Update EMI</button>
+                                <button type="submit" className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 shadow-md">Save Changes</button>
                             </div>
                         </form>
                     </div>
