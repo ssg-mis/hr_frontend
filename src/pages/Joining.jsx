@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Search, Users, CheckCircle, X, UserPlus, BadgeCheck } from 'lucide-react';
+import { Search, Users, CheckCircle, UserPlus, BadgeCheck, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { jobApplicationApi } from '../features/jobApplication/jobApplication.api';
+import JoiningFormModal from '../features/joining-form/JoiningFormModal';
+import JoiningFormSamplePreview from '../features/joining-form/JoiningFormSamplePreview';
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
 
 const Joining = () => {
@@ -13,10 +13,9 @@ const Joining = () => {
   const [pendingData, setPendingData] = useState([]);
   const [historyData, setHistoryData] = useState([]);
   const [tableLoading, setTableLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
-  const [joining, setJoining] = useState(null); // candidate row
-  const [form, setForm] = useState({ joiningDate: todayISO(), joiningRemark: '' });
+  const [joining, setJoining] = useState(null); // candidate row whose joining form is open
+  const [showFormat, setShowFormat] = useState(false); // sample joining form preview
 
   const load = async () => {
     setTableLoading(true);
@@ -38,36 +37,7 @@ const Joining = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm]);
 
-  const openJoining = (candidate) => {
-    setForm({ joiningDate: todayISO(), joiningRemark: '' });
-    setJoining(candidate);
-  };
-
-  const handleChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-
-  const confirmJoining = async (e) => {
-    e.preventDefault();
-    if (!form.joiningDate) {
-      toast.error('Please pick the joining date');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await jobApplicationApi.updateStage(joining.applicationNumber, {
-        stage: 'Hired',
-        joiningDate: form.joiningDate,
-        joiningRemark: form.joiningRemark || null,
-      });
-      toast.success('Joining confirmed — candidate onboarded');
-      setJoining(null);
-      load();
-    } catch (err) {
-      toast.error(err.message || 'Failed to confirm joining');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
+  const closeFormat = React.useCallback(() => setShowFormat(false), []);
   const rows = activeTab === 'pending' ? pendingData : historyData;
 
   return (
@@ -82,6 +52,9 @@ const Joining = () => {
             <h2 className="text-lg font-bold tracking-tight text-gray-900">Joining</h2>
             <p className="mt-0.5 text-sm text-gray-500">Confirm joining for verified candidates and onboard them</p>
           </div>
+          <button onClick={() => setShowFormat(true)} className="ml-auto inline-flex items-center gap-1.5 px-4 py-2 border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-xl text-sm font-semibold shrink-0">
+            <FileText size={16} /> Preview Format
+          </button>
         </div>
       </div>
 
@@ -139,6 +112,7 @@ const Joining = () => {
                   <>
                     <th className="px-6 py-3 text-left">Employee Code</th>
                     <th className="px-6 py-3 text-left">Joined On</th>
+                    <th className="px-6 py-3 text-center">Joining Form</th>
                   </>
                 )}
               </tr>
@@ -146,7 +120,7 @@ const Joining = () => {
             <tbody className="divide-y divide-gray-200 bg-white">
               {tableLoading ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan="7" className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center space-y-2">
                       <span className="w-8 h-8 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin" />
                       <span className="text-sm font-semibold">Loading...</span>
@@ -155,7 +129,7 @@ const Joining = () => {
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-16 text-center text-gray-400 text-sm">
+                  <td colSpan="7" className="px-6 py-16 text-center text-gray-400 text-sm">
                     {activeTab === 'pending'
                       ? 'No candidates ready to join. Complete Document Verification first.'
                       : 'No candidates onboarded yet.'}
@@ -175,8 +149,8 @@ const Joining = () => {
                       <>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-600">{fmtDate(c.offeredJoiningDate)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <button onClick={() => openJoining(c)} className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors">
-                            <UserPlus size={13} /> Confirm Joining
+                          <button onClick={() => setJoining(c)} className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors">
+                            <UserPlus size={13} /> Joining Form
                           </button>
                         </td>
                       </>
@@ -188,6 +162,11 @@ const Joining = () => {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-600">{fmtDate(c.joiningDate)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <button onClick={() => setJoining(c)} className="inline-flex items-center gap-1 px-3 py-1.5 border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-lg text-xs font-semibold transition-colors">
+                            <FileText size={13} /> View / Edit
+                          </button>
+                        </td>
                       </>
                     )}
                   </tr>
@@ -198,38 +177,10 @@ const Joining = () => {
         </div>
       </div>
 
-      {/* Confirm Joining modal */}
-      {joining && createPortal(
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 flex flex-col max-h-[85vh]">
-            <div className="flex justify-between items-center p-6 border-b border-gray-200">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">Confirm Joining</h3>
-                <p className="text-sm text-gray-500 mt-0.5">{joining.candidateName} · {joining.applicationNumber}</p>
-              </div>
-              <button onClick={() => setJoining(null)} className="text-gray-500 hover:text-gray-700"><X size={20} /></button>
-            </div>
-            <form onSubmit={confirmJoining} className="flex-1 flex flex-col min-h-0">
-              <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Joining Date *</label>
-                  <input type="date" name="joiningDate" required value={form.joiningDate} onChange={handleChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Remark</label>
-                  <textarea name="joiningRemark" rows={2} value={form.joiningRemark} onChange={handleChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Onboarding notes..." />
-                </div>
-                <p className="text-xs text-gray-400">An employee code will be generated automatically on confirmation.</p>
-              </div>
-              <div className="flex justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50/50">
-                <button type="button" onClick={() => setJoining(null)} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl">{submitting ? 'Saving...' : 'Confirm & Onboard'}</button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
+      {joining && (
+        <JoiningFormModal application={joining} onClose={() => setJoining(null)} onDone={load} />
       )}
+      {showFormat && <JoiningFormSamplePreview onClose={closeFormat} />}
     </div>
   );
 };
