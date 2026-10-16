@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, ChevronLeft, ChevronRight, Clock, MapPin, Plus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { authFetch } from '../lib/api';
 
 const CompanyCalendar = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -22,7 +23,7 @@ const CompanyCalendar = () => {
   const fetchCalendarData = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/calendar`);
+      const response = await authFetch(`${import.meta.env.VITE_API_URL || "/api/v1"}/calendar`);
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -54,7 +55,7 @@ const CompanyCalendar = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/calendar`, {
+      const response = await authFetch(`${import.meta.env.VITE_API_URL || "/api/v1"}/calendar`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

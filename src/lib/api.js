@@ -20,6 +20,34 @@ function getToken() {
   }
 }
 
+// Signed login token was rejected (expired, or an old pre-JWT token): clear the session and go to login
+let redirecting = false;
+function handleSessionExpired() {
+  if (redirecting) return;
+  redirecting = true;
+  try {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("hr-fms-auth-storage");
+  } catch {
+    // storage unavailable — still redirect
+  }
+  if (!window.location.pathname.startsWith("/login")) window.location.assign("/login");
+}
+
+/**
+ * fetch() for pages that call the API directly: adds the auth header and handles an expired session.
+ * Same signature and return value as window.fetch.
+ */
+export async function authFetch(url, options = {}) {
+  const token = getToken();
+  const headers = new Headers(options.headers || {});
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401 && token) handleSessionExpired();
+  return res;
+}
+
 /**
  * Core request helper.
  * Resolves with the parsed JSON body on success.
@@ -39,6 +67,8 @@ async function request(path, { method = "GET", body, headers, signal } = {}) {
     },
     body: body == null ? undefined : isFormData ? body : JSON.stringify(body),
   });
+
+  if (res.status === 401 && token && !path.startsWith("/auth/login")) handleSessionExpired();
 
   const contentType = res.headers.get("content-type") || "";
   const payload = contentType.includes("application/json")

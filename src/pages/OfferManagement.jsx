@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, FileCheck, CheckCircle, X, Send, ThumbsUp, ThumbsDown, Mail } from 'lucide-react';
+import { Search, FileCheck, CheckCircle, X, Send, ThumbsUp, ThumbsDown, Mail, ExternalLink, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { jobApplicationApi } from '../features/jobApplication/jobApplication.api';
+import { encodeAppNumber } from '../lib/token';
+import OfferLetterModal from '../features/offer-letter/OfferLetterModal';
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
 
@@ -33,7 +35,16 @@ const OfferManagement = () => {
   const [submitting, setSubmitting] = useState(false);
 
   const [offering, setOffering] = useState(null); // candidate row being offered/responded to
+  const [letterFor, setLetterFor] = useState(null); // candidate row whose offer letter is open
+  const [showFormat, setShowFormat] = useState(false); // sample offer letter format preview
   const [form, setForm] = useState({ offeredDesignation: '', offeredSalary: '', offeredBaseSalary: '', offeredAllowanceSalary: '', offeredJoiningDate: '', offerRemark: '' });
+
+  const copyUploadLink = (appNum) => {
+    const tkn = encodeAppNumber(appNum);
+    const link = `${window.location.origin}/upload-documents/${tkn}`;
+    navigator.clipboard.writeText(link);
+    toast.success('Upload link copied to clipboard!');
+  };
 
   const [offerWarning, setOfferWarning] = useState('');
   const [shouldBypassLimit, setShouldBypassLimit] = useState(false);
@@ -149,6 +160,9 @@ const OfferManagement = () => {
             <h2 className="text-lg font-bold tracking-tight text-gray-900">Offer Management</h2>
             <p className="mt-0.5 text-sm text-gray-500">Release offers to selected candidates and track their response</p>
           </div>
+          <button onClick={() => setShowFormat(true)} className="ml-auto inline-flex items-center gap-1.5 px-4 py-2 border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-xl text-sm font-semibold shrink-0">
+            <FileText size={16} /> Preview Format
+          </button>
         </div>
       </div>
 
@@ -232,22 +246,36 @@ const OfferManagement = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-gray-600">{fmtDate(c.offeredJoiningDate)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       {activeTab === 'pending' ? (
-                        !c.offerStatus ? (
+                        c.hasFilledCandidate ? (
+                          <div className="text-center">
+                            <span className="inline-flex items-center px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-red-50 border border-red-200 text-red-800 cursor-not-allowed" title="No slots left for this vacancy">
+                              No slots left for this vacancy
+                            </span>
+                          </div>
+                        ) : !c.offerStatus ? (
                           <button onClick={() => openOffer(c)} className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors">
                             <Send size={13} /> Send Offer
                           </button>
                         ) : (
-                          <div className="flex items-center justify-center gap-2">
+                          <div className="flex items-center gap-2 justify-center">
+                            <button onClick={() => setLetterFor(c)} title="Offer Letter" className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-lg text-xs font-semibold transition-colors">
+                              <FileText size={13} /> Letter
+                            </button>
                             <button onClick={() => recordResponse(c, true)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-green-200 text-green-700 hover:bg-green-50 rounded-lg text-xs font-semibold transition-colors">
                               <ThumbsUp size={13} /> Accepted
                             </button>
-                            <button onClick={() => recordResponse(c, false)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 rounded-lg text-xs font-semibold transition-colors">
+                            <button onClick={() => recordResponse(c, false)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-red-200 text-red-650 hover:bg-red-50 rounded-lg text-xs font-semibold transition-colors">
                               <ThumbsDown size={13} /> Declined
                             </button>
                           </div>
                         )
                       ) : (
-                        offerBadge(c.stage)
+                        <div className="flex items-center gap-2 justify-center">
+                          {offerBadge(c.stage)}
+                          <button onClick={() => setLetterFor(c)} title="Offer Letter" className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                            <FileText size={15} />
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -261,7 +289,7 @@ const OfferManagement = () => {
       {/* Send Offer modal */}
       {offering && createPortal(
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 flex flex-col max-h-[90vh] overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 flex flex-col max-h-[85vh]">
             <div className="flex justify-between items-center p-6 border-b border-gray-200 shrink-0">
               <div>
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Mail size={18} /> Send Offer</h3>
@@ -271,6 +299,17 @@ const OfferManagement = () => {
             </div>
             <form onSubmit={sendOffer} className="flex-1 flex flex-col min-h-0">
               <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                {(offering.vacancyStatus === 'Closed' || offering.hasFilledCandidate) && (
+                  <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 text-sm font-semibold flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
+                      <span>Cannot Send Offer</span>
+                    </div>
+                    <p className="text-xs text-red-600 font-medium leading-relaxed mt-1">
+                      {offering.hasFilledCandidate ? "no slots left for this vacancy" : "can not send offer edit the vacancy or create new one"}
+                    </p>
+                  </div>
+                )}
                 {offerWarning && (
                   <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 text-sm font-semibold flex flex-col gap-1">
                     <div className="flex items-center gap-2">
@@ -315,14 +354,16 @@ const OfferManagement = () => {
                 <button type="button" onClick={() => { setOffering(null); setOfferWarning(''); setShouldBypassLimit(false); }} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || offering.vacancyStatus === 'Closed' || offering.hasFilledCandidate}
                   className={`px-5 py-2.5 font-semibold rounded-xl text-white transition-colors ${
-                    shouldBypassLimit
+                    (offering.vacancyStatus === 'Closed' || offering.hasFilledCandidate)
+                      ? 'bg-gray-400 cursor-not-allowed shadow-none'
+                      : shouldBypassLimit
                       ? 'bg-red-600 hover:bg-red-700 shadow-md shadow-red-100'
                       : 'bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-100'
                   }`}
                 >
-                  {submitting ? 'Sending...' : shouldBypassLimit ? 'Proceed & Send Anyway' : 'Send Offer'}
+                  {submitting ? 'Sending...' : (offering.vacancyStatus === 'Closed' || offering.hasFilledCandidate) ? 'Send Offer' : shouldBypassLimit ? 'Proceed & Send Anyway' : 'Send Offer'}
                 </button>
               </div>
             </form>
@@ -330,6 +371,9 @@ const OfferManagement = () => {
         </div>,
         document.body
       )}
+
+      {letterFor && <OfferLetterModal application={letterFor} onClose={() => setLetterFor(null)} />}
+      {showFormat && <OfferLetterModal sample onClose={() => setShowFormat(false)} />}
     </div>
   );
 };

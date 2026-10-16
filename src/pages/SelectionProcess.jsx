@@ -227,7 +227,7 @@ const SelectionProcess = () => {
       {/* Decision modal */}
       {reviewing && createPortal(
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 flex flex-col max-h-[90vh] overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 flex flex-col max-h-[85vh]">
             <div className="flex justify-between items-center p-6 border-b border-gray-200 shrink-0">
               <div>
                 <h3 className="text-lg font-bold text-gray-900">Record Selection Decision</h3>
@@ -237,6 +237,17 @@ const SelectionProcess = () => {
             </div>
             <form onSubmit={submitDecision} className="flex-1 flex flex-col min-h-0">
               <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                {reviewing.vacancyStatus === 'Closed' && decision === 'Offer' && (
+                  <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 text-sm font-semibold flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
+                      <span>Cannot Send Offer</span>
+                    </div>
+                    <p className="text-xs text-red-655 font-medium leading-relaxed mt-1">
+                      can not send offer edit the vacancy or create new one
+                    </p>
+                  </div>
+                )}
                 {selectionWarning && (
                   <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 text-sm font-semibold flex flex-col gap-1">
                     <div className="flex items-center gap-2">
@@ -278,14 +289,16 @@ const SelectionProcess = () => {
                 <button type="button" onClick={() => { setReviewing(null); setSelectionWarning(''); setShouldBypassLimit(false); }} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || (reviewing.vacancyStatus === 'Closed' && decision === 'Offer')}
                   className={`px-5 py-2.5 font-semibold rounded-xl text-white transition-colors ${
-                    shouldBypassLimit
+                    reviewing.vacancyStatus === 'Closed' && decision === 'Offer'
+                      ? 'bg-gray-400 cursor-not-allowed shadow-none'
+                      : shouldBypassLimit
                       ? 'bg-red-600 hover:bg-red-700 shadow-md shadow-red-100'
                       : 'bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-100'
                   }`}
                 >
-                  {submitting ? 'Saving...' : shouldBypassLimit ? 'Proceed & Confirm Anyway' : 'Confirm Decision'}
+                  {submitting ? 'Saving...' : (reviewing.vacancyStatus === 'Closed' && decision === 'Offer') ? 'Confirm Decision' : shouldBypassLimit ? 'Proceed & Confirm Anyway' : 'Confirm Decision'}
                 </button>
               </div>
             </form>

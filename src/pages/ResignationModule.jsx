@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, UserX, CheckCircle, X, CalendarClock, Check, Pause, ThumbsDown, Plus } from 'lucide-react';
+import { Search, UserX, CheckCircle, X, CalendarClock, Check, Pause, ThumbsDown, Plus, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { resignationApi } from '../features/resignation/resignation.api';
 import { employeeApi } from '../features/employee/employee.api';
+import useAuthStore from '../store/authStore';
+import SearchableEmployeeSelect from '../components/SearchableEmployeeSelect';
 
 const REASONS = [
   'Better Opportunity',
@@ -38,6 +40,7 @@ const stageBadge = (stage) => {
 };
 
 const ResignationModule = () => {
+  const { user, isAdmin, isHR } = useAuthStore();
   const [activeTab, setActiveTab] = useState('active');
   const [searchTerm, setSearchTerm] = useState('');
   const [rows, setRows] = useState([]);
@@ -52,6 +55,13 @@ const ResignationModule = () => {
   // Schedule Meeting modal
   const [scheduling, setScheduling] = useState(null); // resignation row
   const [meetingDate, setMeetingDate] = useState('');
+
+  // Action dropdown on Requested rows: { id, top, right } (fixed position so the table's overflow doesn't clip it)
+  const [actionMenu, setActionMenu] = useState(null);
+
+  // Approve (skip meeting) modal
+  const [approving, setApproving] = useState(null); // resignation row
+  const [approveReason, setApproveReason] = useState('');
 
   // Record Outcome modal
   const [deciding, setDeciding] = useState(null); // resignation row
@@ -107,6 +117,28 @@ const ResignationModule = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm]);
 
+  useEffect(() => {
+    if (!actionMenu) return;
+    const close = () => setActionMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [actionMenu]);
+
+  useEffect(() => {
+    if (requesting && !isAdmin && !isHR) {
+      setRequestForm((prev) => ({
+        ...prev,
+        jobApplicationId: String(user?.employeeId || ''),
+      }));
+    }
+  }, [requesting, user, isAdmin, isHR]);
+
   const openRequest = () => {
     setRequestForm({ jobApplicationId: '', reason: REASONS[0], customReason: '' });
     setRequesting(true);
@@ -151,6 +183,40 @@ const ResignationModule = () => {
       load();
     } catch (err) {
       toast.error(err.message || 'Failed to schedule meeting');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const toggleActionMenu = (e, row) => {
+    e.stopPropagation();
+    if (actionMenu?.id === row.id) {
+      setActionMenu(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setActionMenu({ id: row.id, row, top: rect.bottom + 4, right: window.innerWidth - rect.right });
+  };
+
+  const openApprove = (row) => {
+    setApproveReason(row.reason || '');
+    setApproving(row);
+  };
+
+  const submitApprove = async (e) => {
+    e.preventDefault();
+    if (!approveReason.trim()) {
+      toast.error('Please enter the resignation reason');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await resignationApi.approve(approving.id, { reason: approveReason.trim() });
+      toast.success('Resignation approved — moved to Notice Period');
+      setApproving(null);
+      load();
+    } catch (err) {
+      toast.error(err.message || 'Failed to approve resignation');
     } finally {
       setSubmitting(false);
     }
@@ -455,13 +521,13 @@ const ResignationModule = () => {
                 <th className="px-6 py-3 text-left">Phone</th>
                 <th className="px-6 py-3 text-left">Stage</th>
                 <th className="px-6 py-3 text-left">Details</th>
-                {activeTab === 'active' && <th className="px-6 py-3 text-center">Action</th>}
+                {activeTab === 'active' && user?.role !== 'employee' && <th className="px-6 py-3 text-center">Action</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={user?.role === 'employee' ? 5 : 6} className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center space-y-2">
                       <span className="w-8 h-8 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin" />
                       <span className="text-sm font-semibold">Loading...</span>
@@ -470,7 +536,7 @@ const ResignationModule = () => {
                 </tr>
               ) : visibleRows.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-16 text-center text-gray-400 text-sm">
+                  <td colSpan={user?.role === 'employee' ? 5 : 6} className="px-6 py-16 text-center text-gray-400 text-sm">
                     {activeTab === 'active' ? 'No active resignations.' : 'No resolved resignations yet.'}
                   </td>
                 </tr>
@@ -502,11 +568,11 @@ const ResignationModule = () => {
                         <p className="text-xs text-gray-500">Last working day: {fmtDate(r.lastWorkingDay)}</p>
                       )}
                     </td>
-                    {activeTab === 'active' && (
+                    {activeTab === 'active' && (isAdmin || isHR) && (
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         {r.stage === 'Requested' && (
-                          <button onClick={() => openSchedule(r)} className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors">
-                            <CalendarClock size={13} /> Schedule Meeting
+                          <button onClick={(e) => toggleActionMenu(e, r)} className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors">
+                            Action <ChevronDown size={13} />
                           </button>
                         )}
                         {r.stage === 'MeetingScheduled' && (
@@ -547,18 +613,22 @@ const ResignationModule = () => {
               <div className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Employee *</label>
-                  <select
-                    required
-                    value={requestForm.jobApplicationId}
-                    onChange={(e) => setRequestForm((f) => ({ ...f, jobApplicationId: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">Select an onboarded employee</option>
-                    {eligibleEmployees.map((emp) => (
-                      <option key={emp.id} value={emp.id}>{emp.candidateName} · {emp.employeeCode}</option>
-                    ))}
-                  </select>
-                  {eligibleEmployees.length === 0 && (
+                  {!isAdmin && !isHR ? (
+                    <input
+                      type="text"
+                      readOnly
+                      value={user?.name || ''}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500 outline-none cursor-not-allowed"
+                    />
+                  ) : (
+                    <SearchableEmployeeSelect
+                      employees={eligibleEmployees}
+                      selectedEmployeeId={requestForm.jobApplicationId}
+                      onSelect={(emp) => setRequestForm((f) => ({ ...f, jobApplicationId: emp ? String(emp.id) : '' }))}
+                      placeholder="Search by employee name or code..."
+                    />
+                  )}
+                  {(isAdmin || isHR) && eligibleEmployees.length === 0 && (
                     <p className="text-xs text-gray-400 mt-1">No onboarded employees available (or all already have an active resignation).</p>
                   )}
                 </div>
@@ -582,6 +652,60 @@ const ResignationModule = () => {
               <div className="flex justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50/50">
                 <button type="button" onClick={() => setRequesting(false)} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
                 <button type="submit" disabled={submitting} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl">{submitting ? 'Saving...' : 'Submit Request'}</button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Action dropdown for Requested rows */}
+      {actionMenu && createPortal(
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{ top: actionMenu.top, right: actionMenu.right }}
+          className="fixed z-[99998] w-44 bg-white border border-gray-200 rounded-xl shadow-lg py-1 text-sm"
+        >
+          <button
+            onClick={() => { setActionMenu(null); openApprove(actionMenu.row); }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-left text-gray-700 hover:bg-green-50 hover:text-green-700"
+          >
+            <Check size={14} /> Approve
+          </button>
+          <button
+            onClick={() => { setActionMenu(null); openSchedule(actionMenu.row); }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-left text-gray-700 hover:bg-indigo-50 hover:text-indigo-700"
+          >
+            <CalendarClock size={14} /> Schedule Meeting
+          </button>
+        </div>,
+        document.body
+      )}
+
+      {/* Approve (no meeting) modal */}
+      {approving && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 flex flex-col overflow-hidden">
+            <div className="flex justify-between items-center p-6 border-b border-gray-200">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Approve Resignation</h3>
+                <p className="text-sm text-gray-500 mt-0.5">{approving.candidateName} · {approving.employeeCode}</p>
+              </div>
+              <button onClick={() => setApproving(null)} className="text-gray-500 hover:text-gray-700"><X size={20} /></button>
+            </div>
+            <form onSubmit={submitApprove} className="flex flex-col">
+              <div className="p-6 space-y-4">
+                <p className="text-sm text-gray-600">
+                  The resignation will be accepted without a retention meeting and moved to <span className="font-semibold">Notice Period</span>.
+                </p>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Resignation Reason *</label>
+                  <textarea required rows={3} value={approveReason} onChange={(e) => setApproveReason(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50/50">
+                <button type="button" onClick={() => setApproving(null)} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
+                <button type="submit" disabled={submitting} className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl">{submitting ? 'Approving...' : 'Approve'}</button>
               </div>
             </form>
           </div>
