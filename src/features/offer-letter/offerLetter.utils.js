@@ -142,3 +142,12 @@ export const toDataUrl = async (url) => {
     return '';
   }
 };
+
+// Built-in defaults ⊕ saved "default" settings row (same rule as the server).
+// Used by the sample "Preview Format" screens.
+export const resolveDefaultSettings = ({ rows = [], defaults = {} }) => {
+  const out = { ...defaults };
+  const row = rows.find((r) => r.scopeKey === 'default');
+  if (row) for (const [k, v] of Object.entries(row)) if (k in defaults && v !== null && v !== '') out[k] = v;
+  return out;
+};

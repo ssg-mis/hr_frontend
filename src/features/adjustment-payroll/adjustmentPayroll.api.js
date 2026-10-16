@@ -13,6 +13,9 @@ export const adjustmentPayrollApi = {
   save: (period, rows, { markSynced = false, type = 'Monthly' } = {}) =>
     api.put('/adjustment-payrolls', { period, type, rows, markSynced }),
 
+  // Insert employees missing from the adjustment (all of them the first time). Never updates existing rows.
+  append: (period, rows, type = 'Monthly') => api.post('/adjustment-payrolls/append', { period, type, rows }).then((r) => r),
+
   remove: (period, type) => api.delete(`/adjustment-payrolls?${qs(period, type)}`),
 };
 

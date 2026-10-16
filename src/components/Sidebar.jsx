@@ -127,6 +127,7 @@ const Sidebar = ({ onClose }) => {
       items: [
         { path: "/salary", label: "Salary" },
         { path: "/payroll", label: "Payroll Creation" },
+        { path: "/payroll-adjustment", label: "Adjustment Payroll" },
         { path: "/emi-management", label: "EMI Management" },
         { path: "/compensation", label: "Compensation" },
         { path: "/pf-management", label: "PF Management" },
@@ -257,12 +258,13 @@ const Sidebar = ({ onClose }) => {
     const salarySubItems = [
       { path: '/salary', label: 'Salary Master' },
       { path: '/payroll', label: 'Payroll Creation' },
+      { path: '/payroll-adjustment', label: 'Adjustment Payroll', access: '/payroll' }, // same access as Payroll
       { path: '/emi-management', label: 'EMI Management' },
       { path: '/compensation', label: 'Compensation' },
       { path: '/pf-management', label: 'PF Management' },
       { path: '/esic-management', label: 'ESIC Management' },
       { path: '/my-salary', label: 'My Salary' },
-    ].filter((item) => hasPageAccess(item.path));
+    ].filter((item) => hasPageAccess(item.access || item.path));
 
     if (salarySubItems.length > 0) {
       addItem({

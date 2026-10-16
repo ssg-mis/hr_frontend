@@ -153,25 +153,3 @@ export const revertCell = (row, field) => {
 };
 
 export const resetRow = (row) => ({ ...row, ...(row.originalValues || {}), editedFields: [] });
-
-// Sync from a fresh payroll copy, keeping every cell the admin edited.
-// - row without edits      -> replaced by the fresh payroll row
-// - row with edits         -> fresh values for un-edited cells, edited cells kept, totals recalculated
-// - employee not in payroll anymore -> kept only if it has edits
-export const mergeSync = (existingRows, freshRows) => {
-  const existingById = new Map(existingRows.map((r) => [Number(r.employeeId), r]));
-  const freshIds = new Set();
-  const merged = freshRows.map((fresh) => {
-    freshIds.add(fresh.employeeId);
-    const old = existingById.get(fresh.employeeId);
-    if (!old || !(old.editedFields || []).length) return fresh;
-    const row = { ...fresh, editedFields: [...old.editedFields] };
-    for (const f of old.editedFields) row[f] = old[f];
-    const numericEdits = old.editedFields.filter((f) => NUMERIC_FIELDS.includes(f));
-    return numericEdits.length ? cascade(row, numericEdits) : row;
-  });
-  for (const old of existingRows) {
-    if (!freshIds.has(Number(old.employeeId)) && (old.editedFields || []).length) merged.push(old);
-  }
-  return merged;
-};
