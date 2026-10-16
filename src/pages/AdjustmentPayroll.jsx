@@ -276,8 +276,8 @@ const AdjustmentPayroll = () => {
         <div className="flex gap-2 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-sm text-amber-800">
           <AlertTriangle size={18} className="shrink-0 mt-0.5" />
           <span>
-            The original payroll for {period} was saved again on <b>{fmtDateTime(meta.originalUpdatedAt)}</b>, after this adjustment was synced ({fmtDateTime(meta.sourceSyncedAt)}).
-            To bring in the new values for cells you did not edit, open <b>Payroll → {period} → Adjust Payroll → Sync un-edited cells</b>. Your edits will be kept.
+            The original payroll for {period} was saved again on <b>{fmtDateTime(meta.originalUpdatedAt)}</b>, after this adjustment was copied ({fmtDateTime(meta.sourceSyncedAt)}).
+            Adjustment values are <b>not</b> changed by payroll saves — only newly added employees are copied in. Your adjustment data stays as it is.
           </span>
         </div>
       )}
@@ -293,7 +293,7 @@ const AdjustmentPayroll = () => {
       ) : rows.length === 0 ? (
         <div className="bg-white p-12 rounded-2xl border border-gray-200 text-center space-y-3">
           <p className="text-gray-700 font-semibold">No adjustment payroll for {period}.</p>
-          <p className="text-sm text-gray-500">Open Payroll, select this month (it must be saved), and click <b>Adjust Payroll</b> to create the copy.</p>
+          <p className="text-sm text-gray-500">Open Payroll, select this month and click <b>Save Payroll Run</b> — it is copied here automatically.</p>
           <button onClick={() => navigate('/payroll')} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium">Go to Payroll</button>
         </div>
       ) : (

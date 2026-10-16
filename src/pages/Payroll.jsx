@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
-import AdjustPayrollButton from "../features/adjustment-payroll/AdjustPayrollButton";
+import adjustmentPayrollApi from "../features/adjustment-payroll/adjustmentPayroll.api";
+import { toAdjustmentRow } from "../features/adjustment-payroll/adjustmentPayroll.utils";
 import {
   Search, Calendar, Clock, Download, Plus, Check, X, FileText,
   BarChart3, CreditCard, Calculator, Filter, Eye, Trash2, Save,
@@ -1362,6 +1363,7 @@ const Payroll = () => {
       if (res.success) {
         toast.success("Payroll records saved successfully to database!");
         loadPayrollPageData(); // Reload from DB
+        if (activeMode === "Monthly") copyToAdjustmentPayroll(selectedMonth);
       }
     } catch (err) {
       console.error("Failed to save payroll batch:", err);
@@ -2210,6 +2212,21 @@ const Payroll = () => {
 
   const isSavedRun = savedPayrollRuns && savedPayrollRuns.length > 0;
 
+  // Adjustment Payroll: after a monthly save, copy employees that are not in the adjustment table yet
+  // (everyone the first time). Existing adjustment rows are never changed — edits there are kept.
+  const copyToAdjustmentPayroll = async (period) => {
+    try {
+      const rows = await getAllRowsForAdjustment();
+      if (!rows.length) return;
+      const res = await adjustmentPayrollApi.append(period, rows.map(toAdjustmentRow));
+      const added = res?.data?.inserted || 0;
+      if (added) toast.success(`Adjustment Payroll: ${added} employee(s) copied`);
+    } catch (err) {
+      console.error("Adjustment payroll copy failed:", err);
+      toast.error(`Adjustment Payroll not updated: ${err.message || "error"}`);
+    }
+  };
+
   // Adjustment Payroll: read-only fetch of ALL saved rows of the month, mapped exactly like the table.
   const getAllRowsForAdjustment = async () => {
     const params = new URLSearchParams({ period: selectedMonth, type: "Monthly", limit: "10000" });
@@ -2380,16 +2397,6 @@ const Payroll = () => {
               Bulk Payslips PDF
             </button>
             */}
-            <AdjustPayrollButton
-              period={selectedMonth}
-              getPayrollRows={getAllRowsForAdjustment}
-              disabledReason={
-                activeMode !== "Monthly" ? "Adjust Payroll is available for the Monthly form only."
-                  : loading || ratesLoading ? "Payroll is still loading, please wait."
-                  : !isSavedRun ? "Save the payroll run for this month first, then click Adjust Payroll."
-                  : ""
-              }
-            />
             <button
               onClick={handleSavePayroll}
               disabled={saving || ratesLoading || payrollRows.length === 0}
