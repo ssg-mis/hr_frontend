@@ -8,6 +8,7 @@ export const NUMERIC_FIELDS = [
   'earnGross', 'epfWages', 'pfDeduction', 'lwfDeduction', 'esicDeduction', 'emiDeduction',
   'otherDeductions', 'absentDeduction', 'canteenDeduction', 'totalDeductions', 'netSalary',
   'diwaliBonus', 'netPayAmount',
+  'advDifference', // salary difference vs original payroll — shown only, never deducted
 ];
 
 export const TEXT_FIELDS = [
@@ -106,6 +107,7 @@ export const toAdjustmentRow = (p) => {
     netSalary: num(p.netSalary),
     diwaliBonus: num(p.diwaliBonus),
     netPayAmount: num(p.netPayAmount ?? p.netSalary),
+    advDifference: 0,
     paymentMode: isBank ? 'BANK' : 'CASH',
     bankAccountNo: dash(p.bankAccountNo),
     ifscCode: dash(p.ifscCode),
