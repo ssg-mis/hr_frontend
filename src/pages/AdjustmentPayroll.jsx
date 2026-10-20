@@ -36,7 +36,11 @@ const COLUMNS = [
   { key: 'pfDeduction', label: 'PF', w: 'w-20', group: 'ded' },
   { key: 'lwfDeduction', label: 'LABOUR WELFARE FUND', w: 'w-20', group: 'ded' },
   { key: 'esicDeduction', label: 'ESIC', w: 'w-20', group: 'ded' },
-  { key: 'emiDeduction', label: 'ADV', w: 'w-20', group: 'ded' },
+  // ADV = extra salary vs the original payroll (e.g. Excel net pay - payroll net pay).
+  // Shown only: NOT part of Total Deduction / Net Pay (those stay as payroll). Any real EMI
+  // recovery from payroll is shown as a small line under it.
+  { key: 'advDifference', label: 'ADV (extra)', w: 'w-24', group: 'ded', signTint: true,
+    subline: (r) => (Number(r.emiDeduction) ? `EMI ded. ${Number(r.emiDeduction).toLocaleString('en-IN')}` : '') },
   { key: 'otherDeductions', label: 'Penalty', w: 'w-20', group: 'ded' },
   { key: 'absentDeduction', label: 'ABSENT', w: 'w-20', group: 'ded' },
   { key: 'canteenDeduction', label: 'Canteen', w: 'w-20', group: 'ded' },
@@ -44,6 +48,7 @@ const COLUMNS = [
   { key: 'netSalary', label: 'NET SALARY', w: 'w-24', bold: true, tint: 'bg-blue-50' },
   { key: 'diwaliBonus', label: 'Diwali Bonus', w: 'w-20' },
   { key: 'netPayAmount', label: 'NET PAY AMOUNT', w: 'w-28', bold: true, tint: 'bg-emerald-100' },
+  { key: 'finalPay', label: 'FINAL PAY (Net + ADV)', w: 'w-28', bold: true, readOnly: true, compute: (r) => (Number(r.netPayAmount) || 0) + (Number(r.advDifference) || 0) },
   { key: 'paymentMode', label: 'PAY-MODE', type: 'select', options: ['BANK', 'CASH'], w: 'w-20' },
   { key: 'bankAccountNo', label: 'BANK A/C NO.', type: 'text', w: 'w-32' },
   { key: 'ifscCode', label: 'IFSC', type: 'text', w: 'w-24' },
@@ -52,7 +57,7 @@ const COLUMNS = [
 ];
 const DED_COUNT = COLUMNS.filter((c) => c.group === 'ded').length;
 
-const cellValue = (row, col) => (col.washing ? (row.compensation || 0) + (row.otAmount || 0) : row[col.key]);
+const cellValue = (row, col) => (col.compute ? col.compute(row) : col.washing ? (row.compensation || 0) + (row.otAmount || 0) : row[col.key]);
 const originalValue = (row, col) => {
   const o = row.originalValues || {};
   return col.washing ? (Number(o.compensation) || 0) + (Number(o.otAmount) || 0) : o[col.key];
@@ -61,6 +66,10 @@ const originalValue = (row, col) => {
 // One editable cell. Numbers/text commit on blur or Enter so typing "12." is not cut short.
 const EditCell = ({ col, value, edited, original, onCommit, onRevert }) => {
   const isNum = !col.type;
+  if (col.readOnly) {
+    return <div className={`${col.w} px-1.5 py-0.5 text-xs text-right font-mono font-bold text-gray-900 bg-indigo-50 rounded border border-indigo-100`}>{fmtMoney(value)}</div>;
+  }
+  const sign = col.signTint ? (Number(value) > 0 ? ' !text-green-700' : Number(value) < 0 ? ' !text-red-700' : '') : '';
   const shown = isNum ? String(Number(value || 0)) : (value ?? '');
   const [draft, setDraft] = useState(shown);
   useEffect(() => setDraft(shown), [shown]);
@@ -76,7 +85,7 @@ const EditCell = ({ col, value, edited, original, onCommit, onRevert }) => {
 
   const base = `${col.w} border rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 ${isNum ? 'text-right font-mono' : ''} ${
     edited ? 'bg-amber-100 border-amber-400 text-amber-900 font-semibold' : `${col.tint || 'bg-white'} border-gray-200 ${col.bold ? 'font-bold text-gray-900' : 'text-gray-700'}`
-  }`;
+  }${sign}`;
   const title = edited ? `Original: ${isNum ? fmtMoney(original) : (original || '—')}` : undefined;
 
   return (
@@ -223,13 +232,14 @@ const AdjustmentPayroll = () => {
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const totals = useMemo(() => {
-    let original = 0, adjusted = 0, edited = 0;
+    let original = 0, adjusted = 0, edited = 0, advDiff = 0;
     for (const r of rows) {
       original += Number(r.originalValues?.netPayAmount) || 0;
       adjusted += Number(r.netPayAmount) || 0;
+      advDiff += Number(r.advDifference) || 0;
       if ((r.editedFields || []).length) edited += 1;
     }
-    return { original, adjusted, diff: adjusted - original, edited };
+    return { original, adjusted, diff: adjusted - original, edited, advDiff };
   }, [rows]);
 
   const selectCls = 'border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500';
@@ -299,17 +309,19 @@ const AdjustmentPayroll = () => {
       ) : (
         <>
           {/* Summary */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             {[
               { label: 'Employees', value: rows.length },
               { label: 'Rows edited', value: totals.edited },
               { label: 'Net Pay (original)', value: `₹${fmtMoney(totals.original)}` },
               { label: 'Net Pay (adjusted)', value: `₹${fmtMoney(totals.adjusted)}`, sub: totals.diff ? `${totals.diff > 0 ? '+' : ''}${fmtMoney(totals.diff)}` : null },
+              { label: 'ADV extra (total)', value: `${totals.advDiff > 0 ? '+' : ''}₹${fmtMoney(totals.advDiff)}`, hint: 'Extra salary vs payroll · not deducted' },
             ].map((s) => (
               <div key={s.label} className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
                 <p className="text-xs text-gray-500 font-medium">{s.label}</p>
                 <p className="text-lg font-bold text-gray-900 mt-1">{s.value}</p>
                 {s.sub && <p className={`text-xs font-semibold ${totals.diff > 0 ? 'text-green-600' : 'text-red-600'}`}>{s.sub}</p>}
+                {s.hint && <p className="text-xs text-gray-400">{s.hint}</p>}
               </div>
             ))}
           </div>
@@ -380,6 +392,7 @@ const AdjustmentPayroll = () => {
                               onCommit={(v) => commitCell(row, c, v)}
                               onRevert={() => updateRow(row.employeeId, (r) => revertCell(r, c.key))}
                             />
+                            {c.subline && c.subline(row) && <div className="text-[10px] text-gray-500 mt-0.5 text-right whitespace-nowrap">{c.subline(row)}</div>}
                             {c.key === 'employeeName' && (
                               <div className="text-[10px] text-gray-500 mt-0.5 whitespace-nowrap">
                                 {row.department}{row.branchName ? <> • <span className="text-indigo-600">{row.branchName}</span></> : null}

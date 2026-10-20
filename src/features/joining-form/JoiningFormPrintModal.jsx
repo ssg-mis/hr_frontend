@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Download, ExternalLink, Printer } from 'lucide-react';
+import { X, Download, ExternalLink, Printer, Send, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import joiningFormApi from './joiningForm.api';
 import JoiningFormDocument from './JoiningFormDocument';
 import { renderLetterToPdf } from '../offer-letter/offerLetterPdf';
 import { toDataUrl } from '../offer-letter/offerLetter.utils';
 import { uploadFile } from '../upload/upload.api';
+import whatsappApi from '../whatsapp/whatsapp.api';
 
 const WEEK_LABEL = { SUN: 'Sunday', MON: 'Monday', TUE: 'Tuesday', WED: 'Wednesday', THU: 'Thursday', FRI: 'Friday', SAT: 'Saturday' };
 const nameOf = (list, id) => list.find((x) => String(x.id) === String(id))?.name || '';
@@ -16,6 +17,26 @@ const JoiningFormPrintModal = ({ applicationId, values, info, options, letterhea
   const [lang, setLang] = useState('en');
   const [images, setImages] = useState({});
   const [busy, setBusy] = useState(false);
+  const [pdf, setPdf] = useState(savedPdf || null); // last saved PDF (updates after Generate)
+  const [sending, setSending] = useState(false);
+  const [sentTo, setSentTo] = useState(null); // number it was sent to (this session)
+
+  const sendWhatsapp = async () => {
+    const phone = String(values.candidatePhone || '').trim();
+    if (!phone) { toast.error('Mobile number is missing in the joining form'); return; }
+    if (!window.confirm(`Send the joining form to ${values.candidateName || 'the employee'} (${phone}) on WhatsApp?`)) return;
+    setSending(true);
+    const toastId = toast.loading('Sending on WhatsApp...');
+    try {
+      const res = await whatsappApi.sendJoiningForm(applicationId);
+      toast.success(res.message || 'Sent on WhatsApp', { id: toastId });
+      setSentTo(phone);
+    } catch (err) {
+      toast.error(err.message || 'WhatsApp send failed', { id: toastId });
+    } finally {
+      setSending(false);
+    }
+  };
   const printRef = useRef(null);
 
   useEffect(() => {
@@ -51,6 +72,8 @@ const JoiningFormPrintModal = ({ applicationId, values, info, options, letterhea
         weeklyOff: WEEK_LABEL[values.weeklyOffDay] || values.weeklyOffDay,
       },
       values,
+      // Declaration text from Master Data → Letters & Documents → Joining Form (falls back to the built-in text)
+      declaration: (lang === 'hi' ? letterhead?.joiningDeclarationHi : letterhead?.joiningDeclarationEn) || '',
       salary: info.salary,
       previous: info.previous,
     };
@@ -83,6 +106,7 @@ const JoiningFormPrintModal = ({ applicationId, values, info, options, letterhea
       const fileName = `Joining_Form_${values.employeeCode || info.applicationNumber}_${lang}.pdf`.replace(/[^a-zA-Z0-9._-]/g, '_');
       const pdfUrl = await uploadFile(new File([blob], fileName, { type: 'application/pdf' }), 'joining-forms');
       await joiningFormApi.savePdf(applicationId, pdfUrl, lang);
+      setPdf({ pdfUrl, pdfLanguage: lang });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = fileName;
@@ -138,10 +162,18 @@ const JoiningFormPrintModal = ({ applicationId, values, info, options, letterhea
             </button>
             )}
             {!sample && <p className="text-[11px] text-gray-500">Letterhead and footer come from Master Data → Offer Letter. Print it, get it signed by the employee, HR and HOD.</p>}
-            {savedPdf?.pdfUrl && (
-              <a href={savedPdf.pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-indigo-600 hover:underline font-semibold">
-                <ExternalLink size={14} /> Open last saved PDF ({savedPdf.pdfLanguage === 'hi' ? 'हिंदी' : 'EN'})
-              </a>
+            {!sample && pdf?.pdfUrl && (
+              <>
+                <a href={pdf.pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-indigo-600 hover:underline font-semibold">
+                  <ExternalLink size={14} /> Open last saved PDF ({pdf.pdfLanguage === 'hi' ? 'हिंदी' : 'EN'})
+                </a>
+                <button onClick={sendWhatsapp} disabled={busy || sending}
+                  className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white font-semibold text-sm ${sending ? 'bg-green-300 cursor-wait' : 'bg-green-600 hover:bg-green-700'} disabled:opacity-70`}>
+                  <Send size={15} /> {sending ? 'Sending...' : 'Send on WhatsApp'}
+                </button>
+                <p className="text-[11px] text-gray-500 -mt-2">Sends the last saved PDF to the employee's mobile.</p>
+                {sentTo && <div className="flex items-center gap-1 text-xs text-green-700"><CheckCircle2 size={12} /> Sent on WhatsApp to {sentTo}</div>}
+              </>
             )}
           </div>
         </div>

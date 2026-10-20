@@ -62,65 +62,89 @@ export const fmtRupees = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { m
 export const fillPlaceholders = (text, values) =>
   String(text || '').replace(/\{(\w+)\}/g, (m, key) => (values[key] !== undefined && values[key] !== null ? String(values[key]) : m));
 
+// dd/mm/yyyy (letter date) and dd-mm-yyyy (joining date) like the company format.
+const fmtSlash = (d) => { const x = new Date(d); return Number.isNaN(x.getTime()) ? '' : `${String(x.getDate()).padStart(2, '0')}/${String(x.getMonth() + 1).padStart(2, '0')}/${x.getFullYear()}`; };
+const fmtDash = (d) => fmtSlash(d).replace(/\//g, '-');
+const lines = (t) => String(t || '').split('\n').map((x) => x.trim()).filter(Boolean);
+
+// Candidate fields typed in the Letter popup (father's name, address lines, pin) — pre-filled from the application.
+export const defaultLetterDetails = (a) => ({
+  title: 'Mr.',
+  relation: 'S/O',
+  fatherName: a?.fatherName || '',
+  address: a?.presentAddress || '',
+  pin: (String(a?.presentAddress || '').match(/\b\d{6}\b/) || [''])[0],
+});
+
 // Everything printed on the letter, frozen at generation time (stored with the PDF).
-export const buildSnapshot = ({ application: a, settings: s, nextRefNo }, lang) => {
+// Candidate/offer values come from the application, texts from Master Data templates — nothing hard-coded.
+export const buildSnapshot = ({ application: a, settings: s, nextRefNo }, lang, details = defaultLetterDetails(a)) => {
+  const L = lang === 'hi' ? 'Hi' : 'En';
+  const t = (key) => s[`${key}${L}`] || '';
   const today = new Date();
   const validity = new Date(today);
   validity.setDate(validity.getDate() + (Number(s.validityDays) || 0));
 
   const base = Number(a.offeredBaseSalary) || 0;
   const allowance = Number(a.offeredAllowanceSalary) || 0;
-  const gross = Number(a.offeredSalary) || base + allowance;
+  const pfPercent = Number(s.pfPercent ?? 12) || 0;
+  const pfCap = Number(s.pfCap) || 0;
+  const showPf = s.showPf !== false && pfPercent > 0;
+  const pf = showPf ? Math.round(((pfCap ? Math.min(base, pfCap) : base) * pfPercent) / 100) : 0;
+  const total = base + allowance + pf;
 
-  const placeholders = {
+  const company = {
+    name: s.companyName || a.branchName || '',
+    address: s.companyAddress || a.branchAddress || '',
+    contactLine: s.contactLine || '',
+    logoUrl: s.logoUrl || '',
+    letterheadUrl: s.letterheadUrl || '',
+    footerText: s.footerText || '',
+  };
+  const ph = {
+    name: a.candidateName || '',
+    designation: a.offeredDesignation || a.applyingForPost || '',
+    department: a.departmentName || '',
+    company: company.name,
+    company_address: company.address,
+    joining_date: a.offeredJoiningDate ? fmtDash(a.offeredJoiningDate) : '',
+    validity_date: fmtDash(validity),
     probation: s.probationMonths ?? '',
     notice: s.noticeDays ?? '',
-    validity_date: fmtLetterDate(validity, lang),
-    joining_date: fmtLetterDate(a.offeredJoiningDate, lang),
+    pf_percent: pfPercent,
   };
-  const termsSource = lang === 'hi' ? s.termsHi : s.termsEn;
-  const terms = String(termsSource || '')
-    .split('\n')
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .map((t) => fillPlaceholders(t, placeholders));
+  const fill = (x) => fillPlaceholders(x, ph);
 
   return {
     language: lang,
     refNo: nextRefNo,
     date: today.toISOString(),
-    validityDate: validity.toISOString(),
-    company: {
-      name: s.companyName || a.branchName || '',
-      address: s.companyAddress || a.branchAddress || '',
-      contactLine: s.contactLine || '',
-      logoUrl: s.logoUrl || '',
-      letterheadUrl: s.letterheadUrl || '',
-      footerText: s.footerText || '',
-    },
-    signatory: {
-      name: s.signatoryName || '',
-      designation: s.signatoryDesignation || '',
-      signatureUrl: s.signatureUrl || '',
-    },
+    dateText: fmtSlash(today),
+    company,
+    signatory: { name: s.signatoryName || '', designation: s.signatoryDesignation || '', signatureUrl: s.signatureUrl || '' },
     candidate: {
+      title: details.title || '',
       name: a.candidateName || '',
-      address: a.presentAddress || '',
-      phone: a.candidatePhone || '',
-      email: a.candidateEmail || '',
+      relation: details.relation || '',
+      fatherName: details.fatherName || '',
+      addressLines: lines(details.address),
+      pin: details.pin || '',
       applicationNumber: a.applicationNumber || '',
     },
-    offer: {
-      designation: a.offeredDesignation || a.applyingForPost || '',
-      department: a.departmentName || '',
-      base,
-      allowance,
-      gross,
-      annual: gross * 12,
-      grossWords: amountInWords(gross, lang),
-      joiningDate: a.offeredJoiningDate || null,
+    texts: {
+      title: fill(t('offerTitle')),
+      subject: fill(t('offerSubject')),
+      intro: fill(t('offerIntro')),
+      joinLine: fill(t('offerJoinLine')),
+      allowanceLabel: fill(t('offerAllowanceLabel')),
+      pfLabel: fill(t('offerPfLabel')),
+      closing: lines(fill(t('offerClosing'))),
+      acceptance: lines(fill(t('offerAcceptance'))),
     },
-    terms,
+    salary: { base, allowance, pf, showPf, total },
+    // kept for the popup's checks
+    offer: { designation: ph.designation, department: ph.department, gross: base + allowance, joiningDate: a.offeredJoiningDate || null },
+    terms: lines(lang === 'hi' ? s.termsHi : s.termsEn).map(fill),
   };
 };
 

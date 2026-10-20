@@ -176,7 +176,7 @@ const JoiningFormDocument = forwardRef(({ snapshot: s, images = {} }, ref) => {
 
         <div style={{ marginTop: 14, border: `1px solid ${C.line}`, padding: '8px 12px' }}>
           <div style={{ fontWeight: 700 }}>{t.declaration}</div>
-          <p style={{ marginTop: 4, textAlign: 'justify' }}>{t.declText}</p>
+          <p style={{ marginTop: 4, textAlign: 'justify' }}>{s.declaration || t.declText}</p>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, marginTop: 46 }}>

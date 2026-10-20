@@ -281,7 +281,7 @@ const MasterData = () => {
           }`}
         >
           <FileText className="h-4 w-4" />
-          Offer Letter
+          Letters & Documents
         </button>
       </div>
 

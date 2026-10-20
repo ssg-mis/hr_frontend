@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, FileText, Download, AlertTriangle, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import offerLetterApi from './offerLetter.api';
-import { buildSnapshot, toDataUrl, resolveDefaultSettings } from './offerLetter.utils';
+import { buildSnapshot, toDataUrl, resolveDefaultSettings, defaultLetterDetails } from './offerLetter.utils';
 import { renderLetterToPdf } from './offerLetterPdf';
 import OfferLetterDocument from './OfferLetterDocument';
 import { uploadFile } from '../upload/upload.api';
@@ -18,7 +18,8 @@ const sampleApplication = (branch) => {
     candidateName: 'Rahul Sharma',
     candidatePhone: '9876543210',
     candidateEmail: 'rahul.sharma@example.com',
-    presentAddress: 'Ward No. 5, Main Road, Raipur, Chhattisgarh',
+    presentAddress: 'Village – Banari, Naila\nDist.- Janjgir-Champa (C.G.) 495668',
+    fatherName: 'Suresh Sharma',
     offeredDesignation: 'Machine Operator',
     departmentName: 'Production',
     offeredBaseSalary: 12000,
@@ -38,6 +39,7 @@ const OfferLetterModal = ({ application, onClose, sample = false }) => {
   const [data, setData] = useState(null); // { application, settings, nextRefNo }
   const [history, setHistory] = useState([]);
   const [lang, setLang] = useState('en');
+  const [details, setDetails] = useState(null); // candidate lines typed in the popup (father's name, address, pin)
   const [images, setImages] = useState({});
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -57,6 +59,7 @@ const OfferLetterModal = ({ application, onClose, sample = false }) => {
         setHistory(list);
       }
       setData(prep);
+      setDetails((d) => d || defaultLetterDetails(prep.application));
       const s = prep.settings;
       const [logoUrl, letterheadUrl, signatureUrl] = await Promise.all([toDataUrl(s.logoUrl), toDataUrl(s.letterheadUrl), toDataUrl(s.signatureUrl)]);
       setImages({ logoUrl, letterheadUrl, signatureUrl });
@@ -72,15 +75,16 @@ const OfferLetterModal = ({ application, onClose, sample = false }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [application?.id, sample]);
 
-  const snapshot = useMemo(() => (data ? buildSnapshot(data, lang) : null), [data, lang]);
+  const snapshot = useMemo(() => (data && details ? buildSnapshot(data, lang, details) : null), [data, lang, details]);
+  const setDetail = (k) => (e) => setDetails((d) => ({ ...d, [k]: e.target.value }));
 
   const warnings = useMemo(() => {
     if (!snapshot) return [];
     const w = [];
     if (!snapshot.offer.gross) w.push('Offered salary is not filled.');
     if (!snapshot.offer.joiningDate) w.push('Joining date is not filled.');
-    if (!snapshot.company.name) w.push('Company name is missing — set it in Master Data → Offer Letter.');
-    if (!snapshot.signatory.name) w.push('Signatory name is not set in Master Data → Offer Letter.');
+    if (!snapshot.company.name) w.push('Company name is missing — set it in Master Data → Letters & Documents.');
+    if (!snapshot.signatory.name) w.push('Signatory name is not set in Master Data → Letters & Documents.');
     return w;
   }, [snapshot]);
 
@@ -137,7 +141,7 @@ const OfferLetterModal = ({ application, onClose, sample = false }) => {
           <div>
             <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><FileText size={18} /> {sample ? 'Offer Letter Format' : 'Offer Letter'}</h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              {sample ? 'Sample candidate data · your Master Data → Offer Letter settings' : `${application.candidateName} · ${application.applicationNumber}`}
+              {sample ? 'Sample candidate data · your Master Data → Letters & Documents settings' : `${application.candidateName} · ${application.applicationNumber}`}
             </p>
           </div>
           <button onClick={onClose} disabled={generating} className="text-gray-500 hover:text-gray-700"><X size={20} /></button>
@@ -168,6 +172,22 @@ const OfferLetterModal = ({ application, onClose, sample = false }) => {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-gray-700">Letter details</div>
+                <div className="flex gap-2">
+                  <select value={details.title} onChange={setDetail('title')} className="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+                    {['Mr.', 'Ms.', 'Mrs.'].map((x) => <option key={x}>{x}</option>)}
+                  </select>
+                  <select value={details.relation} onChange={setDetail('relation')} className="w-20 border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white">
+                    {['S/O', 'D/O', 'W/O'].map((x) => <option key={x}>{x}</option>)}
+                  </select>
+                </div>
+                <input value={details.fatherName} onChange={setDetail('fatherName')} placeholder="Father's / Husband's name" className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm" />
+                <textarea rows={3} value={details.address} onChange={setDetail('address')} placeholder={'Address (one line per row)\nVillage / Street\nDist. ...'} className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm" />
+                <input value={details.pin} onChange={setDetail('pin')} placeholder="Pin code" maxLength={6} className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm" />
+                <p className="text-[11px] text-gray-500">Name, post, company and salary come from the offer automatically.</p>
+              </div>
+
               <div className="text-xs text-gray-500">Reference no.: <span className="font-mono font-semibold text-gray-800">{snapshot.refNo}</span></div>
 
               {warnings.length > 0 && (
@@ -179,7 +199,7 @@ const OfferLetterModal = ({ application, onClose, sample = false }) => {
               {sample ? (
                 <>
                   <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-100 text-xs text-indigo-800">
-                    This is a format preview with sample data. Real letters are generated from the <b>Letter</b> button on a candidate's row. Change letterhead, signatory and terms in <b>Master Data → Offer Letter</b>.
+                    This is a format preview with sample data. Real letters are generated from the <b>Letter</b> button on a candidate's row. Change letterhead, signatory and terms in <b>Master Data → Letters & Documents</b>.
                   </div>
                   <button onClick={handleSampleDownload} disabled={generating}
                     className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm border ${generating ? 'opacity-60 cursor-wait' : 'border-indigo-200 text-indigo-700 hover:bg-indigo-50'}`}>
@@ -192,7 +212,7 @@ const OfferLetterModal = ({ application, onClose, sample = false }) => {
                 className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white font-semibold text-sm ${generating ? 'bg-indigo-300 cursor-wait' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
                 <Download size={16} /> {generating ? 'Generating...' : 'Generate & Save PDF'}
               </button>
-              <p className="text-[11px] text-gray-500 -mt-3">The PDF is stored in the system and downloaded. Terms, letterhead and signatory come from Master Data → Offer Letter.</p>
+              <p className="text-[11px] text-gray-500 -mt-3">The PDF is stored in the system and downloaded. Terms, letterhead and signatory come from Master Data → Letters & Documents.</p>
 
               <div>
                 <div className="text-sm font-semibold text-gray-700 mb-2">Saved letters ({history.length})</div>
