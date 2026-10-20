@@ -144,7 +144,6 @@ const OfferManagement = () => {
   const sendOfferOnWhatsapp = async (candidate) => {
     const phone = String(candidate.candidatePhone || '').trim();
     if (!phone) { toast.error('Mobile number is missing in the application'); return; }
-    if (!window.confirm(`Send offer letter to ${candidate.candidateName} (${phone}) on WhatsApp?`)) return;
     setWaSendingId(candidate.id);
     const toastId = toast.loading('Sending on WhatsApp...');
     try {
