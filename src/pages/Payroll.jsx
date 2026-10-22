@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import adjustmentPayrollApi from "../features/adjustment-payroll/adjustmentPayroll.api";
-import { toAdjustmentRow } from "../features/adjustment-payroll/adjustmentPayroll.utils";
+import { toAdjustmentRow, fromDbRow } from "../features/adjustment-payroll/adjustmentPayroll.utils";
 import {
   Search, Calendar, Clock, Download, Plus, Check, X, FileText,
   BarChart3, CreditCard, Calculator, Filter, Eye, Trash2, Save,
@@ -86,6 +86,9 @@ const Payroll = () => {
   const [canteenData, setCanteenData] = useState([]);
   const [leavesList, setLeavesList] = useState([]);
   const [attendanceData, setAttendanceData] = useState([]);
+  // Which month the loaded attendance belongs to ("Monthly|YYYY-MM"); guards the Adjustment copy.
+  const [attendanceKey, setAttendanceKey] = useState("");
+  const monthLogsReq = useRef(0);
   const [holidaysList, setHolidaysList] = useState([]);
 
   // Calculated & Edited payroll records
@@ -287,6 +290,8 @@ const Payroll = () => {
 
   // Fetch canteen deductions and attendance logs when month or date range changes
   const loadMonthLogsData = async () => {
+    const reqId = ++monthLogsReq.current;
+    const key = activeMode === "Monthly" ? `Monthly|${selectedMonth}` : `${activeMode}|${startDate}|${endDate}`;
     try {
       let startD = startDate;
       let endD = endDate;
@@ -313,10 +318,15 @@ const Payroll = () => {
         attendancePromise,
       ]);
 
+      // A newer month/range was selected meanwhile: drop this late response so another
+      // month's attendance can never replace the selected month's.
+      if (reqId !== monthLogsReq.current) return;
+
       // Set both at once to avoid a partial-state render where attendance is empty
       // but savedPayrollRuns are already set (which causes wrong absentDays on initial load)
       setCanteenData(cantRes.data || []);
       setAttendanceData(attRes.data || []);
+      setAttendanceKey(key);
     } catch (err) {
       console.error("Error loading month logs data:", err);
     }
@@ -325,6 +335,7 @@ const Payroll = () => {
   useEffect(() => {
     // Reset attendance before re-fetching so stale data doesn't briefly show wrong absent days
     setAttendanceData([]);
+    setAttendanceKey("");
     loadMonthLogsData();
   }, [activeMode, selectedMonth, startDate, endDate]);
 
@@ -2212,23 +2223,76 @@ const Payroll = () => {
 
   const isSavedRun = savedPayrollRuns && savedPayrollRuns.length > 0;
 
-  // Adjustment Payroll: after a monthly save, copy employees that are not in the adjustment table yet
-  // (everyone the first time). Existing adjustment rows are never changed — edits there are kept.
+  // Adjustment Payroll = this payroll + ADV. Every cell takes the payroll value, except ADV and the
+  // cells edited on the Adjustment page, which are kept. The original payroll is only read here.
+  const syncAdjustmentPayroll = async (period, source) => {
+    const fresh = (await getAllRowsForAdjustment()).map(toAdjustmentRow);
+    if (!fresh.length) throw new Error(`No saved payroll found for ${period}`);
+    const res = await adjustmentPayrollApi.list(period);
+    const existing = new Map((res?.data || []).map((d) => [Number(d.employeeId), fromDbRow(d)]));
+    const rows = fresh.map((row) => {
+      const old = existing.get(row.employeeId);
+      existing.delete(row.employeeId);
+      if (!old) return row;
+      const kept = { ...row, advDifference: old.advDifference, editedFields: old.editedFields };
+      for (const f of old.editedFields) if (f in old) kept[f] = old[f];
+      return kept;
+    });
+    rows.push(...existing.values()); // employees only in the adjustment stay untouched
+    await adjustmentPayrollApi.save(period, rows, { markSynced: true, source });
+    return rows.length;
+  };
+
+  // After a monthly save: refresh the Adjustment Payroll from the saved payroll (ADV / edits kept).
   const copyToAdjustmentPayroll = async (period) => {
     try {
-      const rows = await getAllRowsForAdjustment();
-      if (!rows.length) return;
-      const res = await adjustmentPayrollApi.append(period, rows.map(toAdjustmentRow));
-      const added = res?.data?.inserted || 0;
-      if (added) toast.success(`Adjustment Payroll: ${added} employee(s) copied`);
+      const n = await syncAdjustmentPayroll(period, `Payroll saved ${period} (ADV kept)`);
+      toast.success(`Adjustment Payroll updated (${n} rows, ADV kept)`);
     } catch (err) {
       console.error("Adjustment payroll copy failed:", err);
       toast.error(`Adjustment Payroll not updated: ${err.message || "error"}`);
     }
   };
 
+  // Adjustment Payroll repair: /payroll?recopyAdjustment=YYYY-MM re-copies that month from this page's
+  // calculation. ADV and any cell edited on the Adjustment page are kept; the original payroll is not saved.
+  const recopyRequest = useRef(new URLSearchParams(window.location.search).get("recopyAdjustment"));
+  const recopyDone = useRef(false);
+  useEffect(() => {
+    const period = recopyRequest.current;
+    if (!period || !/^\d{4}-\d{2}$/.test(period) || !(isAdmin || isHR)) return;
+    if (activeMode !== "Monthly") { setActiveMode("Monthly"); return; }
+    if (selectedMonth !== period) { setSelectedMonth(period); return; }
+    if (recopyDone.current || loading || ratesLoading || employeeById.size === 0 || attendanceKey !== `Monthly|${period}`) return;
+    recopyDone.current = true;
+    (async () => {
+      const toastId = toast.loading(`Re-copying ${period} to Adjustment Payroll...`);
+      try {
+        const n = await syncAdjustmentPayroll(period, `Re-copied from payroll ${period} (ADV kept)`);
+        toast.success(`Adjustment Payroll ${period} re-copied (${n} rows, ADV kept)`, { id: toastId });
+        window.history.replaceState(null, "", window.location.pathname);
+      } catch (err) {
+        console.error("Adjustment re-copy failed:", err);
+        toast.error(`Re-copy failed: ${err.message || "error"}`, { id: toastId });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMode, selectedMonth, loading, ratesLoading, attendanceKey, employeeById]);
+
   // Adjustment Payroll: read-only fetch of ALL saved rows of the month, mapped exactly like the table.
   const getAllRowsForAdjustment = async () => {
+    // Never copy from another month's attendance (16 Oct 2026: September was copied with October data).
+    const monthOf = (v) => {
+      const str = String(v || "");
+      if (!str.includes("T")) return str.slice(0, 7); // plain "YYYY-MM-DD"
+      const d = new Date(str); // ISO from a DATE column = local midnight, so read it in local time
+      return Number.isNaN(d.getTime()) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    };
+    const attMonths = attendanceData.map((a) => monthOf(a.workDate || a.date || a.attendanceDate));
+    const outside = attMonths.filter((m) => m && m !== selectedMonth).length;
+    if (activeMode !== "Monthly" || ratesLoading || attendanceData.length === 0 || outside > attMonths.length * 0.05) {
+      throw new Error(`Attendance for ${selectedMonth} is not loaded yet. Please wait a moment and click Save Payroll Run again.`);
+    }
     const params = new URLSearchParams({ period: selectedMonth, type: "Monthly", limit: "10000" });
     const res = await api.get(`/salaries/payroll?${params.toString()}`);
     const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
