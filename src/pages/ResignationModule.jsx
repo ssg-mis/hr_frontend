@@ -35,8 +35,37 @@ const stageBadge = (stage) => {
     Settlement: 'bg-purple-100 text-purple-800 border border-purple-200',
     Relieved: 'bg-gray-200 text-gray-800 border border-gray-300',
   }[stage] || 'bg-gray-100 text-gray-700 border border-gray-200';
-  const label = stage === 'MeetingScheduled' ? 'Meeting Scheduled' : stage === 'NoticePeriod' ? 'Notice Period' : stage;
+  const label = stage === 'MeetingScheduled' ? 'Meeting Scheduled' : stage === 'NoticePeriod' ? 'Notice Period' : stage === 'Clearance' ? 'No Dues Clearance' : stage === 'Settlement' ? 'F&F Settlement' : stage;
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${style}`}>{label}</span>;
+};
+
+// Where the resignation is waiting: HR decision (Requested stage) and HOD task-handover approval (clearance).
+const pill = (cls, text, sub) => (
+  <div>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${cls}`}>{text}</span>
+    {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
+  </div>
+);
+const GREEN = 'bg-green-50 text-green-700 border-green-200';
+const AMBER = 'bg-amber-50 text-amber-700 border-amber-200';
+const RED = 'bg-red-50 text-red-700 border-red-200';
+const GREY = 'bg-gray-50 text-gray-500 border-gray-200';
+
+const hrApproval = (r) => {
+  if (r.stage === 'Requested') return pill(AMBER, 'Pending', 'HR to approve / meet');
+  if (r.stage === 'MeetingScheduled') return pill(AMBER, 'Meeting', r.nextMeetingDate ? fmtDate(r.nextMeetingDate) : 'to reschedule');
+  if (r.stage === 'Retained') return pill(GREEN, 'Retained', 'Employee stays');
+  return pill(GREEN, 'Approved', r.noticeStartDate ? fmtDate(r.noticeStartDate) : null);
+};
+
+const hodApproval = (r) => {
+  if (r.stage === 'Retained') return pill(GREY, '—');
+  if (['Requested', 'MeetingScheduled', 'NoticePeriod'].includes(r.stage)) return pill(GREY, 'Not yet', 'At clearance (after leaving)');
+  const cl = r.clearanceChecklist || {};
+  if (cl.handoverStatus === 'Approved' || cl.handover === true) return pill(GREEN, 'Approved', 'Task handover');
+  if (cl.handoverStatus === 'Pending HOD') return pill(AMBER, 'Pending', 'Waiting for HOD');
+  if (cl.handoverStatus === 'Rejected') return pill(RED, 'Rejected', 'Handover rejected');
+  return pill(GREY, 'Not requested', 'HR to send to HOD');
 };
 
 const ResignationModule = () => {
@@ -424,7 +453,7 @@ const ResignationModule = () => {
         noticeRemark: noticeForm.noticeRemark || null,
         stage: 'Left',
       });
-      toast.success('Employee marked as Left — continue in After Leaving Work');
+      toast.success('Employee marked as Left — No Dues requests sent (see No Dues Clearance)');
       setSettingNotice(null);
       load();
     } catch (err) {
@@ -520,6 +549,8 @@ const ResignationModule = () => {
                 <th className="px-6 py-3 text-left">Applying For</th>
                 <th className="px-6 py-3 text-left">Phone</th>
                 <th className="px-6 py-3 text-left">Stage</th>
+                <th className="px-6 py-3 text-left">HR Approval</th>
+                <th className="px-6 py-3 text-left">HOD Approval</th>
                 <th className="px-6 py-3 text-left">Details</th>
                 {activeTab === 'active' && user?.role !== 'employee' && <th className="px-6 py-3 text-center">Action</th>}
               </tr>
@@ -527,7 +558,7 @@ const ResignationModule = () => {
             <tbody className="divide-y divide-gray-200 bg-white">
               {loading ? (
                 <tr>
-                  <td colSpan={user?.role === 'employee' ? 5 : 6} className="px-6 py-16 text-center text-gray-400">
+                  <td colSpan={user?.role === 'employee' ? 7 : 8} className="px-6 py-16 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center space-y-2">
                       <span className="w-8 h-8 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin" />
                       <span className="text-sm font-semibold">Loading...</span>
@@ -536,7 +567,7 @@ const ResignationModule = () => {
                 </tr>
               ) : visibleRows.length === 0 ? (
                 <tr>
-                  <td colSpan={user?.role === 'employee' ? 5 : 6} className="px-6 py-16 text-center text-gray-400 text-sm">
+                  <td colSpan={user?.role === 'employee' ? 7 : 8} className="px-6 py-16 text-center text-gray-400 text-sm">
                     {activeTab === 'active' ? 'No active resignations.' : 'No resolved resignations yet.'}
                   </td>
                 </tr>
@@ -553,6 +584,8 @@ const ResignationModule = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-700">{r.candidatePhone}</td>
                     <td className="px-6 py-4 whitespace-nowrap">{stageBadge(r.stage)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">{hrApproval(r)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">{hodApproval(r)}</td>
                     <td className="px-6 py-4 max-w-xs">
                       {r.stage === 'Requested' && <p className="text-xs text-gray-600 truncate">{r.reason || 'No reason given yet'}</p>}
                       {r.stage === 'MeetingScheduled' && (

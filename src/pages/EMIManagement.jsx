@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 import useAuthStore from '../store/authStore';
 import HodInfo, { useMyHod, HodLabel } from '../components/HodInfo';
+import NoDuesRequests from '../features/resignation/NoDuesRequests';
 
 const groupPaymentsByDay = (payments) => {
     const groups = {};
@@ -47,6 +48,7 @@ const EMIManagement = () => {
     const isHOD = useAuthStore((state) => state.isHOD);
     const isHR = useAuthStore((state) => state.isHR);
     const isAdmin = useAuthStore((state) => state.isAdmin);
+    const hasPageAccess = useAuthStore((state) => state.hasPageAccess);
 
     const hasHODRole = isHOD || user?.roles?.some(r => r.toLowerCase() === 'hod');
     const hasHRRole = isHR || user?.roles?.some(r => r.toLowerCase() === 'hr');
@@ -357,8 +359,12 @@ const EMIManagement = () => {
         }
     };
 
+    // Accounts part of No Dues Clearance (leaving employees' advance / EMI)
+    const canAnswerNoDues = isAdmin || isHR || hasPageAccess?.('/no-dues/accounts');
+
     return (
         <div className="space-y-6 page-content p-6">
+            {canAnswerNoDues && <NoDuesRequests section="accounts" />}
             {isPendingResignation && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 text-amber-800 text-sm">
                     <Info className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />

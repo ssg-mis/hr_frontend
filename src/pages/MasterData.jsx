@@ -33,6 +33,15 @@ const MasterData = () => {
   const [employees, setEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [designations, setDesignations] = useState([]);
+  // "+ Add Department" / "+ Add Designation" (same APIs as the Create Vacancy form)
+  const [addMode, setAddMode] = useState(null); // 'department' | 'designation' | null
+  const [newName, setNewName] = useState('');
+  const [newDeptId, setNewDeptId] = useState('');
+  const [adding, setAdding] = useState(false);
+  // Designation → department link edit (Designations tab)
+  const [editDesgId, setEditDesgId] = useState(null);
+  const [editDeptId, setEditDeptId] = useState('');
+  const [savingLink, setSavingLink] = useState(false);
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -59,6 +68,71 @@ const MasterData = () => {
   useEffect(() => {
     fetchAllMasterData();
   }, []);
+
+  const openAdd = (mode) => { setAddMode(mode); setNewName(''); setNewDeptId(''); };
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name || (addMode === 'designation' && !newDeptId)) return;
+    const list = addMode === 'department' ? departments : designations;
+    if (list.some((x) => String(x.name || '').trim().toLowerCase() === name.toLowerCase())) {
+      toast.error(`${name} already exists`);
+      return;
+    }
+    setAdding(true);
+    try {
+      if (addMode === 'department') await api.post('/departments', { name });
+      else await api.post('/designations', { name, departmentId: Number(newDeptId) });
+      toast.success(`${addMode === 'department' ? 'Department' : 'Designation'} added`);
+      setAddMode(null);
+      fetchAllMasterData();
+    } catch (err) {
+      toast.error(err.message || 'Failed to add');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const AddForm = ({ mode }) => addMode === mode && (
+    <form onSubmit={handleAdd} className="mb-4 p-4 rounded-xl border border-blue-200 bg-blue-50/50 flex flex-col md:flex-row gap-3 md:items-end">
+      <div className="flex-1">
+        <label className="block text-xs font-semibold text-slate-600 mb-1">{mode === 'department' ? 'Department name' : 'Designation name'} <span className="text-red-500">*</span></label>
+        <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} required
+          placeholder={mode === 'department' ? 'e.g. PURCHASE' : 'e.g. PURCHASE ASSISTANT'}
+          className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+      {mode === 'designation' && (
+        <div className="flex-1">
+          <label className="block text-xs font-semibold text-slate-600 mb-1">Department <span className="text-red-500">*</span></label>
+          <select value={newDeptId} onChange={(e) => setNewDeptId(e.target.value)} required
+            className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">Select Department</option>
+            {[...departments].sort((a, b) => String(a.name).localeCompare(String(b.name))).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </div>
+      )}
+      <div className="flex gap-2">
+        <button type="button" onClick={() => setAddMode(null)} className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+        <button type="submit" disabled={adding} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-60">{adding ? 'Saving...' : 'Save'}</button>
+      </div>
+    </form>
+  );
+
+  const saveDesgDepartment = async (desg) => {
+    if (!editDeptId) return;
+    setSavingLink(true);
+    try {
+      await api.patch(`/designations/${desg.id}/department`, { departmentId: Number(editDeptId) });
+      setDesignations((list) => list.map((d) => (d.id === desg.id ? { ...d, departmentId: Number(editDeptId) } : d)));
+      toast.success(`${desg.name} linked to department`);
+      setEditDesgId(null);
+    } catch (err) {
+      toast.error(err.message || 'Failed to update department');
+    } finally {
+      setSavingLink(false);
+    }
+  };
 
   const fetchAllMasterData = async () => {
     setLoading(true);
@@ -482,7 +556,11 @@ const MasterData = () => {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-slate-800">Departments Master List</h2>
+            <button onClick={() => openAdd('department')} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold">
+              <Plus size={16} /> Add Department
+            </button>
           </div>
+          {AddForm({ mode: 'department' })}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {departments.map((dept) => (
               <div key={dept.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
@@ -499,14 +577,41 @@ const MasterData = () => {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-slate-800">Designations Master List</h2>
+            <button onClick={() => openAdd('designation')} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold">
+              <Plus size={16} /> Add Designation
+            </button>
           </div>
+          {AddForm({ mode: 'designation' })}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {designations.map((desg) => (
               <div key={desg.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
                 <div>
                   <div className="font-semibold text-slate-800 text-sm">{desg.name}</div>
                   <div className="text-[11px] text-slate-400">Code: {desg.desgCodeFromCsv || 'N/A'}</div>
+                  {editDesgId === desg.id ? (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <select autoFocus value={editDeptId} onChange={(e) => setEditDeptId(e.target.value)}
+                        className="px-2 py-1 rounded-lg border border-slate-300 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Select Department</option>
+                        {[...departments].sort((a, b) => String(a.name).localeCompare(String(b.name))).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                      <button onClick={() => saveDesgDepartment(desg)} disabled={!editDeptId || savingLink}
+                        className="px-2 py-1 rounded-lg bg-blue-600 text-white text-xs font-semibold disabled:opacity-50">{savingLink ? '...' : 'Save'}</button>
+                      <button onClick={() => setEditDesgId(null)} className="px-2 py-1 rounded-lg border border-slate-300 bg-white text-xs text-slate-600">Cancel</button>
+                    </div>
+                  ) : (() => {
+                    const dept = departments.find((d) => String(d.id) === String(desg.departmentId));
+                    return dept
+                      ? <div className="text-[11px] text-slate-500">Department: <span className="font-semibold">{dept.name}</span></div>
+                      : <div className="text-[11px] text-amber-600 font-semibold">No department</div>;
+                  })()}
                 </div>
+                {editDesgId !== desg.id && (
+                  <button onClick={() => { setEditDesgId(desg.id); setEditDeptId(desg.departmentId ? String(desg.departmentId) : ''); }}
+                    title="Change department" className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-white">
+                    <Edit2 size={14} />
+                  </button>
+                )}
               </div>
             ))}
           </div>

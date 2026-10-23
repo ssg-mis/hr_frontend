@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell } from 'recharts';
 import useAuthStore from '../store/authStore';
 import { generateCanteenQrPdf } from '../lib/generateCanteenQrPdf';
+import NoDuesRequests from '../features/resignation/NoDuesRequests';
 
 const CanteenDashboard = () => {
   const user = useAuthStore((state) => state.user);
@@ -21,6 +22,7 @@ const CanteenDashboard = () => {
   const canUseTab = (id) => {
     if (isAdmin || isHR) return true;
     if (id === 'analytics' || id === 'deductions') return false;
+    if (id === 'nodues') return isCanteenManager || hasPageAccess('/no-dues/canteen');
     if (id === 'logs') return isEmployeeOrManager || hasPageAccess('/canteen');
     return hasPageAccess(`/canteen/${id}`);
   };
@@ -431,7 +433,8 @@ const CanteenDashboard = () => {
             { id: "deductions", label: "Monthly Deductions", icon: CreditCard },
             { id: "logs", label: "Scanned Logs History", icon: Clock },
             { id: "meals", label: "Meal Rates Config", icon: Settings },
-            { id: "qr", label: "Employee QR Codes", icon: QrCode }
+            { id: "qr", label: "Employee QR Codes", icon: QrCode },
+            { id: "nodues", label: "No Dues Requests", icon: Receipt }
           ].filter(tab => canUseTab(tab.id)).map(tab => (
             <button
               key={tab.id}
@@ -452,6 +455,8 @@ const CanteenDashboard = () => {
       {/* 4. Tab Content */}
       <div className="mt-4">
         
+        {activeTab === "nodues" && <NoDuesRequests section="canteen" />}
+
         {/* Tab 1: Analytics */}
         {activeTab === "analytics" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -10,8 +10,8 @@ export const adjustmentPayrollApi = {
   list: (period, type) => api.get(`/adjustment-payrolls?${qs(period, type)}`),
 
   // Replaces the whole set for the period. markSynced=true when copied/synced from payroll.
-  save: (period, rows, { markSynced = false, type = 'Monthly' } = {}) =>
-    api.put('/adjustment-payrolls', { period, type, rows, markSynced }),
+  save: (period, rows, { markSynced = false, type = 'Monthly', source } = {}) =>
+    api.put('/adjustment-payrolls', { period, type, rows, markSynced, source }),
 
   // Insert employees missing from the adjustment (all of them the first time). Never updates existing rows.
   append: (period, rows, type = 'Monthly') => api.post('/adjustment-payrolls/append', { period, type, rows }).then((r) => r),

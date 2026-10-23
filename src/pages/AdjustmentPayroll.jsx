@@ -287,7 +287,7 @@ const AdjustmentPayroll = () => {
           <AlertTriangle size={18} className="shrink-0 mt-0.5" />
           <span>
             The original payroll for {period} was saved again on <b>{fmtDateTime(meta.originalUpdatedAt)}</b>, after this adjustment was copied ({fmtDateTime(meta.sourceSyncedAt)}).
-            Adjustment values are <b>not</b> changed by payroll saves — only newly added employees are copied in. Your adjustment data stays as it is.
+            Open Payroll for {period} and click <b>Save Payroll Run</b> to refresh this copy — payroll values are taken again, ADV and the cells you edited here are kept.
           </span>
         </div>
       )}

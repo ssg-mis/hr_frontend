@@ -90,7 +90,7 @@ const Sidebar = ({ onClose }) => {
       items: [
         { path: "/resignation-module", label: "Resignation Requests" },
         { path: "/after-leaving-work", label: "After Leaving Work" },
-        { path: "/leaving", label: "Exit Clearance" },
+        { path: "/leaving", label: "No Dues Clearance" },
       ],
     },
     {
@@ -193,7 +193,7 @@ const Sidebar = ({ onClose }) => {
     const resignationSubItems = [
       { path: '/resignation-module', label: 'Resignation Requests' },
       { path: '/after-leaving-work', label: 'After Leaving Work' },
-      { path: '/leaving', label: 'Exit Clearance' },
+      { path: '/leaving', label: 'No Dues Clearance' },
     ].filter((item) => hasPageAccess(item.path));
 
     if (resignationSubItems.length > 0) {

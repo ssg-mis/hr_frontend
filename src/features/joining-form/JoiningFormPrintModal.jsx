@@ -41,10 +41,10 @@ const JoiningFormPrintModal = ({ applicationId, values, info, options, letterhea
 
   useEffect(() => {
     (async () => {
-      const [logoUrl, letterheadUrl, photo] = await Promise.all([
-        toDataUrl(letterhead?.logoUrl), toDataUrl(letterhead?.letterheadUrl), toDataUrl(values.candidatePhoto),
+      const [logoUrl, letterheadUrl, photo, footerImageUrl] = await Promise.all([
+        toDataUrl(letterhead?.logoUrl), toDataUrl(letterhead?.letterheadUrl), toDataUrl(values.candidatePhoto), toDataUrl(letterhead?.footerImageUrl),
       ]);
-      setImages({ logoUrl, letterheadUrl, photo });
+      setImages({ logoUrl, letterheadUrl, photo, footerImageUrl });
     })();
   }, [letterhead, values.candidatePhoto]);
 
@@ -62,6 +62,7 @@ const JoiningFormPrintModal = ({ applicationId, values, info, options, letterhea
         contactLine: letterhead?.contactLine || '',
         logoUrl: letterhead?.logoUrl || '',
         letterheadUrl: letterhead?.letterheadUrl || '',
+        footerImageUrl: letterhead?.footerImageUrl || '',
         footerText: letterhead?.footerText || '',
       },
       names: {

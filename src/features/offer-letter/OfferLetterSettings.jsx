@@ -7,7 +7,7 @@ import { buildSnapshot } from './offerLetter.utils';
 import { uploadFile } from '../upload/upload.api';
 
 const FIELDS = [
-  'companyName', 'companyAddress', 'contactLine', 'logoUrl', 'letterheadUrl', 'footerText',
+  'companyName', 'companyAddress', 'contactLine', 'logoUrl', 'letterheadUrl', 'footerImageUrl', 'footerText',
   'signatoryName', 'signatoryDesignation', 'signatureUrl',
   'probationMonths', 'noticeDays', 'validityDays', 'termsEn', 'termsHi',
   'offerTitleEn', 'offerTitleHi', 'offerSubjectEn', 'offerSubjectHi', 'offerIntroEn', 'offerIntroHi',
@@ -275,7 +275,8 @@ const OfferLetterSettings = () => {
                   <ImageField field="letterheadUrl" label="Full letterhead image (optional)" hint="Wide image, ~2000×300." />
                 </div>
               </Card>
-              <Card title="Footer (optional)" desc="Small text at the bottom, e.g. CIN / GSTIN / registered office.">
+              <Card title="Footer (optional)" desc="Footer image from the company letterhead, and/or small text at the bottom (CIN / GSTIN / registered office).">
+                <ImageField field="footerImageUrl" label="Footer image (optional)" hint="Wide image from the letterhead footer." />
                 {Text({ field: 'footerText', label: 'Footer text', bilingual: false })}
               </Card>
             </>

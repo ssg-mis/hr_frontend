@@ -18,6 +18,7 @@ const OfferLetterDocument = forwardRef(({ snapshot: s, images = {} }, ref) => {
   const logo = images.logoUrl ?? s.company.logoUrl;
   const letterhead = images.letterheadUrl ?? s.company.letterheadUrl;
   const signature = images.signatureUrl ?? s.signatory.signatureUrl;
+  const footerImage = images.footerImageUrl ?? s.company.footerImageUrl;
   const c = s.candidate;
   const cell = { padding: '4px 8px', border: `1px solid ${C.line}` };
   const P = { margin: 0 };
@@ -97,6 +98,8 @@ const OfferLetterDocument = forwardRef(({ snapshot: s, images = {} }, ref) => {
           </div>
         )}
       </div>
+      {/* Footer image (Master Data letterhead footer) */}
+      {footerImage && <img src={footerImage} alt="" style={{ width: '100%', display: 'block' }} />}
     </div>
   );
 });
