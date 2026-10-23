@@ -26,6 +26,11 @@ export const resignationApi = {
 
   recordMeetingOutcome: (id, meetingId, payload) =>
     api.patch(`/resignations/${id}/meetings/${meetingId}`, payload).then((r) => r.data),
+
+  // No Dues Clearance — section: canteen | accounts | store | hr
+  noDuesInbox: (section) => api.get(`/resignations/no-dues?section=${section}`).then((r) => r.data || []),
+  // body: { status: 'NoDue' | 'Due' | 'Approved', amount?, remark? }
+  noDuesRespond: (id, section, body) => api.post(`/resignations/${id}/no-dues/${section}`, body),
 };
 
 export default resignationApi;

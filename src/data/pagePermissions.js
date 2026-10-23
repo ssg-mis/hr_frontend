@@ -34,7 +34,9 @@ export const SYSTEM_MODULES = [
     description: 'Resignation requests, asset clearance, and full & final work',
     pages: [
       { id: '/resignation-module', label: 'Resignation Requests', path: '/resignation-module', description: 'Submit and process employee resignations' },
-      { id: '/leaving', label: 'Exit Clearance', path: '/leaving', description: 'Departmental asset and equipment handover checklist' },
+      { id: '/leaving', label: 'No Dues Clearance', path: '/leaving', description: 'Department, Canteen, Store, Accounts No Due responses and HR approval' },
+      { id: '/no-dues/accounts', label: 'No Dues — Accounts (Advance / EMI)', path: '/no-dues/accounts', description: 'Answer No Due / Due for leaving employees (box on EMI Management page)' },
+      { id: '/no-dues/canteen', label: 'No Dues — Canteen', path: '/no-dues/canteen', description: 'Answer canteen No Due / Due for leaving employees (tab on Canteen page)' },
       { id: '/after-leaving-work', label: 'After Leaving Work (FNF)', path: '/after-leaving-work', description: 'Full & final settlement and relieving letters' },
     ],
   },
@@ -237,6 +239,7 @@ export const ROLE_PAGE_PRESETS = {
   CanteenManager: [
     '/canteen',
     '/canteen/scan',
+    '/no-dues/canteen',
   ],
 };
 
