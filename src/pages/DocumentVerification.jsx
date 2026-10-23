@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Search, FileCheck, CheckCircle, X, ExternalLink, ShieldCheck, ShieldX } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { jobApplicationApi } from '../features/jobApplication/jobApplication.api';
+import { encodeAppNumber } from '../lib/token';
 import { uploadFile } from '../features/upload/upload.api';
 
 // checklist key -> { label, field on the application to check for / link to }
@@ -13,6 +14,7 @@ const DOC_ITEMS = [
   { key: 'experienceLetter', label: 'Experience Letter', field: 'experienceLetter', isLink: true },
   { key: 'salarySlip', label: 'Salary Slip', field: 'salarySlip', isLink: true },
   { key: 'relievingLetter', label: 'Relieving Letter', field: 'relievingLetter', isLink: true },
+  { key: 'bankStatement', label: 'Bank Statement', field: 'bankStatement', isLink: true },
 ];
 
 const statusBadge = (verified) => (
@@ -33,6 +35,13 @@ const DocumentVerification = () => {
   const [checklist, setChecklist] = useState({});
   const [remark, setRemark] = useState('');
 
+  const copyUploadLink = (appNum) => {
+    const tkn = encodeAppNumber(appNum);
+    const link = `${window.location.origin}/upload-documents/${tkn}`;
+    navigator.clipboard.writeText(link);
+    toast.success('Upload link copied to clipboard!');
+  };
+
   const [uploadingField, setUploadingField] = useState(null);
   const [viewingDetails, setViewingDetails] = useState(null);
 
@@ -40,15 +49,14 @@ const DocumentVerification = () => {
     setTableLoading(true);
     try {
       const res = await jobApplicationApi.list({ stage: 'OfferAccepted', limit: 1000, search: searchTerm });
-      const accepted = res.data || [];
-      setPendingData(accepted.filter((a) => !a.documentChecklist));
+      setPendingData(res.data || []);
 
       const historyRes = await jobApplicationApi.list({
         stage: 'Verified,Hired,Rejected',
         limit: 1000,
         search: searchTerm,
       });
-      setHistoryData((historyRes.data || []).filter((a) => a.documentChecklist));
+      setHistoryData(historyRes.data || []);
     } catch (err) {
       toast.error(err.message || 'Failed to load verification data');
     } finally {
@@ -102,6 +110,36 @@ const DocumentVerification = () => {
   };
 
   const submitVerification = async (decision) => {
+    if (decision === 'Verified') {
+      const requiredKeys = ['aadhar', 'photo', 'resume'];
+      if (verifying.experienceRequired) {
+        requiredKeys.push('experienceLetter', 'salarySlip', 'relievingLetter', 'bankStatement');
+      }
+
+      // Check checklist checkboxes
+      const missingChecklist = requiredKeys.filter((key) => !checklist[key]);
+      if (missingChecklist.length > 0) {
+        const missingLabels = missingChecklist
+          .map((key) => DOC_ITEMS.find((item) => item.key === key)?.label)
+          .join(', ');
+        toast.error(`Cannot verify. The following checklist items must be checked: ${missingLabels}`);
+        return;
+      }
+
+      // Check database values in candidate row
+      const missingFiles = requiredKeys.filter((key) => {
+        const field = DOC_ITEMS.find((item) => item.key === key)?.field;
+        return !verifying[field];
+      });
+      if (missingFiles.length > 0) {
+        const missingLabels = missingFiles
+          .map((key) => DOC_ITEMS.find((item) => item.key === key)?.label)
+          .join(', ');
+        toast.error(`Cannot verify. The following required documents are not uploaded/provided: ${missingLabels}`);
+        return;
+      }
+    }
+
     setSubmitting(true);
     const verifyingAppNumber = verifying.applicationNumber;
     try {
@@ -117,10 +155,9 @@ const DocumentVerification = () => {
       setTableLoading(true);
       try {
         const res = await jobApplicationApi.list({ stage: 'OfferAccepted', limit: 1000, search: searchTerm });
-        const accepted = res.data || [];
-        setPendingData(accepted.filter((a) => !a.documentChecklist));
+        setPendingData(res.data || []);
         const historyRes = await jobApplicationApi.list({ stage: 'Verified,Hired,Rejected', limit: 1000, search: searchTerm });
-        const historyList = (historyRes.data || []).filter((a) => a.documentChecklist);
+        const historyList = historyRes.data || [];
         setHistoryData(historyList);
         // Auto-refresh viewingDetails if it was the same candidate
         const refreshed = historyList.find((a) => a.applicationNumber === verifyingAppNumber);
@@ -232,9 +269,14 @@ const DocumentVerification = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-gray-700">{c.candidatePhone}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       {activeTab === 'pending' ? (
-                        <button onClick={() => openVerify(c)} className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors">
-                          <FileCheck size={13} /> Verify Documents
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button onClick={() => openVerify(c)} className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors">
+                            <FileCheck size={13} /> Verify Documents
+                          </button>
+                          <button onClick={() => copyUploadLink(c.applicationNumber)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 bg-white hover:bg-gray-55 text-gray-700 font-bold rounded-lg text-xs transition-colors">
+                            <ExternalLink size={13} /> Copy Link
+                          </button>
+                        </div>
                       ) : (
                         <div className="flex items-center justify-center gap-3">
                           {statusBadge(c.documentsVerified)}
