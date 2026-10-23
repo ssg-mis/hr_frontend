@@ -969,6 +969,31 @@ const VacancyPage = () => {
                 <div>
                   <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-3">General Details</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Company <span className="text-red-500">*</span></label>
+                      <select
+                        name="branchId"
+                        required
+                        value={formData.branchId}
+                        onChange={(e) => {
+                          const bId = e.target.value;
+                          const selectedB = branches.find((b) => String(b.id) === String(bId));
+                          setFormData((prev) => ({
+                            ...prev,
+                            branchId: bId,
+                            preferredLocation: selectedB ? `${selectedB.name}\n${selectedB.address || ''}` : prev.preferredLocation,
+                          }));
+                        }}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+                      >
+                        <option value="">Select Company</option>
+                        {branches.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name} ({b.address})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-1">Vacancy Name</label>
                       <input
@@ -1126,30 +1151,6 @@ const VacancyPage = () => {
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
                         required
                       />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-1">Company Branch</label>
-                      <select
-                        name="branchId"
-                        value={formData.branchId}
-                        onChange={(e) => {
-                          const bId = e.target.value;
-                          const selectedB = branches.find((b) => String(b.id) === String(bId));
-                          setFormData((prev) => ({
-                            ...prev,
-                            branchId: bId,
-                            preferredLocation: selectedB ? `${selectedB.name}\n${selectedB.address || ''}` : prev.preferredLocation,
-                          }));
-                        }}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
-                      >
-                        <option value="">Select Branch</option>
-                        {branches.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name} ({b.address})
-                          </option>
-                        ))}
-                      </select>
                     </div>
                     <div className="md:col-span-2">
                       <label className="block text-sm font-semibold text-gray-700 mb-1">Preferred Qualification</label>
