@@ -61,8 +61,8 @@ const OfferLetterModal = ({ application, onClose, sample = false }) => {
       setData(prep);
       setDetails((d) => d || defaultLetterDetails(prep.application));
       const s = prep.settings;
-      const [logoUrl, letterheadUrl, signatureUrl] = await Promise.all([toDataUrl(s.logoUrl), toDataUrl(s.letterheadUrl), toDataUrl(s.signatureUrl)]);
-      setImages({ logoUrl, letterheadUrl, signatureUrl });
+      const [logoUrl, letterheadUrl, signatureUrl, footerImageUrl] = await Promise.all([toDataUrl(s.logoUrl), toDataUrl(s.letterheadUrl), toDataUrl(s.signatureUrl), toDataUrl(s.footerImageUrl)]);
+      setImages({ logoUrl, letterheadUrl, signatureUrl, footerImageUrl });
     } catch (err) {
       toast.error(err.message || 'Failed to load offer letter data');
     } finally {

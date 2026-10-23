@@ -99,6 +99,7 @@ export const buildSnapshot = ({ application: a, settings: s, nextRefNo }, lang, 
     contactLine: s.contactLine || '',
     logoUrl: s.logoUrl || '',
     letterheadUrl: s.letterheadUrl || '',
+    footerImageUrl: s.footerImageUrl || '',
     footerText: s.footerText || '',
   };
   const ph = {

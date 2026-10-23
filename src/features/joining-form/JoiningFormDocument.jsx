@@ -60,6 +60,7 @@ const JoiningFormDocument = forwardRef(({ snapshot: s, images = {} }, ref) => {
   const yn = (b) => (b ? t.yes : t.no);
   const logo = images.logoUrl ?? s.company.logoUrl;
   const letterhead = images.letterheadUrl ?? s.company.letterheadUrl;
+  const footerImage = images.footerImageUrl ?? s.company.footerImageUrl;
   const photo = images.photo ?? s.photo;
   const cell = { padding: '5px 8px', borderBottom: `1px solid ${C.line}`, verticalAlign: 'top' };
   const lab = { ...cell, color: C.muted, width: '22%', background: '#fafafa' };
@@ -191,6 +192,7 @@ const JoiningFormDocument = forwardRef(({ snapshot: s, images = {} }, ref) => {
           </div>
         )}
       </div>
+      {footerImage && <img src={footerImage} alt="" style={{ width: '100%', display: 'block' }} />}
     </div>
   );
 });
