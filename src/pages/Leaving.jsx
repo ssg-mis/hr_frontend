@@ -43,6 +43,7 @@ const Leaving = () => {
   });
   const [clearanceRemark, setClearanceRemark] = useState('');
   const [answer, setAnswer] = useState({}); // section -> { due, amount, remark } (HR answering in the popup)
+  const [storeItems, setStoreItems] = useState({ data: [], loading: false, unavailable: false });
 
   const loadData = async () => {
     setLoading(true);
@@ -79,6 +80,20 @@ const Leaving = () => {
     });
     setClearanceRemark(row.clearanceRemark || '');
     setAnswer({});
+    loadStorePending(row.id);
+  };
+
+  // Live check against the separate Store app (Employee Loan Tracker) for the "Store" section.
+  const loadStorePending = async (resignationId) => {
+    setStoreItems({ data: [], loading: true, unavailable: false });
+    try {
+      const res = await resignationApi.storePending(resignationId);
+      setStoreItems({ data: res?.data || [], loading: false, unavailable: !!res?.unavailable });
+      // Store just got auto-marked "No Due" on the backend — refresh so the status pill updates.
+      if (res?.autoCleared) loadData();
+    } catch (err) {
+      setStoreItems({ data: [], loading: false, unavailable: true });
+    }
   };
 
   // Canteen / Accounts / Store answer (HR may answer on behalf) and the final HR approval.
@@ -538,9 +553,47 @@ const Leaving = () => {
                         {e.status === 'Cleared' && <div className="text-green-700">Done by {e.clearedBy} · {fmtDate(e.clearedAt)}</div>}
                       </div>
                     )}
-                    {editable && e.status === 'Pending' && (
+                    {section === 'store' && e.status === 'Pending' && (
+                      storeItems.loading ? (
+                        <p className="text-xs text-gray-400 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Checking Store…</p>
+                      ) : storeItems.unavailable ? (
+                        <p className="text-xs text-amber-600">Could not reach Store — check items returned and answer manually.</p>
+                      ) : storeItems.data.length === 0 ? (
+                        <p className="text-xs text-gray-500">No accessories ever issued to this employee from Store.</p>
+                      ) : (
+                        <div className="text-xs space-y-2">
+                          {storeItems.data.filter((it) => it.status !== 'Closed').length > 0 && (
+                            <div className="space-y-1">
+                              <p className="text-red-700 font-medium">Not yet returned (from Employee Loan Tracker):</p>
+                              <ul className="list-disc list-inside text-gray-700">
+                                {storeItems.data.filter((it) => it.status !== 'Closed').map((it, i) => (
+                                  <li key={i}>{it.productName} — {it.remaining} {it.uom} pending (issued {fmtDate(it.issuedAt)})</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {storeItems.data.filter((it) => it.status === 'Closed').length > 0 && (
+                            <div className="space-y-1">
+                              <p className="text-green-700 font-medium">Already returned:</p>
+                              <ul className="list-disc list-inside text-gray-600">
+                                {storeItems.data.filter((it) => it.status === 'Closed').map((it, i) => (
+                                  <li key={i}>
+                                    {it.productName} x{it.issuedQuantity} — returned {it.returnedAt ? new Date(it.returnedAt).toLocaleString() : ''}
+                                    {it.returnRemarks && <span className="italic"> ("{it.returnRemarks}")</span>}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {storeItems.data.every((it) => it.status === 'Closed') && (
+                            <p className="text-green-700">Everything issued has been returned.</p>
+                          )}
+                        </div>
+                      )
+                    )}
+                    {editable && e.status === 'Pending' && section !== 'store' && (
                       <p className="text-xs text-gray-500">
-                        {section === 'store' ? 'Check items returned and answer here.' : `Waiting for ${section === 'canteen' ? 'the canteen manager (Canteen page → No Dues Requests)' : 'accounts (EMI Management → No Dues Requests)'}. HR can also answer here.`}
+                        {`Waiting for ${section === 'canteen' ? 'the canteen manager (Canteen page → No Dues Requests)' : 'accounts (EMI Management → No Dues Requests)'}. HR can also answer here.`}
                       </p>
                     )}
                     {editable && e.status === 'Due' && <p className="text-xs text-amber-700">Due received — check it, then click No Due to mark it done.</p>}

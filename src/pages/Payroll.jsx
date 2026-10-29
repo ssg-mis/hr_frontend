@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import adjustmentPayrollApi from "../features/adjustment-payroll/adjustmentPayroll.api";
-import { toAdjustmentRow, fromDbRow } from "../features/adjustment-payroll/adjustmentPayroll.utils";
+import { toAdjustmentRow, fromDbRow, prevMonthPeriod } from "../features/adjustment-payroll/adjustmentPayroll.utils";
 import {
   Search, Calendar, Clock, Download, Plus, Check, X, FileText,
   BarChart3, CreditCard, Calculator, Filter, Eye, Trash2, Save,
@@ -2225,18 +2225,36 @@ const Payroll = () => {
 
   // Adjustment Payroll = this payroll + ADV. Every cell takes the payroll value, except ADV and the
   // cells edited on the Adjustment page, which are kept. The original payroll is only read here.
+  // A brand-new row (employee not yet in this month's adjustment) starts its ADV from last month's
+  // running balance instead of 0 — once a row exists for a month it is never retroactively touched.
   const syncAdjustmentPayroll = async (period, source) => {
     const fresh = (await getAllRowsForAdjustment()).map(toAdjustmentRow);
     if (!fresh.length) throw new Error(`No saved payroll found for ${period}`);
     const res = await adjustmentPayrollApi.list(period);
     const existing = new Map((res?.data || []).map((d) => [Number(d.employeeId), fromDbRow(d)]));
+
+    const prevAdv = new Map();
+    const prevPeriod = prevMonthPeriod(period);
+    if (prevPeriod) {
+      try {
+        const prevRes = await adjustmentPayrollApi.list(prevPeriod);
+        for (const d of prevRes?.data || []) prevAdv.set(Number(d.employeeId), Number(d.advDifference) || 0);
+      } catch {
+        // No adjustment payroll saved for the previous month — nothing to carry forward.
+      }
+    }
+
     const rows = fresh.map((row) => {
       const old = existing.get(row.employeeId);
       existing.delete(row.employeeId);
-      if (!old) return row;
-      const kept = { ...row, advDifference: old.advDifference, editedFields: old.editedFields };
-      for (const f of old.editedFields) if (f in old) kept[f] = old[f];
-      return kept;
+      if (old) {
+        const kept = { ...row, advDifference: old.advDifference, editedFields: old.editedFields };
+        for (const f of old.editedFields) if (f in old) kept[f] = old[f];
+        return kept;
+      }
+      const carried = prevAdv.get(row.employeeId) || 0;
+      if (!carried) return row;
+      return { ...row, advDifference: carried, originalValues: { ...row.originalValues, advDifference: carried } };
     });
     rows.push(...existing.values()); // employees only in the adjustment stay untouched
     await adjustmentPayrollApi.save(period, rows, { markSynced: true, source });
