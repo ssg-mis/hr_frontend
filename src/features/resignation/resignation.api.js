@@ -31,6 +31,9 @@ export const resignationApi = {
   noDuesInbox: (section) => api.get(`/resignations/no-dues?section=${section}`).then((r) => r.data || []),
   // body: { status: 'NoDue' | 'Due' | 'Approved', amount?, remark? }
   noDuesRespond: (id, section, body) => api.post(`/resignations/${id}/no-dues/${section}`, body),
+  // Live pull from the separate Store app: items this employee hasn't returned yet.
+  // Resolves to { data: [...], unavailable? } — unavailable means Store couldn't be reached.
+  storePending: (id) => api.get(`/resignations/${id}/store-pending`),
 };
 
 export default resignationApi;
