@@ -68,6 +68,15 @@ export const cascade = (row, changed) => {
 
 const snapshotOf = (row) => Object.fromEntries(EDITABLE_FIELDS.map((f) => [f, row[f]]));
 
+// "2026-09" -> "2026-08". Used to carry the ADV balance into a brand-new month's row.
+export const prevMonthPeriod = (period) => {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(period || '').trim());
+  if (!m) return null;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1));
+  d.setUTCMonth(d.getUTCMonth() - 1);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
 // Payroll screen row (mapSavedPayrollRunToRow output) -> adjustment row.
 export const toAdjustmentRow = (p) => {
   const isBank = String(p.paymentMode || p.payMode || 'CASH').toUpperCase().includes('BANK');
