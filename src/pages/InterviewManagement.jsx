@@ -284,6 +284,17 @@ const InterviewManagement = () => {
                   </select>
                   <p className="text-xs text-gray-400 mt-1">"Reschedule" keeps the candidate in the Interview stage with the updated date.</p>
                 </div>
+                {recording.vacancyStatus === 'Closed' && form.result === 'Selected' && (
+                  <div className="bg-red-50 text-red-800 p-4 rounded-xl border border-red-200 text-sm font-semibold flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
+                      <span>Cannot Send Offer</span>
+                    </div>
+                    <p className="text-xs text-red-650 font-medium leading-relaxed mt-1">
+                      can not send offer edit the vacancy or create new one
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">Feedback / Remark</label>
                   <textarea name="interviewRemark" rows={3} value={form.interviewRemark} onChange={handleChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Panel notes, rating, next steps..." />
@@ -291,7 +302,7 @@ const InterviewManagement = () => {
               </div>
               <div className="flex justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50/50">
                 <button type="button" onClick={() => setRecording(null)} disabled={submitting} className="px-5 py-2.5 border border-gray-250 bg-white hover:bg-gray-100 text-gray-700 font-semibold rounded-xl">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl">{submitting ? 'Saving...' : 'Save Outcome'}</button>
+                <button type="submit" disabled={submitting || (recording.vacancyStatus === 'Closed' && form.result === 'Selected')} className={`px-5 py-2.5 text-white font-semibold rounded-xl transition-colors ${(recording.vacancyStatus === 'Closed' && form.result === 'Selected') ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-150'}`}>{submitting ? 'Saving...' : 'Save Outcome'}</button>
               </div>
             </form>
           </div>
