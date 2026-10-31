@@ -175,8 +175,8 @@ const Sidebar = ({ onClose }) => {
       { path: '/selection-process', label: 'Selection Process' },
       { path: '/offer-management', label: 'Offer Management' },
       { path: '/document-verification', label: 'Document Verification' },
-      { path: '/joining', label: 'Joining' },
-    ].filter((item) => hasPageAccess(item.path));
+      { path: '/joining', label: 'Joining', alsoFor: '/joining/direct-form' },
+    ].filter((item) => hasPageAccess(item.path) || (item.alsoFor && hasPageAccess(item.alsoFor)));
 
     if (recruitmentSubItems.length > 0) {
       addItem({

@@ -26,6 +26,7 @@ export const SYSTEM_MODULES = [
       { id: '/offer-management', label: 'Offer Management', path: '/offer-management', description: 'Generate offers and collect onboarding documents' },
       { id: '/document-verification', label: 'Document Verification', path: '/document-verification', description: 'Verify Aadhaar, PAN, certificates and KYC' },
       { id: '/joining', label: 'Joining & Onboarding', path: '/joining', description: 'Generate employee code and complete onboarding' },
+      { id: '/joining/direct-form', label: 'Direct Joining Form', path: '/joining/direct-form', description: 'Fill the full joining form for a new employee without an application (button on Joining page); HR completes the joining' },
     ],
   },
   {
@@ -164,6 +165,7 @@ export const ROLE_PAGE_PRESETS = {
     '/offer-management',
     '/document-verification',
     '/joining',
+    '/joining/direct-form',
     '/resignation-module',
     '/after-leaving-work',
     '/leaving',

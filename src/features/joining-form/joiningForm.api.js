@@ -12,6 +12,13 @@ export const joiningFormApi = {
   complete: (applicationId, values) => api.post(`/joining-forms/${applicationId}/complete`, { values }),
 
   savePdf: (applicationId, pdfUrl, language) => api.post(`/joining-forms/${applicationId}/pdf`, { pdfUrl, language }),
+
+  // Direct Joining Form (no application) — filled by management, completed by HR
+  directList: () => api.get('/joining-forms/direct').then((r) => r.data),
+  // applicationId 'new' -> blank form; returns { values, options, form }
+  directGet: (applicationId = 'new') => api.get(`/joining-forms/direct/${applicationId}`).then((r) => r.data),
+  directCreate: (values) => api.post('/joining-forms/direct', { values }),
+  directUpdate: (applicationId, values) => api.put(`/joining-forms/direct/${applicationId}`, { values }),
 };
 
 export default joiningFormApi;

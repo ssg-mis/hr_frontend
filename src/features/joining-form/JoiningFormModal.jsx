@@ -6,15 +6,15 @@ import joiningFormApi from './joiningForm.api';
 import { jobApplicationApi } from '../jobApplication/jobApplication.api';
 import JoiningFormPrintModal from './JoiningFormPrintModal';
 
-const RELATIONS = ['Father', 'Mother', 'Spouse', 'Son', 'Daughter', 'Brother', 'Sister', 'Other'];
-const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-const WEEK_LABEL = { SUN: 'Sunday', MON: 'Monday', TUE: 'Tuesday', WED: 'Wednesday', THU: 'Thursday', FRI: 'Friday', SAT: 'Saturday' };
+export const RELATIONS = ['Father', 'Mother', 'Spouse', 'Son', 'Daughter', 'Brother', 'Sister', 'Other'];
+export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+export const WEEK_LABEL = { SUN: 'Sunday', MON: 'Monday', TUE: 'Tuesday', WED: 'Wednesday', THU: 'Thursday', FRI: 'Friday', SAT: 'Saturday' };
 const fmtRupees = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const inputCls = (err) =>
+export const inputCls = (err) =>
   `w-full border rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${err ? 'border-red-400 bg-red-50/30' : 'border-gray-300'}`;
 
-const Field = ({ label, required, error, children, className = '' }) => (
+export const Field = ({ label, required, error, children, className = '' }) => (
   <div className={className}>
     <label className="block text-xs font-semibold text-gray-600 mb-1">{label}{required && <span className="text-red-500"> *</span>}</label>
     {children}
@@ -22,7 +22,7 @@ const Field = ({ label, required, error, children, className = '' }) => (
   </div>
 );
 
-const Section = ({ title, children }) => (
+export const Section = ({ title, children }) => (
   <section className="space-y-3">
     <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wide border-b border-indigo-100 pb-1">{title}</h4>
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{children}</div>
@@ -182,8 +182,11 @@ const JoiningFormModal = ({ application, onClose, onDone }) => {
               </div>
               <div className="flex-1">
                 <Section title="A. Job Details">
-                  <Field label="Employee / Biometric Code" required error={errors.employeeCode}>
-                    <input value={v.employeeCode} onChange={set('employeeCode')} className={`${inputCls(errors.employeeCode)} font-mono`} placeholder="Same as punching machine" />
+                  <Field label="Employee Code (auto)">
+                    <div className="h-[38px] flex items-center gap-2 px-3 rounded-lg bg-gray-50 border border-gray-200 text-sm">
+                      <span className="font-mono font-semibold">{v.employeeCode}</span>
+                      {!isCompleted && <span className="text-[11px] text-gray-400">next number · given on Complete Joining</span>}
+                    </div>
                   </Field>
                   <Field label="Joining Date" required error={errors.joiningDate}>
                     <input type="date" value={v.joiningDate} onChange={set('joiningDate')} className={inputCls(errors.joiningDate)} />
