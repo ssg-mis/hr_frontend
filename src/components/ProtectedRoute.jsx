@@ -5,7 +5,7 @@ import useAuthStore from '../store/authStore';
  * ProtectedRoute
  * Dynamically enforces page access configured by Admin via toggle switches.
  * @param {string[]} [allowedRoles] - Optional fallback role check.
- * @param {string} [pagePath] - Optional explicit path to check against hasPageAccess.
+ * @param {string|string[]} [pagePath] - Optional explicit path (or any-of paths) to check against hasPageAccess.
  */
 const ProtectedRoute = ({ children, allowedRoles, pagePath }) => {
   const location = useLocation();
@@ -27,11 +27,12 @@ const ProtectedRoute = ({ children, allowedRoles, pagePath }) => {
   }
 
   // Dynamic page permission check
-  const currentPath = pagePath || location.pathname;
+  const altPaths = Array.isArray(pagePath) ? pagePath : [];
+  const currentPath = (Array.isArray(pagePath) ? pagePath[0] : pagePath) || location.pathname;
   // Canteen managers land on the first canteen page they are allowed to open
   const canteenHome = ['/canteen', '/canteen/scan', '/report'].find((p) => hasPageAccess(p));
 
-  if (currentPath && currentPath !== '/' && !hasPageAccess(currentPath)) {
+  if (currentPath && currentPath !== '/' && !hasPageAccess(currentPath) && !altPaths.some((p) => hasPageAccess(p))) {
     if (isCanteenManager && canteenHome && canteenHome !== currentPath) {
       return <Navigate to={canteenHome} replace />;
     }

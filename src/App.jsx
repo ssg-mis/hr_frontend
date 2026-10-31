@@ -91,7 +91,7 @@ function App() {
               <Route path="leaving" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><Leaving /></ProtectedRoute>} />
               <Route path="after-leaving-work" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><AfterLeavingWork /></ProtectedRoute>} />
               <Route path="employee" element={<ProtectedRoute allowedRoles={['Admin', 'HR', 'HOD']}><Employee /></ProtectedRoute>} />
-              <Route path="joining" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><Joining /></ProtectedRoute>} />
+              <Route path="joining" element={<ProtectedRoute allowedRoles={['Admin', 'HR']} pagePath={['/joining', '/joining/direct-form']}><Joining /></ProtectedRoute>} />
               <Route path="master-data" element={<ProtectedRoute allowedRoles={['Admin', 'HR']}><MasterData /></ProtectedRoute>} />
               <Route path="my-profile" element={<MyProfile />} />
               <Route path="my-attendance" element={<MyAttendance />} />
