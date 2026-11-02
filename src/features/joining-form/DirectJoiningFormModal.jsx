@@ -4,7 +4,7 @@ import { X, Send, UserPlus, Plus, Trash2, AlertTriangle, Upload, FileText, Loade
 import toast from 'react-hot-toast';
 import joiningFormApi from './joiningForm.api';
 import { uploadFile } from '../upload/upload.api';
-import { Field, Section, inputCls, RELATIONS, BLOOD_GROUPS, WEEK_LABEL } from './JoiningFormModal';
+import { Field, Section, inputCls, RELATIONS, BLOOD_GROUPS, WEEK_LABEL, EmployeeTypeField, CodePreviewField, useCodePreview } from './JoiningFormModal';
 
 const fmtRupees = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -80,6 +80,7 @@ const DirectJoiningFormModal = ({ applicationId, onClose, onDone }) => {
   }, [applicationId]);
 
   const readOnly = !!payload?.form && payload.form.stage !== 'Verified';
+  useCodePreview(v, setV, !!v && !readOnly);
   const o = payload?.options;
 
   const set = (k) => (e) => {
@@ -209,12 +210,8 @@ const DirectJoiningFormModal = ({ applicationId, onClose, onDone }) => {
                   <Field label="Joining Date" required error={errors.joiningDate}>
                     <input type="date" value={v.joiningDate} onChange={set('joiningDate')} className={inputCls(errors.joiningDate)} />
                   </Field>
-                  <Field label="Employee Code (auto)">
-                    <div className="h-[38px] flex items-center gap-2 px-3 rounded-lg bg-gray-50 border border-gray-200 text-sm">
-                      <span className="font-mono font-semibold">{v.employeeCode}</span>
-                      {!readOnly && <span className="text-[11px] text-gray-400">next number · given on joining</span>}
-                    </div>
-                  </Field>
+                  <EmployeeTypeField v={v} set={set} error={errors.employeeType} />
+                  <CodePreviewField v={v} done={readOnly} />
                   <Field label="Shift">
                     <select value={v.shiftId ?? ''} onChange={set('shiftId')} className={inputCls()}>
                       <option value="">Not assigned</option>
