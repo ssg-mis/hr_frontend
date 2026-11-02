@@ -47,16 +47,18 @@ const Login = () => {
 
       toast.success("Login successful!");
 
+      localStorage.setItem("token", json.token);
+
       const normalizedUser = {
         ...json.user,
-        Admin: json.user.admin ? "Yes" : "No",
+        // Normalize roles: API returns roles[] array; legacy tokens may have single role string
+        roles: json.user.roles ?? (json.user.role ? [json.user.role] : ['Employee']),
         Name: json.user.name,
         Username: json.user.username,
-        role: json.user.admin ? "admin" : "employee",
       };
 
       login(normalizedUser);
-      localStorage.setItem("user", JSON.stringify(normalizedUser));
+      localStorage.setItem('user', JSON.stringify(normalizedUser));
       setSubmitting(false);
       navigate("/", { replace: true });
     } catch (err) {

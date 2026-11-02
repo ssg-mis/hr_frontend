@@ -14,7 +14,8 @@ const stageBadge = (stage) => {
     Settlement: 'bg-amber-55 text-amber-800 border border-amber-200',
     Relieved: 'bg-green-50 text-green-700 border border-green-200',
   }[stage] || 'bg-gray-50 text-gray-700 border border-gray-200';
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${style}`}>{stage}</span>;
+  const label = stage === 'Settlement' ? 'F&F Settlement' : stage === 'Clearance' || stage === 'Left' ? 'No Dues Clearance' : stage;
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${style}`}>{label}</span>;
 };
 
 const AfterLeavingWork = () => {
@@ -165,7 +166,21 @@ const AfterLeavingWork = () => {
     });
   };
 
+  // Pending Salary and Final Settlement Amount are compulsory; Bonus/Advance/Canteen may stay blank (= 0)
+  const validateSettlement = () => {
+    if (String(settlementForm.pendingSalary ?? '').trim() === '') {
+      toast.error('Please enter Pending Salary (enter 0 if nothing is pending)');
+      return false;
+    }
+    if (String(settlementForm.finalSettlementAmount ?? '').trim() === '') {
+      toast.error('Please enter Final Settlement Amount');
+      return false;
+    }
+    return true;
+  };
+
   const saveSettlement = async () => {
+    if (!validateSettlement()) return;
     setSubmitting(true);
     try {
       await resignationApi.update(settling.id, {
@@ -183,6 +198,14 @@ const AfterLeavingWork = () => {
   };
 
   const markRelieved = async () => {
+    const checklist = settling?.clearanceChecklist || {};
+    const isHodApproved = checklist.handoverStatus === 'Approved' || checklist.handover === true;
+    if (!isHodApproved) {
+      toast.error('Cannot mark as relieved: Task handover has not been approved by the HOD yet.');
+      return;
+    }
+    if (!validateSettlement()) return;
+
     setSubmitting(true);
     try {
       await resignationApi.update(settling.id, {
@@ -217,7 +240,7 @@ const AfterLeavingWork = () => {
 
   const isFormFullyChecked = checklist.assetClearance && checklist.departmentClearance && checklist.handover && checklist.handoverEmployeeId;
 
-  const rows_ = rows.filter((r) => (activeTab === 'progress' ? ['Left', 'Clearance', 'Settlement'].includes(r.stage) : r.stage === 'Relieved'));
+  const rows_ = rows.filter((r) => (activeTab === 'progress' ? r.stage === 'Settlement' : r.stage === 'Relieved'));
 
   return (
     <div className="space-y-6 page-content p-6 max-w-7xl mx-auto">
@@ -259,7 +282,7 @@ const AfterLeavingWork = () => {
               onClick={() => setActiveTab('progress')}
             >
               <ClipboardCheck size={16} className="inline mr-2" />
-              In Progress ({rows.filter((r) => ['Left', 'Clearance', 'Settlement'].includes(r.stage)).length})
+              In Progress ({rows.filter((r) => r.stage === 'Settlement').length})
             </button>
             <button
               className={`py-4 px-6 font-medium text-sm border-b-2 ${activeTab === 'relieved' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
@@ -318,9 +341,6 @@ const AfterLeavingWork = () => {
                     {activeTab === 'progress' ? (
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => openClearanceModal(r)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-purple-200 text-purple-700 hover:bg-purple-50 rounded-lg text-xs font-semibold transition-colors">
-                            Clearance
-                          </button>
                           <button onClick={() => openSettlement(r)} className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors">
                             <Wallet size={13} /> F&amp;F Settlement
                           </button>
@@ -351,7 +371,7 @@ const AfterLeavingWork = () => {
             <div className="px-8 py-6 space-y-6 overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Pending Salary</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Pending Salary <span className="text-red-500">*</span></label>
                   <input type="text" name="pendingSalary" value={settlementForm.pendingSalary} onChange={handleSettlementChange} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
                 <div>
@@ -368,7 +388,7 @@ const AfterLeavingWork = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Final Settlement Amount</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Final Settlement Amount <span className="text-red-500">*</span></label>
                 <input type="text" name="finalSettlementAmount" value={settlementForm.finalSettlementAmount} onChange={handleSettlementChange} placeholder="Net amount payable/recoverable" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div>
@@ -436,7 +456,7 @@ const AfterLeavingWork = () => {
                   
                   {checklist.handover && (
                     <div className="pl-6 pt-1">
-                      <label className="block text-[10px] font-semibold text-gray-500 mb-1">Handover Employee</label>
+                      <label className="block text-[10px] font-semibold text-gray-500 mb-1">Handover Employee <span className="text-red-500">*</span></label>
                       <select value={checklist.handoverEmployeeId} onChange={(e) => setChecklist(prev => ({ ...prev, handoverEmployeeId: e.target.value }))} className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500">
                         <option value="">-- Choose Employee --</option>
                         <option value="none">No task handover needed</option>

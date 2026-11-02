@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { IndianRupee, Download, Eye, Calendar, TrendingUp } from 'lucide-react';
+import { IndianRupee, Download, Eye, Calendar, TrendingUp, CheckCircle, XCircle, Printer } from 'lucide-react';
+import { api } from '../lib/api';
 import useAuthStore from '../store/authStore';
 import useDataStore from '../store/dataStore';
 import toast from 'react-hot-toast';
+import { generatePayslipPDF, parsePayslipNumbers } from '../lib/generatePayslipPDF';
+import PayslipPreviewModal from '../components/PayslipPreviewModal';
 
 const MySalary = () => {
   // const { user } = useAuthStore();
@@ -11,8 +14,13 @@ const MySalary = () => {
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [salaryData, setSalaryData] = useState([]);
+  const [pfData, setPfData] = useState(null);
+  const [pfLoading, setPfLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedPayslip, setSelectedPayslip] = useState(null);
+  const [showPayslipModal, setShowPayslipModal] = useState(false);
+  const [payslipLoading, setPayslipLoading] = useState(false);
   //  const salaryData = getFilteredData('salaryData', user);
 
   //  Filter salary by selected year
@@ -21,14 +29,167 @@ const MySalary = () => {
   });
 
   const fetchSalaryData = async () => {
-    setLoading(false);
-    setTableLoading(false);
-    setError("Salary tracking has been disabled as Google Script integration has been removed.");
+    setLoading(true);
+    setTableLoading(true);
+    setError(null);
+    try {
+      const userData = localStorage.getItem("user");
+      if (!userData) throw new Error("User details not found");
+      const currentUser = JSON.parse(userData);
+      const userEmpCode = currentUser.employeeCode || currentUser.username || '';
+      if (!userEmpCode) throw new Error("Employee code not found");
+
+      const result = await api.get(`/salaries/personal?employeeCode=${encodeURIComponent(userEmpCode)}`);
+      setSalaryData(result.data || []);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Failed to load salary data");
+    } finally {
+      setLoading(false);
+      setTableLoading(false);
+    }
+  };
+
+  const fetchPfData = async () => {
+    setPfLoading(true);
+    try {
+      const res = await api.get("/pf/my-pf");
+      const data = res?.data || res;
+      if (data?.employeeId || data?.pfId || res?.success) {
+        setPfData(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch my PF record:", err);
+    } finally {
+      setPfLoading(false);
+    }
+  };
+
+  const handleToggleOptIn = async (newVal) => {
+    if (!pfData) return;
+    try {
+      const res = await api.put(`/pf/${pfData.employeeId}`, {
+        isOptedIn: newVal,
+      });
+      if (res?.success || res?.data) {
+        toast.success(newVal ? "Enrolled in Provident Fund (PF)" : "Opted out of Provident Fund (PF)");
+        setPfData((prev) => (prev ? { ...prev, isOptedIn: newVal, calculatedDeduction: newVal ? 1800 : 0 } : prev));
+        fetchPfData();
+        fetchSalaryData();
+      } else {
+        toast.error(res?.message || "Failed to update PF preference");
+      }
+    } catch (err) {
+      console.error("PF toggle error:", err);
+      toast.error(err.message || "Failed to update PF preference");
+    }
   };
 
   useEffect(() => {
     fetchSalaryData();
+    fetchPfData();
   }, []);
+
+  // Fetch payslip data for a specific record
+  const fetchPayslipAndShow = async (record) => {
+    try {
+      setPayslipLoading(true);
+      const userData = localStorage.getItem("user");
+      if (!userData) throw new Error("User details not found");
+      const currentUser = JSON.parse(userData);
+      const userEmpCode = currentUser.employeeCode || currentUser.username || '';
+      
+      // Extract month from record.month (e.g., "July 2026" -> "2026-07")
+      const monthParts = record.month.split(' ');
+      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const monthNum = String(monthNames.indexOf(monthParts[0]) + 1).padStart(2, '0');
+      const period = `${monthParts[1]}-${monthNum}`;
+      
+      const result = await api.get(`/salaries/payslip?employeeCode=${encodeURIComponent(userEmpCode)}&period=${period}&type=Monthly`);
+      const payslips = result.data || [];
+      
+      if (payslips.length > 0) {
+        const payslip = parsePayslipNumbers(payslips[0]);
+        setSelectedPayslip(payslip);
+        setShowPayslipModal(true);
+      } else {
+        // Fallback: construct payslip data from the salary record itself
+        const fallbackPayslip = {
+          employeeName: currentUser.name || currentUser.username || 'N/A',
+          employeeCode: userEmpCode,
+          department: 'N/A',
+          designation: 'N/A',
+          period: period,
+          type: 'Monthly',
+          daysWorked: 30,
+          unpaidLeaves: 0,
+          basicPay: record.basicSalary || 0,
+          allowance: record.allowances || 0,
+          compensation: record.overtime || 0,
+          leaveAdjustment: 0,
+          grossSalary: (record.basicSalary || 0) + (record.allowances || 0) + (record.overtime || 0),
+          pfDeduction: record.pfDeduction || 0,
+          esicDeduction: 0,
+          emiDeduction: record.emiDeduction || 0,
+          canteenDeduction: 0,
+          otherDeductions: 0,
+          totalDeductions: record.deductions || 0,
+          netSalary: record.netSalary || 0,
+          status: record.status || 'N/A',
+        };
+        setSelectedPayslip(fallbackPayslip);
+        setShowPayslipModal(true);
+      }
+    } catch (err) {
+      console.error('Error fetching payslip:', err);
+      toast.error('Failed to load payslip data');
+    } finally {
+      setPayslipLoading(false);
+    }
+  };
+
+  const handleDownloadPayslip = async (record) => {
+    try {
+      const userData = localStorage.getItem("user");
+      if (!userData) throw new Error("User details not found");
+      const currentUser = JSON.parse(userData);
+      const userEmpCode = currentUser.employeeCode || currentUser.username || '';
+      
+      const monthParts = record.month.split(' ');
+      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const monthNum = String(monthNames.indexOf(monthParts[0]) + 1).padStart(2, '0');
+      const period = `${monthParts[1]}-${monthNum}`;
+      
+      const result = await api.get(`/salaries/payslip?employeeCode=${encodeURIComponent(userEmpCode)}&period=${period}&type=Monthly`);
+      const payslips = result.data || [];
+      
+      if (payslips.length > 0) {
+        generatePayslipPDF(parsePayslipNumbers(payslips[0]), { action: 'download' });
+      } else {
+        // Fallback download from local data
+        const fallbackPayslip = {
+          employeeName: currentUser.name || currentUser.username || 'N/A',
+          employeeCode: userEmpCode,
+          period: period,
+          type: 'Monthly',
+          basicPay: record.basicSalary || 0,
+          allowance: record.allowances || 0,
+          compensation: record.overtime || 0,
+          grossSalary: (record.basicSalary || 0) + (record.allowances || 0) + (record.overtime || 0),
+          pfDeduction: record.pfDeduction || 0,
+          emiDeduction: record.emiDeduction || 0,
+          totalDeductions: record.deductions || 0,
+          netSalary: record.netSalary || 0,
+          status: record.status || 'N/A',
+        };
+        generatePayslipPDF(fallbackPayslip, { action: 'download' });
+      }
+      toast.success('Payslip downloaded!');
+    } catch (err) {
+      console.error('Download error:', err);
+      toast.error('Failed to download payslip');
+    }
+  };
 
   // Calculate yearly statistics
   // Calculate yearly statistics with type safety
@@ -55,17 +216,8 @@ const MySalary = () => {
     return sum + overtime;
   }, 0);
 
-  const years = [2023, 2024, 2025];
-
-  const handleDownloadPayslip = (salaryRecord) => {
-    // In a real app, this would generate and download a PDF payslip
-    alert(`Downloading payslip for ${salaryRecord.month}`);
-  };
-
-  const handleViewPayslip = (salaryRecord) => {
-    // In a real app, this would open a detailed payslip view
-    alert(`Viewing payslip for ${salaryRecord.month}`);
-  };
+  const currentYr = new Date().getFullYear();
+  const years = [currentYr, currentYr - 1, currentYr - 2, currentYr - 3];
 
   return (
     <div className="space-y-6 page-content p-6">
@@ -83,6 +235,81 @@ const MySalary = () => {
           </select>
         </div>
       </div>
+
+      {/* Provident Fund (PF) Information & Opt-In Card */}
+      {pfData && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-4 gap-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <span>Provident Fund (PF) Statutory Details</span>
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Base Salary: <strong>₹{pfData.baseSalary?.toLocaleString()}</strong> • Monthly PF Deduction:{" "}
+                <strong className="text-indigo-600">₹{pfData.calculatedDeduction?.toLocaleString()}</strong>
+              </p>
+            </div>
+
+            {pfData.isMandatory ? (
+              <span className="inline-flex items-center px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 self-start sm:self-auto">
+                Mandatory Statutory PF (12% of Base)
+              </span>
+            ) : pfData.isOptedIn === true ? (
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 self-start sm:self-auto">
+                <CheckCircle size={14} />
+                <span>Opted In (₹1,800/mo)</span>
+              </span>
+            ) : pfData.isOptedIn === false ? (
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 self-start sm:self-auto">
+                <XCircle size={14} />
+                <span>Opted Out (₹0/mo)</span>
+              </span>
+            ) : (
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 bg-amber-50/80 border border-amber-200 p-3 rounded-2xl self-start sm:self-auto">
+                <div>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 uppercase tracking-wider">
+                    Pending Selection
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleOptIn(true)}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <CheckCircle size={14} />
+                    <span>Yes (Opt In)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleOptIn(false)}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-rose-600 text-white hover:bg-rose-700 transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <XCircle size={14} />
+                    <span>No (Opt Out)</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-150">
+              <span className="text-gray-400 font-semibold uppercase">UAN Number</span>
+              <p className="font-mono text-sm font-bold text-gray-800 mt-0.5">
+                {pfData.uanNumber ? pfData.uanNumber : <span className="text-gray-400 italic">Not set by HR</span>}
+              </p>
+            </div>
+
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-150">
+              <span className="text-gray-400 font-semibold uppercase">PF Member Number</span>
+              <p className="font-mono text-sm font-bold text-gray-800 mt-0.5">
+                {pfData.pfNumber ? pfData.pfNumber : <span className="text-gray-400 italic">Not set by HR</span>}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -151,7 +378,7 @@ const MySalary = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Net Salary</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pay Date</th>
-                  {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th> */}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -204,24 +431,25 @@ const MySalary = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {new Date(record.payDate).toLocaleDateString()}
                     </td>
-                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <div className="flex space-x-2">
                         <button
-                          onClick={() => handleViewPayslip(record)}
-                          className="text-indigo-600 hover:text-indigo-900"
+                          onClick={() => fetchPayslipAndShow(record)}
+                          className="text-indigo-600 hover:text-indigo-900 p-1 hover:bg-indigo-50 rounded transition-colors"
                           title="View Payslip"
+                          disabled={payslipLoading}
                         >
                           <Eye size={16} />
                         </button>
                         <button
                           onClick={() => handleDownloadPayslip(record)}
-                          className="text-green-600 hover:text-green-900"
+                          className="text-green-600 hover:text-green-900 p-1 hover:bg-green-50 rounded transition-colors"
                           title="Download Payslip"
                         >
                           <Download size={16} />
                         </button>
                       </div>
-                    </td> */}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -261,6 +489,13 @@ const MySalary = () => {
           </div>
         </div>
       )}
+
+      {/* Payslip Preview Modal */}
+      <PayslipPreviewModal
+        isOpen={showPayslipModal}
+        onClose={() => setShowPayslipModal(false)}
+        payslipData={selectedPayslip}
+      />
     </div>
   );
 };

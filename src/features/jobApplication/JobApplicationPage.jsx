@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { vacancyApi } from '../vacancy/vacancy.api';
 import { jobApplicationApi } from './jobApplication.api';
 import { uploadFile } from '../upload/upload.api';
+import { departmentApi } from '../department/department.api';
 
 const getMaxDobDate = () => {
   const date = new Date();
@@ -48,6 +49,9 @@ const JobApplicationPage = () => {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('ongoing'); // 'ongoing' | 'filled'
+  const [departments, setDepartments] = useState([]);
+  const [deptFilter, setDeptFilter] = useState('');
 
   // "Add Candidate" (Internal) modal
   const [addingFor, setAddingFor] = useState(null); // the vacancy row
@@ -67,13 +71,15 @@ const JobApplicationPage = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [vacRes, appRes] = await Promise.all([
+      const [vacRes, appRes, deptRes] = await Promise.all([
         vacancyApi.list({ page: 1, limit: 1000, search: '' }),
         jobApplicationApi.list({ page: 1, limit: 10000 }),
+        departmentApi.list(),
       ]);
       // Only approved vacancies accept applications.
       setVacancies((vacRes.data || []).filter((v) => v.approvalStatus === 'Approved'));
       setApplications(appRes.data || []);
+      setDepartments(deptRes || []);
     } catch (error) {
       console.error('Error loading job applications:', error);
       toast.error(error.message || 'Failed to load data');
@@ -88,6 +94,11 @@ const JobApplicationPage = () => {
   }, {});
 
   const filteredVacancies = vacancies.filter((v) => {
+    const matchesTab = activeTab === 'ongoing' ? v.status !== 'Closed' : v.status === 'Closed';
+    if (!matchesTab) return false;
+
+    if (deptFilter && String(v.departmentId) !== String(deptFilter)) return false;
+
     const q = searchTerm.trim().toLowerCase();
     if (!q) return true;
     return (
@@ -273,19 +284,62 @@ const JobApplicationPage = () => {
         </div>
       </div>
 
-      {/* Search */}
+      {/* Tab Selection Navigation */}
+      <div className="flex border-b border-gray-250 mb-4 bg-white/50 p-1 rounded-xl">
+        {[
+          { id: 'ongoing', label: 'Open & Ongoing' },
+          { id: 'filled', label: 'Filled / Closed' }
+        ].map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setSearchTerm('');
+                setDeptFilter('');
+              }}
+              className={`flex-1 py-2.5 text-center text-sm font-semibold rounded-lg transition-all ${
+                isActive
+                  ? 'bg-white text-indigo-650 shadow-sm border border-gray-200/50'
+                  : 'text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Search & Filter */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-        <div className="relative">
-          <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-            <Search size={16} />
-          </span>
-          <input
-            type="text"
-            placeholder="Search approved vacancy by code, name or designation..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="h-10 w-full rounded-lg border border-gray-300 bg-gray-50/50 pl-10 pr-3 text-sm text-gray-700 outline-none transition-colors placeholder:text-gray-400 focus:border-indigo-500 focus:bg-white"
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+          <div className="relative sm:col-span-2">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+              <Search size={16} />
+            </span>
+            <input
+              type="text"
+              placeholder="Search approved vacancy by code, name or designation..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="h-10 w-full rounded-lg border border-gray-300 bg-gray-50/50 pl-10 pr-3 text-sm text-gray-700 outline-none transition-colors placeholder:text-gray-400 focus:border-indigo-500 focus:bg-white"
+            />
+          </div>
+          <div>
+            <select
+              value={deptFilter}
+              onChange={(e) => setDeptFilter(e.target.value)}
+              className="h-10 w-full px-3.5 border border-gray-300 rounded-lg bg-gray-55/50 text-sm text-gray-700 outline-none focus:border-indigo-500 focus:bg-white"
+            >
+              <option value="">All Departments</option>
+              {departments.map((dept) => (
+                <option key={dept.id} value={dept.id}>
+                  {dept.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -315,7 +369,9 @@ const JobApplicationPage = () => {
               ) : filteredVacancies.length === 0 ? (
                 <tr>
                   <td colSpan="5" className="px-6 py-16 text-center text-gray-400 text-sm">
-                    No approved vacancies yet. Approve a vacancy first to start collecting applications.
+                    {activeTab === 'ongoing'
+                      ? 'No open or ongoing vacancies found.'
+                      : 'No filled or closed vacancies found.'}
                   </td>
                 </tr>
               ) : (
