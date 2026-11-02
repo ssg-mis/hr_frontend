@@ -22,6 +22,48 @@ export const Field = ({ label, required, error, children, className = '' }) => (
   </div>
 );
 
+// Employee / Helper decides the code series: Employee 1xxx (Ethanol & Spirits 0xxx), Helper 5xxx
+export const EMPLOYEE_TYPE_HINT = { Employee: 'Code series 1xxx · Ethanol & Spirits 0xxx', Helper: 'Code series 5xxx (all companies)' };
+
+/** Read-only code preview; refreshes when the type or company changes. */
+export const useCodePreview = (v, setV, enabled) => {
+  useEffect(() => {
+    if (!enabled || !v) return;
+    let alive = true;
+    joiningFormApi.nextCode(v.employeeType, v.branchId)
+      .then((code) => alive && setV((p) => ({ ...p, employeeCode: code })))
+      .catch(() => alive && setV((p) => ({ ...p, employeeCode: '' })));
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, v?.employeeType, v?.branchId]);
+};
+
+export const EmployeeTypeField = ({ v, set, error, disabled }) => (
+  <Field label="Employee Type" required error={error}>
+    <select value={v.employeeType || ''} onChange={set('employeeType')} disabled={disabled} className={`${inputCls(error)} disabled:bg-gray-50`}>
+      <option value="">Select type</option>
+      <option value="Employee">Employee</option>
+      <option value="Helper">Helper</option>
+    </select>
+    {v.employeeType && <p className="text-[11px] text-gray-400 mt-0.5">{EMPLOYEE_TYPE_HINT[v.employeeType]}</p>}
+  </Field>
+);
+
+export const CodePreviewField = ({ v, done }) => (
+  <Field label="Employee Code (auto)">
+    <div className="h-[38px] flex items-center gap-2 px-3 rounded-lg bg-gray-50 border border-gray-200 text-sm">
+      {v.employeeCode ? (
+        <>
+          <span className="font-mono font-semibold">{v.employeeCode}</span>
+          {!done && <span className="text-[11px] text-gray-400">next number · given on joining</span>}
+        </>
+      ) : (
+        <span className="text-[11px] text-gray-400">{v.branchId ? 'Select Employee Type first' : 'Select Company and Employee Type first'}</span>
+      )}
+    </div>
+  </Field>
+);
+
 export const Section = ({ title, children }) => (
   <section className="space-y-3">
     <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wide border-b border-indigo-100 pb-1">{title}</h4>
@@ -63,6 +105,9 @@ const JoiningFormModal = ({ application, onClose, onDone }) => {
 
   const isHired = payload?.info?.stage === 'Hired' && payload?.info?.employeeId;
   const isCompleted = payload?.form?.status === 'Completed';
+  // Code preview only until the employee has a real code
+  const hasRealCode = !!payload?.info?.employeeCode && !/^EMP-/i.test(payload.info.employeeCode);
+  useCodePreview(v, setV, !!v && !hasRealCode);
 
   const set = (k) => (e) => {
     const val = e?.target ? (e.target.type === 'checkbox' ? e.target.checked : e.target.value) : e;
@@ -182,12 +227,8 @@ const JoiningFormModal = ({ application, onClose, onDone }) => {
               </div>
               <div className="flex-1">
                 <Section title="A. Job Details">
-                  <Field label="Employee Code (auto)">
-                    <div className="h-[38px] flex items-center gap-2 px-3 rounded-lg bg-gray-50 border border-gray-200 text-sm">
-                      <span className="font-mono font-semibold">{v.employeeCode}</span>
-                      {!isCompleted && <span className="text-[11px] text-gray-400">next number · given on Complete Joining</span>}
-                    </div>
-                  </Field>
+                  <EmployeeTypeField v={v} set={set} error={errors.employeeType} disabled={hasRealCode} />
+                  <CodePreviewField v={v} done={hasRealCode} />
                   <Field label="Joining Date" required error={errors.joiningDate}>
                     <input type="date" value={v.joiningDate} onChange={set('joiningDate')} className={inputCls(errors.joiningDate)} />
                   </Field>
