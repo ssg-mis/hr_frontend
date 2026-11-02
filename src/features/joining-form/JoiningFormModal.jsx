@@ -58,7 +58,7 @@ export const CodePreviewField = ({ v, done }) => (
           {!done && <span className="text-[11px] text-gray-400">next number · given on joining</span>}
         </>
       ) : (
-        <span className="text-[11px] text-gray-400">Select Employee Type first</span>
+        <span className="text-[11px] text-gray-400">{v.branchId ? 'Select Employee Type first' : 'Select Company and Employee Type first'}</span>
       )}
     </div>
   </Field>
