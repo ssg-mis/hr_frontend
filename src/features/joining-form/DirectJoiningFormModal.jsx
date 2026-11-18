@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { pfCapForMonth } from '../../lib/pfRules';
 import { createPortal } from 'react-dom';
 import { X, Send, UserPlus, Plus, Trash2, AlertTriangle, Upload, FileText, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -93,11 +94,11 @@ const DirectJoiningFormModal = ({ applicationId, onClose, onDone }) => {
         const desg = o.designations.find((d) => String(d.id) === String(val));
         if (desg?.departmentId) next.departmentId = desg.departmentId;
       }
-      // Same defaults as the joining form: PF up to ₹15,000 basic, ESIC up to ₹21,000 gross
+      // Same defaults as the joining form: PF up to the PF cap basic (₹15,000; ₹25,000 from Nov 2026), ESIC up to ₹21,000 gross
       if (k === 'offeredBaseSalary' || k === 'offeredAllowanceSalary') {
         const base = Number(next.offeredBaseSalary) || 0;
         const gross = base + (Number(next.offeredAllowanceSalary) || 0);
-        if (base > 0) next.pfApplicable = base <= 15000;
+        if (base > 0) next.pfApplicable = base <= pfCapForMonth();
         if (gross > 0) next.esicApplicable = gross <= 21000;
       }
       return next;
