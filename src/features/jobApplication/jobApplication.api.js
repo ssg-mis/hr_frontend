@@ -38,9 +38,11 @@ export const jobApplicationApi = {
   listInterviewOutcomes: (applicationNumber) =>
     api.get(`/job-applications/${applicationNumber}/interview-outcomes`).then((r) => r.data),
 
-  addInterviewOutcome: (applicationNumber, { interviewDate, interviewMode, result, remark = null }) =>
+  // payload: { interviewDate, interviewMode, result, remark, interviewerName, ratings, strengths,
+  //            weaknesses, recommendation, attachments: [{ name, url }] }
+  addInterviewOutcome: (applicationNumber, payload) =>
     api
-      .post(`/job-applications/${applicationNumber}/interview-outcomes`, { interviewDate, interviewMode, result, remark })
+      .post(`/job-applications/${applicationNumber}/interview-outcomes`, payload)
       .then((r) => r.data),
 };
 
