@@ -5,9 +5,9 @@ import { api } from '../../lib/api';
 // and returns a public fileUrl.
 // Phone photos (2–5 MB) are shrunk to a ≤1600px JPEG before upload — the server's nginx
 // rejects requests over ~1 MB. Non-images and small images go as they are.
-const MAX_SIDE = 1600;
+const MAX_SIDE = 1280;
 async function shrinkImage(file) {
-  if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type) || file.size <= 500 * 1024) return file;
+  if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type) || file.size <= 200 * 1024) return file;
   try {
     const url = URL.createObjectURL(file);
     const img = await new Promise((resolve, reject) => {
@@ -25,7 +25,7 @@ async function shrinkImage(file) {
     ctx.fillStyle = '#fff'; // transparent PNG -> white, not black
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.72));
     if (!blob || blob.size >= file.size) return file;
     return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
   } catch {
