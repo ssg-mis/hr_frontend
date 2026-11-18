@@ -55,6 +55,9 @@ const LeavePolicy = () => {
     const [editingEntry, setEditingEntry] = useState(null); // original leave row
     const [entryForm, setEntryForm] = useState({ startDate: '', endDate: '', leaveCode: '', status: '', remark: '' });
     const [savingEntry, setSavingEntry] = useState(false);
+    const [editingAllowed, setEditingAllowed] = useState(null); // leaveCode being edited
+    const [allowedValue, setAllowedValue] = useState('');
+    const [savingAllowed, setSavingAllowed] = useState(false);
 
     const isFirstRunSearch = React.useRef(true);
 
@@ -176,6 +179,13 @@ const LeavePolicy = () => {
         emp.designation.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    // Keep the open modal's balance cards in sync after an edit/delete refreshes the summary.
+    useEffect(() => {
+        if (!managingEmp) return;
+        const fresh = leaveRecordSummary.find((r) => r.employeeId === managingEmp.employeeId);
+        if (fresh && fresh !== managingEmp) setManagingEmp(fresh);
+    }, [leaveRecordSummary]);
+
     const loadEmpLeaveEntries = async (emp) => {
         setEntriesLoading(true);
         try {
@@ -199,8 +209,35 @@ const LeavePolicy = () => {
     };
 
     const closeManageLeaves = () => {
+        setEditingAllowed(null);
         setManagingEmp(null);
         setEditingEntry(null);
+    };
+
+    // Save this employee's allowed days for one leave type (null = reset to company default)
+    const saveAllowed = async (leaveCode, value) => {
+        if (value !== null) {
+            const n = Number(value);
+            if (value === '' || !Number.isInteger(n) || n < 0 || n > 365) {
+                toast.error('Enter a whole number between 0 and 365');
+                return;
+            }
+        }
+        setSavingAllowed(true);
+        try {
+            await api.put(`/leaves/balance/${managingEmp.employeeId}`, {
+                year: Number(selectedYear),
+                leaveCode,
+                allowed: value === null ? null : Number(value),
+            });
+            toast.success(value === null ? `${leaveCode} reset to default` : `${leaveCode} allowed updated`);
+            setEditingAllowed(null);
+            fetchLeaveSummary();
+        } catch (error) {
+            toast.error(error.message || 'Failed to update allowed days');
+        } finally {
+            setSavingAllowed(false);
+        }
     };
 
     const startEditEntry = (entry) => {
@@ -735,11 +772,11 @@ const LeavePolicy = () => {
 
             {/* Manage Employee Leave Entries Modal */}
             {managingEmp && (
-                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-500/30">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[85vh]">
                         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                             <div>
-                                <h2 className="text-xl font-bold text-gray-800">Leave Entries – {selectedYear}</h2>
+                                <h2 className="text-xl font-bold text-gray-800">Leave Record – {selectedYear}</h2>
                                 <p className="text-sm text-gray-500 mt-0.5">{managingEmp.name} · {managingEmp.id}</p>
                             </div>
                             <button onClick={closeManageLeaves} className="text-gray-400 hover:text-gray-600">
@@ -748,10 +785,55 @@ const LeavePolicy = () => {
                         </div>
 
                         <div className="p-6 overflow-y-auto flex-1">
+                            {/* Balance summary: Allowed / Taken / Remaining per leave type */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+                                {leavePolicies.map((policy) => {
+                                    const b = managingEmp.leaves?.[policy.leaveCode] || { limit: policy.balance || 0, taken: 0 };
+                                    const remaining = Number(b.limit) - Number(b.taken);
+                                    return (
+                                        <div key={policy.leaveCode} className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                                            <p className="text-xs font-bold text-indigo-700 uppercase" title={policy.leaveName}>{policy.leaveCode}</p>
+                                            <div className="mt-2 space-y-0.5 text-xs text-gray-600">
+                                                <div className="flex justify-between items-center">
+                                                    <span>Allowed{b.custom && <span title="Custom for this employee" className="ml-1 text-indigo-500">*</span>}</span>
+                                                    {editingAllowed === policy.leaveCode ? (
+                                                        <span className="flex items-center gap-1">
+                                                            <input
+                                                                type="number" min="0" max="365" autoFocus
+                                                                value={allowedValue}
+                                                                onChange={(e) => setAllowedValue(e.target.value)}
+                                                                onKeyDown={(e) => { if (e.key === 'Enter') saveAllowed(policy.leaveCode, allowedValue); if (e.key === 'Escape') setEditingAllowed(null); }}
+                                                                className="w-14 border border-gray-300 rounded px-1 py-0.5 text-right bg-white text-gray-800"
+                                                            />
+                                                            <button onClick={() => saveAllowed(policy.leaveCode, allowedValue)} disabled={savingAllowed} title="Save" className="text-green-600 hover:bg-green-50 rounded p-0.5 disabled:opacity-50"><Check size={14} /></button>
+                                                            <button onClick={() => setEditingAllowed(null)} disabled={savingAllowed} title="Cancel" className="text-gray-500 hover:bg-gray-100 rounded p-0.5"><X size={14} /></button>
+                                                        </span>
+                                                    ) : (
+                                                        <span className="flex items-center gap-1">
+                                                            <span className="font-semibold text-gray-800">{b.limit}</span>
+                                                            <button onClick={() => { setEditingAllowed(policy.leaveCode); setAllowedValue(String(b.limit)); }} title={`Edit ${policy.leaveCode} allowed`} className="text-indigo-600 hover:bg-indigo-100 rounded p-0.5"><Pencil size={12} /></button>
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="flex justify-between"><span>Taken</span><span className="font-semibold text-gray-800">{b.taken}</span></div>
+                                                <div className="flex justify-between border-t border-indigo-100 pt-0.5">
+                                                    <span>Remaining</span>
+                                                    <span className={`font-bold ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>{remaining}</span>
+                                                </div>
+                                                {b.custom && editingAllowed !== policy.leaveCode && (
+                                                    <button onClick={() => saveAllowed(policy.leaveCode, null)} disabled={savingAllowed} className="text-[11px] text-indigo-600 hover:underline pt-0.5">Reset to default ({policy.balance})</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <h3 className="text-sm font-bold text-gray-700 mb-2">Leave Entries – edit or delete</h3>
                             {entriesLoading ? (
                                 <p className="text-center text-gray-500 py-10">Loading...</p>
                             ) : empLeaveEntries.length === 0 ? (
-                                <p className="text-center text-gray-500 py-10">No leave entries for {selectedYear}.</p>
+                                <p className="text-center text-gray-500 py-8 rounded-lg border border-dashed border-gray-200">No leave taken in {selectedYear} yet, so there is nothing to edit or delete.</p>
                             ) : (
                                 <div className="overflow-x-auto rounded-lg border border-gray-100">
                                     <table className="min-w-full divide-y divide-gray-100 text-sm">
