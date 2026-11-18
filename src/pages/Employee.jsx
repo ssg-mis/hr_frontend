@@ -7,6 +7,8 @@ import {
 import toast from 'react-hot-toast';
 import { api } from '../lib/api';
 import CanteenQrCard from '../components/CanteenQrCard';
+import EmployeeDocumentsPanel from '../components/EmployeeDocumentsPanel';
+import useAuthStore from '../store/authStore';
 
 /* ─── helpers ─────────────────────────────────────────────────────── */
 const fmtDate = (d) =>
@@ -143,6 +145,8 @@ const StatCard = ({ icon: Icon, label, value, color, sub }) => (
 
 /* ─── Detail Modal ─────────────────────────────────────────────────── */
 const DetailModal = ({ employee, onClose }) => {
+  const canManageDocs = useAuthStore((st) => st.isAdmin || st.isHR);
+  const [tab, setTab] = useState('details');
   if (!employee) return null;
 
   const empCode = employee.employeeCode || employee.biometricEmployeeCode || '—';
@@ -193,7 +197,7 @@ const DetailModal = ({ employee, onClose }) => {
   return createPortal(
     <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-100 overflow-hidden"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 overflow-hidden"
         style={{ animation: 'modalIn .2s ease' }}
       >
         {/* Modal header */}
@@ -214,8 +218,26 @@ const DetailModal = ({ employee, onClose }) => {
           </button>
         </div>
 
+        {canManageDocs && (
+          <div className="flex border-b border-gray-200 bg-white">
+            {[['details', 'Details'], ['documents', 'Documents']].map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setTab(k)}
+                className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${tab === k ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >{label}</button>
+            ))}
+          </div>
+        )}
+
         {/* Modal body */}
         <div className="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+          {canManageDocs && tab === 'documents' ? (
+            <div>
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Employee Documents (uploaded by employee / HR)</h4>
+              <EmployeeDocumentsPanel mode="hr" employeeId={employee.id} />
+            </div>
+          ) : (<>
           <div className="grid grid-cols-1 gap-0 divide-y divide-gray-100">
             {fields.map(({ label, value, icon: Icon, isStatus }) => (
               <div key={label} className="flex items-center justify-between py-3">
@@ -268,6 +290,7 @@ const DetailModal = ({ employee, onClose }) => {
             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Employee Canteen QR Code</h4>
             <CanteenQrCard employeeCode={employee.employeeCode} subtitle={employee.applyingForPost || 'Employee'} />
           </div>
+          </>)}
         </div>
 
         {/* Modal footer */}
