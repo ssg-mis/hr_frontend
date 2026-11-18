@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import CanteenQrCard from "../components/CanteenQrCard";
+import EmployeeDocumentsPanel from "../components/EmployeeDocumentsPanel";
 
 const MyProfile = () => {
   const [isEditing, setIsEditing] = useState(false);
@@ -441,6 +442,13 @@ const MyProfile = () => {
           </div>
         </div>
       )}
+
+      {/* My Documents — employee self-upload, verified by HR */}
+      <div className="bg-white rounded-xl shadow-lg border p-6 mt-6">
+        <h3 className="text-lg font-bold text-gray-800 mb-1">My Documents</h3>
+        <p className="text-xs text-gray-500 mb-4">Upload your Aadhaar, PAN, certificates etc. HR will verify them.</p>
+        <EmployeeDocumentsPanel mode="self" />
+      </div>
     </div>
   );
 };

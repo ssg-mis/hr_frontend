@@ -1,3 +1,5 @@
+import { pfCapForMonth } from '../../lib/pfRules';
+
 // Adjustment Payroll — copy, edit-recalculation and sync helpers.
 // The formulas mirror the Payroll screen (monthly), but run on the adjusted values.
 // Nothing here writes to the original payroll.
@@ -38,7 +40,7 @@ const DERIVED = [
   }],
   ['earnGross', ['earnBasic', 'earnAllowance', 'compensation', 'otAmount'], (r) =>
     Math.round(r.earnBasic + r.earnAllowance + r.compensation + r.otAmount)],
-  ['epfWages', ['earnBasic'], (r) => Math.round(Math.min(15000, r.earnBasic))],
+  ['epfWages', ['earnBasic'], (r) => Math.round(Math.min(pfCapForMonth(r.period), r.earnBasic))],
   ['pfDeduction', ['epfWages'], (r) => (r.pfApplicable ? Math.round(r.epfWages * 0.12) : 0)],
   ['esicDeduction', ['earnGross', 'grossTotal'], (r) =>
     r.esicApplicable && r.grossTotal <= 21000 ? Math.ceil(r.earnGross * 0.0075) : 0],

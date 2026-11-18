@@ -15,6 +15,11 @@ import {
 import toast from "react-hot-toast";
 import useAuthStore from "../store/authStore";
 import { api } from "../lib/api";
+import { pfCapForMonth } from "../lib/pfRules";
+
+// Current PF wage cap (25,000 from Nov 2026) and the opted-in deduction on it
+const PF_CAP = pfCapForMonth();
+const PF_MAX = Math.round(PF_CAP * 0.12);
 
 const fmtINR = (val) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(val || 0);
@@ -110,7 +115,7 @@ const PFManagement = () => {
       });
       if (res?.success || res?.data) {
         toast.success(newVal ? "Enrolled in Provident Fund (PF)" : "Opted out of Provident Fund (PF)");
-        setMyPfData((prev) => (prev ? { ...prev, isOptedIn: newVal, calculatedDeduction: newVal ? 1800 : 0 } : prev));
+        setMyPfData((prev) => (prev ? { ...prev, isOptedIn: newVal, calculatedDeduction: newVal ? PF_MAX : 0 } : prev));
         fetchPfRecords(page, searchTerm, departmentFilter);
       } else {
         toast.error(res?.message || "Failed to update PF preference");
@@ -224,7 +229,7 @@ const PFManagement = () => {
               ) : myPfData.isOptedIn === true ? (
                 <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 self-start sm:self-auto">
                   <CheckCircle size={14} />
-                  <span>Opted In (₹1,800/mo)</span>
+                  <span>Opted In (₹{PF_MAX.toLocaleString()}/mo)</span>
                 </span>
               ) : myPfData.isOptedIn === false ? (
                 <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 self-start sm:self-auto">
@@ -282,7 +287,7 @@ const PFManagement = () => {
               <div className="text-xs text-blue-900 leading-relaxed">
                 <strong className="font-semibold">PF Scheme Rules:</strong>
                 <p className="mt-0.5">
-                  If your base salary is $\le$ ₹15,000, statutory PF is mandatory (12% of actual base salary). If your base salary is &gt; ₹15,000, PF is voluntary. When opted in, deduction is capped at 12% of ₹15,000 (₹1,800/month).
+                  If your base salary is $\le$ ₹{PF_CAP.toLocaleString()}, statutory PF is mandatory (12% of actual base salary). If your base salary is &gt; ₹{PF_CAP.toLocaleString()}, PF is voluntary. When opted in, deduction is capped at 12% of ₹{PF_CAP.toLocaleString()} (₹{PF_MAX.toLocaleString()}/month).
                 </p>
               </div>
             </div>
@@ -368,8 +373,8 @@ const PFManagement = () => {
         <div className="text-xs text-indigo-900 leading-relaxed">
           <strong className="font-semibold">PF Calculation Guidelines:</strong>
           <ul className="list-disc list-inside mt-1 space-y-0.5">
-            <li><strong>Base Salary $\le$ ₹15,000:</strong> PF deduction is mandatory at <strong>12% of actual Base Salary</strong> without opt-out.</li>
-            <li><strong>Base Salary &gt; ₹15,000:</strong> Voluntary enrollment. If opted in, deduction is capped at <strong>12% of ₹15,000 (₹1,800/month)</strong>. If opted out, deduction is <strong>₹0</strong>.</li>
+            <li><strong>Base Salary $\le$ ₹{PF_CAP.toLocaleString()}:</strong> PF deduction is mandatory at <strong>12% of actual Base Salary</strong> without opt-out.</li>
+            <li><strong>Base Salary &gt; ₹{PF_CAP.toLocaleString()}:</strong> Voluntary enrollment. If opted in, deduction is capped at <strong>12% of ₹{PF_CAP.toLocaleString()} (₹{PF_MAX.toLocaleString()}/month)</strong>. If opted out, deduction is <strong>₹0</strong>.</li>
           </ul>
         </div>
       </div>
@@ -462,7 +467,7 @@ const PFManagement = () => {
                             </span>
                           ) : rec.isOptedIn === true ? (
                             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                              Opted In (₹1,800)
+                              Opted In (₹{PF_MAX.toLocaleString()})
                             </span>
                           ) : rec.isOptedIn === false ? (
                             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
@@ -583,7 +588,7 @@ const PFManagement = () => {
                   </div>
                 </div>
 
-                {/* Voluntary Opt-In Selector (Only if base salary > 15,000) */}
+                {/* Voluntary Opt-In Selector (Only if base salary > PF cap) */}
                 {!editingRecord.isMandatory ? (
                   <div className="flex flex-col gap-1.5 p-3 bg-gray-50 border border-gray-200 rounded-xl">
                     <label className="text-xs font-bold text-gray-800 uppercase tracking-wider">PF Status</label>
@@ -599,13 +604,13 @@ const PFManagement = () => {
                       className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium"
                     >
                       <option value="pending">Pending Selection (Not selected yet)</option>
-                      <option value="opted_in">Opted In (₹1,800/mo)</option>
+                      <option value="opted_in">Opted In (₹{PF_MAX.toLocaleString()}/mo)</option>
                       <option value="opted_out">Opted Out (₹0/mo)</option>
                     </select>
                   </div>
                 ) : (
                   <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-medium">
-                    PF deduction is mandatory for employees with base salary $\le$ ₹15,000.
+                    PF deduction is mandatory for employees with base salary $\le$ ₹{PF_CAP.toLocaleString()}.
                   </div>
                 )}
 

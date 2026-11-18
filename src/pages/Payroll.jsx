@@ -14,6 +14,7 @@ import useAuthStore from "../store/authStore";
 import toast from "react-hot-toast";
 import { generatePayslipPDF, generateBulkPayslipsPDF } from "../lib/generatePayslipPDF";
 import PayslipPreviewModal from "../components/PayslipPreviewModal";
+import { pfCapForMonth, isPfOptedInForMonth } from "../lib/pfRules";
 import SalaryReportModal from "../components/SalaryReportModal";
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
@@ -43,6 +44,8 @@ const Payroll = () => {
   // Daily date range
   const [startDate, setStartDate] = useState(new Date(new Date().setDate(1)).toISOString().slice(0, 10)); // 1st of current month
   const [endDate, setEndDate] = useState(todayStr); // Today
+  // Month the payroll belongs to — drives the PF wage cap (25,000 from Nov 2026, 15,000 before)
+  const payMonth = activeMode === "Monthly" ? selectedMonth : (startDate || "").slice(0, 7);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -736,9 +739,9 @@ const Payroll = () => {
 
     const earnGross = Math.round((earnBasic + earnAllowance) + finalComp + otAmount);
     const grossSalary = earnGross;
-    const epfWages = Math.round(Math.min(15000, earnBasic));
+    const epfWages = Math.round(Math.min(pfCapForMonth(payMonth), earnBasic));
 
-    const isPfOptedIn = pfRecord?.isOptedIn != null ? pfRecord.isOptedIn : (grossTotal <= 15000);
+    const isPfOptedIn = isPfOptedInForMonth(payMonth, monthlyBase, pfRecord?.isOptedIn != null ? pfRecord.isOptedIn : (grossTotal <= 15000));
     const livePfDeduction = isPfOptedIn ? Math.round(epfWages * 0.12) : 0;
     const pfDeduction = run.status === "Draft" ? livePfDeduction : Math.round(parseFloat(run.pfDeduction || 0));
 
@@ -828,7 +831,7 @@ const Payroll = () => {
 
       // Find PF Settings
       const pfRecord = pfByEmployeeId.get(Number(emp.id));
-      const isPfOptedIn = pfRecord ? pfRecord.isOptedIn : (monthlyBase <= 15000);
+      const isPfOptedIn = isPfOptedInForMonth(payMonth, monthlyBase, pfRecord ? pfRecord.isOptedIn : (monthlyBase <= 15000));
 
       // Find ESIC Settings
       const esicRecord = esicByEmployeeId.get(Number(emp.id));
@@ -1088,9 +1091,9 @@ const Payroll = () => {
 
       const earnGross = Math.round((earnBasic + earnAllowance) + compensation + otAmount);
       const grossSalary = earnGross;
-      const epfWages = Math.round(Math.min(15000, earnBasic));
+      const epfWages = Math.round(Math.min(pfCapForMonth(payMonth), earnBasic));
 
-      // PF Calculation (Deducted from Earn Basic + DA, capped at 15,000)
+      // PF Calculation (Deducted from Earn Basic + DA, capped at 15,000; 25,000 from Nov 2026)
       let pfDeduction = 0;
       if (isPfOptedIn) {
         pfDeduction = Math.round(epfWages * 0.12);
@@ -1255,12 +1258,12 @@ const Payroll = () => {
         updatedRow.grossSalary = earnGross;
 
         const grossTotal = parseFloat(((updatedRow.basicRate || row.basicRate || 0) + (updatedRow.allowanceRate || row.allowanceRate || 0)).toFixed(2));
-        const epfWages = Math.round(Math.min(15000, earnBasic));
+        const epfWages = Math.round(Math.min(pfCapForMonth(payMonth), earnBasic));
         updatedRow.epfWages = epfWages;
 
         // PF Deduction (Deducted from Earn Basic + DA, capped at 15,000)
         const pfRecord = pfByEmployeeId.get(Number(empId));
-        const isPfOptedIn = pfRecord ? pfRecord.isOptedIn : ((basicRate + allowanceRate) <= 15000);
+        const isPfOptedIn = isPfOptedInForMonth(payMonth, basicRate, pfRecord ? pfRecord.isOptedIn : ((basicRate + allowanceRate) <= 15000));
         if (isPfOptedIn) {
           updatedRow.pfDeduction = Math.round(epfWages * 0.12);
         }
@@ -1648,7 +1651,7 @@ const Payroll = () => {
         // OT amount merged into WASHING ALL.
         const washingAll = compVal + otVal;
         const earnGross = Math.round(Number(row.earnGross != null ? row.earnGross : (row.grossSalary || (earnBasic + earnAllowance + washingAll))));
-        const epfWages = Math.round(Number(row.epfWages != null ? row.epfWages : Math.min(15000, earnBasic)));
+        const epfWages = Math.round(Number(row.epfWages != null ? row.epfWages : Math.min(pfCapForMonth(payMonth), earnBasic)));
 
         const pfDeduction = Math.round(Number(row.pfDeduction != null ? row.pfDeduction : 0));
         const lwfDeduction = Math.round(Number(row.lwfDeduction != null ? row.lwfDeduction : 0));
@@ -2122,7 +2125,7 @@ const Payroll = () => {
         const grossTotal = monthlyBase + monthlyAllowance;
         const earnedTotal = (row.earnBasic || 0) + (row.earnAllowance || 0) + (row.compensation || 0) + (row.otAmount || 0);
         const earnGross = row.grossSalary || row.earnGross || earnedTotal || 0;
-        const epfWages = Math.min(row.basicPay || row.earnBasic || monthlyBase || 0, 15000);
+        const epfWages = Math.min(row.basicPay || row.earnBasic || monthlyBase || 0, pfCapForMonth(payMonth));
 
         let totalDays = 30;
         if (activeMode === "Daily" && startDate && endDate) {
@@ -2228,7 +2231,7 @@ const Payroll = () => {
   // A brand-new row (employee not yet in this month's adjustment) starts its ADV from last month's
   // running balance instead of 0 — once a row exists for a month it is never retroactively touched.
   const syncAdjustmentPayroll = async (period, source) => {
-    const fresh = (await getAllRowsForAdjustment()).map(toAdjustmentRow);
+    const fresh = (await getAllRowsForAdjustment()).map((r) => ({ ...toAdjustmentRow(r), period })); // period drives the PF cap
     if (!fresh.length) throw new Error(`No saved payroll found for ${period}`);
     const res = await adjustmentPayrollApi.list(period);
     const existing = new Map((res?.data || []).map((d) => [Number(d.employeeId), fromDbRow(d)]));
@@ -2410,7 +2413,7 @@ const Payroll = () => {
       totals.washingAll += Number(r.compensation || 0);
       totals.otAmount += Number(r.otAmount || 0);
       totals.grossSalary += Number(r.earnGross || r.grossSalary || 0);
-      totals.epfWages += Number(r.epfWages || Math.min(15000, r.earnBasic || r.basicPay || 0));
+      totals.epfWages += Number(r.epfWages || Math.min(pfCapForMonth(payMonth), r.earnBasic || r.basicPay || 0));
       totals.pfDeduction += Number(r.pfDeduction || 0);
       totals.lwfDeduction += Number(r.lwfDeduction || 0);
       totals.esicDeduction += Number(r.esicDeduction || 0);
@@ -2866,7 +2869,7 @@ const Payroll = () => {
 
                       {/* 18. EPF WAGES */}
                       <td className="py-2.5 px-3 text-right font-mono text-xs text-gray-700 border-r border-gray-100">
-                        {(Number(row.epfWages || Math.min(15000, row.earnBasic || row.basicPay || 0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {(Number(row.epfWages || Math.min(pfCapForMonth(payMonth), row.earnBasic || row.basicPay || 0))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
                       {/* 19. PF */}
