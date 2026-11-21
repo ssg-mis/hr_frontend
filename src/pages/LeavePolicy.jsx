@@ -55,6 +55,10 @@ const LeavePolicy = () => {
     const [editingEntry, setEditingEntry] = useState(null); // original leave row
     const [entryForm, setEntryForm] = useState({ startDate: '', endDate: '', leaveCode: '', status: '', remark: '' });
     const [savingEntry, setSavingEntry] = useState(false);
+    // Add Leave (HR/Admin adds an approved leave for any employee)
+    const [showAddLeave, setShowAddLeave] = useState(false);
+    const [addLeaveForm, setAddLeaveForm] = useState({ employeeId: '', leaveCode: '', startDate: '', endDate: '', remark: '' });
+    const [addingLeave, setAddingLeave] = useState(false);
     const [editingAllowed, setEditingAllowed] = useState(null); // leaveCode being edited
     const [allowedValue, setAllowedValue] = useState('');
     const [savingAllowed, setSavingAllowed] = useState(false);
@@ -237,6 +241,45 @@ const LeavePolicy = () => {
             toast.error(error.message || 'Failed to update allowed days');
         } finally {
             setSavingAllowed(false);
+        }
+    };
+
+    const openAddLeave = () => {
+        setAddLeaveForm({ employeeId: '', leaveCode: leavePolicies[0]?.leaveCode || '', startDate: '', endDate: '', remark: '' });
+        setShowAddLeave(true);
+    };
+
+    const handleAddLeave = async (e) => {
+        e.preventDefault();
+        const f = addLeaveForm;
+        if (!f.employeeId || !f.leaveCode || !f.startDate || !f.endDate) {
+            toast.error('Select employee, leave type and dates');
+            return;
+        }
+        if (f.endDate < f.startDate) {
+            toast.error('End date cannot be before start date');
+            return;
+        }
+        const emp = activeEmployees.find((x) => String(x.employee_id) === String(f.employeeId));
+        setAddingLeave(true);
+        try {
+            await api.post('/leaves', {
+                employeeId: Number(f.employeeId),
+                leaveCode: f.leaveCode,
+                startDate: f.startDate,
+                endDate: f.endDate,
+                remark: f.remark || undefined,
+                departmentId: emp?.department_id || undefined,
+                directApprove: true,
+            });
+            toast.success('Leave added');
+            setShowAddLeave(false);
+            fetchLeaveSummary();
+            if (managingEmp && String(managingEmp.employeeId) === String(f.employeeId)) loadEmpLeaveEntries(managingEmp);
+        } catch (error) {
+            toast.error(error.message || 'Failed to add leave');
+        } finally {
+            setAddingLeave(false);
         }
     };
 
@@ -583,6 +626,7 @@ const LeavePolicy = () => {
                                             {policy.leaveCode || policy.leaveName}
                                         </th>
                                     ))}
+                                    <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-center" title="Normal Leave (no type)">NL</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider text-center font-bold text-indigo-600">Total Taken</th>
                                     {(isAdmin || isHR) && (
                                         <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-center">Action</th>
@@ -604,6 +648,7 @@ const LeavePolicy = () => {
                                                     </td>
                                                 );
                                             })}
+                                            <td className="px-6 py-4 whitespace-nowrap text-center text-indigo-600 font-medium">{emp.leaves?.NL?.taken || 0}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-center font-bold text-indigo-700 bg-indigo-50/30">{emp.total}</td>
                                             {(isAdmin || isHR) && (
                                                 <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -619,7 +664,7 @@ const LeavePolicy = () => {
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan={4 + leavePolicies.length + (isAdmin || isHR ? 1 : 0)} className="px-6 py-12 text-center text-gray-500">No employee leave record found.</td>
+                                        <td colSpan={5 + leavePolicies.length + (isAdmin || isHR ? 1 : 0)} className="px-6 py-12 text-center text-gray-500">No employee leave record found.</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -698,6 +743,16 @@ const LeavePolicy = () => {
                             ))}
                         </select>
                     </div>
+                )}
+
+                {activeTab === 'leaves' && (isAdmin || isHR) && (
+                    <button
+                        className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
+                        onClick={openAddLeave}
+                    >
+                        <Plus size={16} className="mr-2" />
+                        Add Leave
+                    </button>
                 )}
 
                 {activeTab === 'holidays' && (isAdmin || isHR) && (
@@ -861,6 +916,7 @@ const LeavePolicy = () => {
                                                             {leavePolicies.map((p) => (
                                                                 <option key={p.leaveCode} value={p.leaveCode}>{p.leaveCode}</option>
                                                             ))}
+                                                            <option value="NL">NL</option>
                                                         </select>
                                                     </td>
                                                     <td className="px-4 py-2">
@@ -973,6 +1029,61 @@ const LeavePolicy = () => {
                                 >
                                     Save Holiday
                                 </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Add Leave Modal */}
+            {showAddLeave && (
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh]">
+                        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                            <h2 className="text-xl font-bold text-gray-800">Add Leave</h2>
+                            <button onClick={() => setShowAddLeave(false)} className="text-gray-400 hover:text-gray-600">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleAddLeave} className="p-6 space-y-4 overflow-y-auto flex-1">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Employee *</label>
+                                <select value={addLeaveForm.employeeId} onChange={(e) => setAddLeaveForm({ ...addLeaveForm, employeeId: e.target.value })} className="w-full border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700" required>
+                                    <option value="">Select Employee</option>
+                                    {activeEmployees.map((emp) => (
+                                        <option key={emp.employee_id} value={emp.employee_id}>
+                                            {emp.employee_code} - {emp.name_as_per_aadhar}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Leave Type *</label>
+                                <select value={addLeaveForm.leaveCode} onChange={(e) => setAddLeaveForm({ ...addLeaveForm, leaveCode: e.target.value })} className="w-full border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700" required>
+                                    {leavePolicies.map((p) => (
+                                        <option key={p.leaveCode} value={p.leaveCode}>{p.leaveName} ({p.leaveCode})</option>
+                                    ))}
+                                    <option value="NL">Normal Leave (no type)</option>
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">From *</label>
+                                    <input type="date" value={addLeaveForm.startDate} onChange={(e) => setAddLeaveForm({ ...addLeaveForm, startDate: e.target.value, endDate: addLeaveForm.endDate && addLeaveForm.endDate < e.target.value ? e.target.value : addLeaveForm.endDate })} className="w-full border border-gray-300 rounded-md px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700" required />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">To *</label>
+                                    <input type="date" value={addLeaveForm.endDate} min={addLeaveForm.startDate} onChange={(e) => setAddLeaveForm({ ...addLeaveForm, endDate: e.target.value })} className="w-full border border-gray-300 rounded-md px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700" required />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Remark</label>
+                                <input type="text" value={addLeaveForm.remark} onChange={(e) => setAddLeaveForm({ ...addLeaveForm, remark: e.target.value })} className="w-full border border-gray-300 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-700" />
+                            </div>
+                            <p className="text-xs text-gray-500">Leave is saved as Approved. Normal Leave does not count against any leave type balance.</p>
+                            <div className="pt-2 flex gap-3">
+                                <button type="button" onClick={() => setShowAddLeave(false)} className="flex-1 px-4 py-3 border border-gray-300 rounded-md text-gray-700 font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+                                <button type="submit" disabled={addingLeave} className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-md font-medium hover:bg-indigo-700 transition-colors shadow-lg disabled:opacity-50">{addingLeave ? 'Saving...' : 'Add Leave'}</button>
                             </div>
                         </form>
                     </div>
