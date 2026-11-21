@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Users, CheckCircle, UserPlus, BadgeCheck, FileText, ClipboardEdit, Pencil } from 'lucide-react';
+import { Search, Users, CheckCircle, UserPlus, BadgeCheck, FileText, ClipboardEdit, Pencil, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { jobApplicationApi } from '../features/jobApplication/jobApplication.api';
 import joiningFormApi from '../features/joining-form/joiningForm.api';
@@ -131,6 +131,10 @@ const Joining = () => {
 
         {activeTab === 'direct' ? (
           <div className="overflow-x-auto">
+            <div className="px-6 py-3 bg-amber-50/60 border-b border-amber-100 text-xs text-amber-800">
+              <b>How it works:</b> a submitted form is <b>not an employee yet</b>. HR verifies it and clicks <b>Complete Joining</b> — only then the employee code is given and the person appears in the Employees list.
+              {directData.filter((d) => d.stage === 'Verified').length > 0 && <> Pending with HR: <b>{directData.filter((d) => d.stage === 'Verified').length}</b>.</>}
+            </div>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50 text-gray-500 uppercase tracking-wider text-xs font-semibold">
@@ -167,7 +171,9 @@ const Joining = () => {
                               <BadgeCheck size={12} /> Joined · {d.employeeCode}
                             </span>
                           ) : d.stage === 'Verified' ? (
-                            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">Pending with HR</span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              <Clock size={12} /> Submitted · HR verification pending
+                            </span>
                           ) : (
                             <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200">{d.stage}</span>
                           )}

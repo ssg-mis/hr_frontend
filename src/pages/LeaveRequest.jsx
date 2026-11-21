@@ -379,6 +379,13 @@ const LeaveRequest = () => {
 
   const leaveStats = getLeaveStats();
 
+  // Normal Leave has no policy/balance: card shows only the days taken
+  const normalLeaveUsed = leavesData
+    .filter(l => l.status && !l.status.toLowerCase().includes('reject') &&
+      l.employeeId?.toString() === employeeId?.toString() &&
+      (l.leaveCode === 'NL' || l.leaveType === 'Normal Leave'))
+    .reduce((sum, l) => sum + (l.days || 0), 0);
+
   const handleCardClick = (policy) => {
     setFormData(prev => ({
       ...prev,
@@ -472,6 +479,26 @@ const LeaveRequest = () => {
             </div>
           </div>
         ))}
+        <div
+          className="flex-1 bg-white rounded-lg shadow border p-3 cursor-pointer hover:shadow-md transition-shadow border-l-4 border-l-emerald-500 min-w-0"
+          onClick={() => handleCardClick({ leaveName: 'Normal Leave', leaveCode: 'NL' })}
+        >
+          <div className="flex items-center justify-between">
+            <div className="min-w-0 overflow-hidden">
+              <p className="text-[10px] text-gray-500 font-medium truncate uppercase tracking-wider">Normal Leave</p>
+              <div className="flex items-baseline gap-1">
+                <h3 className="text-lg font-bold text-gray-800">{normalLeaveUsed}</h3>
+                <span className="text-[10px] text-gray-400">Days taken</span>
+              </div>
+              <p className="text-[10px] font-medium truncate text-gray-500 mt-0.5">
+                <span className="text-emerald-600">No limit</span> • Plain leave
+              </p>
+            </div>
+            <div className="p-1.5 rounded-full bg-emerald-50 flex-shrink-0">
+              <Calendar size={14} className="text-emerald-600" />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Leave Requests Table */}

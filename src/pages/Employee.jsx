@@ -9,6 +9,7 @@ import { api } from '../lib/api';
 import CanteenQrCard from '../components/CanteenQrCard';
 import EmployeeDocumentsPanel from '../components/EmployeeDocumentsPanel';
 import useAuthStore from '../store/authStore';
+import joiningFormApi from '../features/joining-form/joiningForm.api';
 
 /* ─── helpers ─────────────────────────────────────────────────────── */
 const fmtDate = (d) =>
@@ -146,6 +147,13 @@ const StatCard = ({ icon: Icon, label, value, color, sub }) => (
 /* ─── Detail Modal ─────────────────────────────────────────────────── */
 const DetailModal = ({ employee, onClose }) => {
   const canManageDocs = useAuthStore((st) => st.isAdmin || st.isHR);
+  // Direct joining forms submitted but not yet completed by HR (not employees yet)
+  const [pendingJoinings, setPendingJoinings] = useState([]);
+  useEffect(() => {
+    joiningFormApi.directList()
+      .then((rows) => setPendingJoinings((rows || []).filter((r) => r.stage === 'Verified')))
+      .catch(() => {});
+  }, []);
   const [tab, setTab] = useState('details');
   if (!employee) return null;
 
@@ -570,6 +578,14 @@ const Employee = () => {
           </button>
         </div>
       </div>
+
+      {pendingJoinings.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <b>{pendingJoinings.length} new joining form{pendingJoinings.length > 1 ? 's' : ''} submitted — HR verification pending.</b>{' '}
+          They will appear in this list after HR clicks <b>Complete Joining</b> (Joining page):{' '}
+          {pendingJoinings.map((r) => r.candidateName).join(', ')}
+        </div>
+      )}
 
       {/* ── Stats — only Working + Resignation Requested ─── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
