@@ -147,13 +147,6 @@ const StatCard = ({ icon: Icon, label, value, color, sub }) => (
 /* ─── Detail Modal ─────────────────────────────────────────────────── */
 const DetailModal = ({ employee, onClose }) => {
   const canManageDocs = useAuthStore((st) => st.isAdmin || st.isHR);
-  // Direct joining forms submitted but not yet completed by HR (not employees yet)
-  const [pendingJoinings, setPendingJoinings] = useState([]);
-  useEffect(() => {
-    joiningFormApi.directList()
-      .then((rows) => setPendingJoinings((rows || []).filter((r) => r.stage === 'Verified')))
-      .catch(() => {});
-  }, []);
   const [tab, setTab] = useState('details');
   if (!employee) return null;
 
@@ -326,6 +319,13 @@ const TAB_CONFIG = [
 ];
 
 const Employee = () => {
+  // Direct joining forms submitted but not yet completed by HR (not employees yet)
+  const [pendingJoinings, setPendingJoinings] = useState([]);
+  useEffect(() => {
+    joiningFormApi.directList()
+      .then((rows) => setPendingJoinings((rows || []).filter((r) => r.stage === 'Verified')))
+      .catch(() => {});
+  }, []);
   const [activeTab, setActiveTab] = useState('Active');
   const [searchTerm, setSearchTerm] = useState('');
   const [companies, setCompanies] = useState([]);
