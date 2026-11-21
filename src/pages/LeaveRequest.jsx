@@ -5,9 +5,11 @@ import HodInfo, { HodLabel } from '../components/HodInfo';
 import useDataStore from '../store/dataStore';
 import toast from 'react-hot-toast';
 import { api } from '../lib/api';
+import SearchableEmployeeSelect from '../components/SearchableEmployeeSelect';
 
 const LeaveRequest = () => {
-  const { user, isHOD } = useAuthStore();
+  const { user, isHOD, isAdmin, isHR } = useAuthStore();
+  const canPickEmployee = isAdmin || isHR;
   const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
   const userIsHOD = isHOD || userRoles.some(r => r.toLowerCase() === 'hod');
   const employeeId = user?.employeeId || user?.employee_id || user?.id || localStorage.getItem("employeeId");
@@ -20,6 +22,7 @@ const LeaveRequest = () => {
   const [selectedMonth, setSelectedMonth] = useState('all');
   const [employees, setEmployees] = useState([]);
   const [hods, setHods] = useState([]);
+  const [selfEmp, setSelfEmp] = useState(null);
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [formData, setFormData] = useState({
     employeeName: user?.name || user?.Name || '',
@@ -39,6 +42,7 @@ const LeaveRequest = () => {
       const result = await api.get('/employees/active');
 
       if (result.success && result.data && result.data.length > 0) {
+        setEmployees(result.data);
         const currentEmpId = user?.employeeId || user?.employee_id || user?.id;
         const currentEmpCode = user?.employeeCode;
 
@@ -48,6 +52,7 @@ const LeaveRequest = () => {
         ) || result.data[0];
 
         if (emp) {
+          setSelfEmp(emp);
           setFormData(prev => ({
             ...prev,
             employeeName: emp.name_as_per_aadhar || user?.name || user?.Name || prev.employeeName,
@@ -258,6 +263,26 @@ const LeaveRequest = () => {
     }
   }, [employeeId]);
 
+  // Admin/HR picks which employee the request is for (null = back to themselves)
+  const handlePickEmployee = (picked) => {
+    const emp = picked || selfEmp;
+    if (!emp) return;
+    setFormData(prev => ({
+      ...prev,
+      employeeName: emp.name_as_per_aadhar || '',
+      employeeId: emp.employee_id,
+      department: emp.department?.department_name || '',
+      departmentId: emp.department_id || '',
+      hodName: emp.department?.hod_name || '',
+      hodCode: emp.department?.hod_code || '',
+      leaveType: '',
+      leaveCode: '',
+    }));
+  };
+
+  const selfId = selfEmp?.employee_id ?? employeeId;
+  const isForSelf = !formData.employeeId || String(formData.employeeId) === String(selfId);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -267,7 +292,8 @@ const LeaveRequest = () => {
     }
 
     const selectedPolicy = leaveTypes.find(t => t.leaveName === formData.leaveType || t.leaveCode === formData.leaveCode);
-    if (selectedPolicy) {
+    // For another employee the server checks overlap and balance, since leavesData is only the logged-in user's.
+    if (selectedPolicy && isForSelf) {
       const activeLeaves = leavesData.filter(leave =>
         leave.status && !leave.status.toLowerCase().includes('reject') &&
         (leave.leaveCode === selectedPolicy.leaveCode || leave.leaveType === selectedPolicy.leaveName)
@@ -311,7 +337,7 @@ const LeaveRequest = () => {
           reason: ''
         }));
         setShowModal(false);
-        fetchLeaveData(formData.employeeId);
+        fetchLeaveData(selfId);
       } else {
         toast.error('Failed to submit: ' + (result.message || 'Unknown error'));
       }
@@ -532,13 +558,23 @@ const LeaveRequest = () => {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Employee Name *</label>
-                <input
-                  type="text"
-                  name="employeeName"
-                  value={formData.employeeName}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
-                  readOnly
-                />
+                {canPickEmployee ? (
+                  <SearchableEmployeeSelect
+                    employees={employees}
+                    selectedEmployeeId={formData.employeeId}
+                    onSelect={handlePickEmployee}
+                    searchBy="code"
+                    placeholder="Search by employee code..."
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    name="employeeName"
+                    value={formData.employeeName}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
+                    readOnly
+                  />
+                )}
               </div>
 
               <div>
@@ -568,7 +604,7 @@ const LeaveRequest = () => {
                   hodName={formData.hodName}
                   hodCode={formData.hodCode}
                   departmentName={formData.department}
-                  isSelfHod={userIsHOD}
+                  isSelfHod={userIsHOD && isForSelf}
                 />
               </div>
 
@@ -594,7 +630,7 @@ const LeaveRequest = () => {
                     </>
                   )}
                 </select>
-                {formData.leaveType && (() => {
+                {formData.leaveType && isForSelf && (() => {
                   const stat = leaveStats.find(s => s.leaveName === formData.leaveType || s.leaveCode === formData.leaveCode);
                   if (!stat) return null;
                   return stat.remaining <= 0 ? (

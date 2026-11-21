@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import api from "../lib/api";
 import useAuthStore from "../store/authStore";
 import HodInfo, { useMyHod, HodLabel } from "../components/HodInfo";
+import SearchableEmployeeSelect from "../components/SearchableEmployeeSelect";
 
 const IST = "Asia/Kolkata";
 
@@ -199,9 +200,32 @@ const OvertimeManagement = () => {
     return Array.from(set);
   }, [requests]);
 
+  // Admin/HR picks which employee the OT request is for (null = back to themselves)
+  const selfEmp = employees.find(e => Number(e.id) === Number(user?.employeeId)) ||
+    employees.find(e => e.biometricEmployeeCode && e.biometricEmployeeCode === user?.biometricEmployeeCode);
+  const selfEmpId = selfEmp?.id ?? user?.employeeId;
+  const isForSelf = !formData.employeeId || String(formData.employeeId) === String(selfEmpId);
+
+  const handlePickEmployee = (picked) => {
+    const emp = picked || selfEmp;
+    if (!emp) return;
+    setFormData(prev => ({
+      ...prev,
+      employeeId: emp.id,
+      employeeName: emp.candidateName || "",
+      employeeCode: emp.biometricEmployeeCode || "",
+      department: emp.departmentName || "",
+      hodName: emp.hodName || "",
+    }));
+  };
+
   // Submit Overtime Request
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.employeeId) {
+      toast.error("Please select an employee");
+      return;
+    }
     if (!formData.reason.trim()) {
       toast.error("Please provide a valid work description / reason");
       return;
@@ -630,6 +654,19 @@ const OvertimeManagement = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {(isAdmin || isHR) && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Employee *</label>
+                  <SearchableEmployeeSelect
+                    employees={employees}
+                    selectedEmployeeId={formData.employeeId}
+                    onSelect={handlePickEmployee}
+                    searchBy="both"
+                    placeholder="Search by employee name or code..."
+                  />
+                </div>
+              )}
+
               {/* Auto-filled Employee Details */}
               <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs">
                 <div>
@@ -647,11 +684,11 @@ const OvertimeManagement = () => {
               </div>
 
               <HodInfo
-                hodName={myHod?.hodName}
-                hodCode={myHod?.hodCode}
-                departmentName={myHod?.departmentName || formData.department}
-                isSelfHod={myHod?.isSelfHod}
-                loading={hodLoading}
+                hodName={isForSelf ? myHod?.hodName : formData.hodName}
+                hodCode={isForSelf ? myHod?.hodCode : undefined}
+                departmentName={isForSelf ? (myHod?.departmentName || formData.department) : formData.department}
+                isSelfHod={isForSelf ? myHod?.isSelfHod : false}
+                loading={isForSelf ? hodLoading : false}
               />
 
               {/* OT Date */}

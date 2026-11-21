@@ -18,6 +18,7 @@ const SearchableEmployeeSelect = ({
   disabled = false,
   error = false,
   className = '',
+  searchBy = 'all', // 'all' = name/code/designation/department, 'code' = employee code only, 'both' = name + code
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -79,6 +80,8 @@ const SearchableEmployeeSelect = ({
     const term = searchTerm.toLowerCase().trim();
     const empName = getEmpName(emp).toLowerCase();
     const code = getEmpCode(emp).toLowerCase();
+    if (searchBy === 'code') return code.includes(term);
+    if (searchBy === 'both') return empName.includes(term) || code.includes(term);
     const designation = getEmpDesg(emp).toLowerCase();
     const dept = getEmpDept(emp).toLowerCase();
 
