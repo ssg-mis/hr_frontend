@@ -123,7 +123,7 @@ const DirectJoiningFormModal = ({ applicationId, onClose, onDone }) => {
         toast.success('Direct joining form updated');
       } else {
         const res = await joiningFormApi.directCreate(v);
-        toast.success(`Submitted (${res?.data?.applicationNumber}) — HR will complete the joining`);
+        toast.success(`Submitted (${res?.data?.applicationNumber}) — pending HR verification. Employee will appear in the list after HR completes the joining`);
       }
       onDone?.();
       onClose();

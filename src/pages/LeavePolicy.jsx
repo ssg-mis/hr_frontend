@@ -33,6 +33,7 @@ const LeavePolicy = () => {
     const [leavePolicies, setLeavePolicies] = useState([]);
     const [activeEmployees, setActiveEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [normalOnly, setNormalOnly] = useState(false); // Normal Leave card clicked: list only employees who took it
     const [editingPolicyId, setEditingPolicyId] = useState(null);
     const [editingBalance, setEditingBalance] = useState('');
 
@@ -65,9 +66,9 @@ const LeavePolicy = () => {
 
     const isFirstRunSearch = React.useRef(true);
 
-    const fetchLeaveSummary = async (page = summaryPage, limit = summaryLimit, year = selectedYear, search = searchTerm) => {
+    const fetchLeaveSummary = async (page = summaryPage, limit = summaryLimit, year = selectedYear, search = searchTerm, onlyCode = normalOnly ? 'NL' : '') => {
         try {
-            const summaryData = await api.get(`/leaves/summary?year=${year}&page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`);
+            const summaryData = await api.get(`/leaves/summary?year=${year}&page=${page}&limit=${limit}&search=${encodeURIComponent(search)}${onlyCode ? `&onlyCode=${onlyCode}` : ''}`);
             if (summaryData.success) {
                 setLeaveRecordSummary(summaryData.data || []);
                 setSummaryPagination(summaryData.pagination || {
@@ -244,8 +245,14 @@ const LeavePolicy = () => {
         }
     };
 
-    const openAddLeave = () => {
-        setAddLeaveForm({ employeeId: '', leaveCode: leavePolicies[0]?.leaveCode || '', startDate: '', endDate: '', remark: '' });
+    const toggleNormalOnly = (on) => {
+        setNormalOnly(on);
+        setSummaryPage(1);
+        fetchLeaveSummary(1, summaryLimit, selectedYear, searchTerm, on ? 'NL' : '');
+    };
+
+    const openAddLeave = (code) => {
+        setAddLeaveForm({ employeeId: '', leaveCode: typeof code === 'string' ? code : (leavePolicies[0]?.leaveCode || ''), startDate: '', endDate: '', remark: '' });
         setShowAddLeave(true);
     };
 
@@ -606,6 +613,40 @@ const LeavePolicy = () => {
                                 </div>
                             );
                         })}
+                        {/* Normal Leave: plain paid leave, no policy balance */}
+                        <div
+                            onClick={() => toggleNormalOnly(true)}
+                            className={`flex-1 min-w-[180px] bg-white rounded-xl shadow-md border p-4 flex items-center transition-all hover:shadow-lg cursor-pointer ${normalOnly ? 'border-emerald-400 ring-2 ring-emerald-200' : 'border-gray-100'}`}
+                            title="Click to see employees who took Normal Leave"
+                        >
+                            <div className="p-3 rounded-xl bg-emerald-100 mr-4 shrink-0">
+                                <Calendar size={22} className="text-emerald-600" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider truncate">Normal Leave</p>
+                                <div className="flex items-baseline gap-1">
+                                    <h3 className="text-xl font-bold text-gray-800">No limit</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {normalOnly && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                        <div className="text-sm text-emerald-800">
+                            <b>Normal Leave</b> — showing only employees who took Normal Leave in {selectedYear}.
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {(isAdmin || isHR) && (
+                                <button onClick={() => openAddLeave('NL')} className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700">
+                                    <Plus size={14} className="mr-1" /> Add Normal Leave
+                                </button>
+                            )}
+                            <button onClick={() => toggleNormalOnly(false)} className="px-3 py-1.5 rounded-md text-xs font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50">
+                                Show all employees
+                            </button>
+                        </div>
                     </div>
                 )}
 
