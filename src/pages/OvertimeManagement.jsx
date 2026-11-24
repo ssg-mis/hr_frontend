@@ -654,7 +654,7 @@ const OvertimeManagement = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              {(isAdmin || isHR) && (
+              {isAdmin && (
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Employee *</label>
                   <SearchableEmployeeSelect

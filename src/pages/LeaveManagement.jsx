@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import useAuthStore from '../store/authStore';
 import HodInfo, { HodLabel } from '../components/HodInfo';
 import { api } from '../lib/api';
+import SearchableEmployeeSelect from '../components/SearchableEmployeeSelect';
 
 const LeaveManagement = () => {
   const { user, isAdmin, isHR, isHOD } = useAuthStore();
@@ -48,7 +49,7 @@ const LeaveManagement = () => {
   });
 
   useEffect(() => {
-    if (employees.length > 0 && user && !isAdmin && !isHR) {
+    if (employees.length > 0 && user && !isAdmin) {
       const selfEmp = employees.find(emp => emp.id === user.employeeId);
       if (selfEmp) {
         setFormData(prev => ({
@@ -827,7 +828,7 @@ const LeaveManagement = () => {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Employee Name *</label>
-                {!isHR && !isAdmin ? (
+                {!isAdmin ? (
                   <input
                     type="text"
                     name="employeeName"
@@ -836,18 +837,13 @@ const LeaveManagement = () => {
                     readOnly
                   />
                 ) : (
-                  <select
-                    name="employeeName"
-                    value={formData.employeeName}
-                    onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                  >
-                    <option value="">Select Employee</option>
-                    {employees.map(employee => (
-                      <option key={employee.id} value={employee.name}>{employee.name}</option>
-                    ))}
-                  </select>
+                  <SearchableEmployeeSelect
+                    employees={employees.map(e => ({ ...e, employee_id: e.id, employee_code: e.employeeCode }))}
+                    selectedEmployeeId={formData.employeeId}
+                    onSelect={(emp) => emp && handleEmployeeChange(emp.name)}
+                    searchBy="both"
+                    placeholder="Search by employee code or name..."
+                  />
                 )}
               </div>
 
