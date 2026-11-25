@@ -9,7 +9,7 @@ import SearchableEmployeeSelect from '../components/SearchableEmployeeSelect';
 
 const LeaveRequest = () => {
   const { user, isHOD, isAdmin, isHR } = useAuthStore();
-  const canPickEmployee = isAdmin || isHR;
+  const canPickEmployee = isAdmin;
   const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
   const userIsHOD = isHOD || userRoles.some(r => r.toLowerCase() === 'hod');
   const employeeId = user?.employeeId || user?.employee_id || user?.id || localStorage.getItem("employeeId");
@@ -590,8 +590,8 @@ const LeaveRequest = () => {
                     employees={employees}
                     selectedEmployeeId={formData.employeeId}
                     onSelect={handlePickEmployee}
-                    searchBy="code"
-                    placeholder="Search by employee code..."
+                    searchBy="both"
+                    placeholder="Search by employee code or name..."
                   />
                 ) : (
                   <input
