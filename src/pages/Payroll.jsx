@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import adjustmentPayrollApi from "../features/adjustment-payroll/adjustmentPayroll.api";
-import { toAdjustmentRow, fromDbRow, prevMonthPeriod } from "../features/adjustment-payroll/adjustmentPayroll.utils";
+import { toAdjustmentRow, fromDbRow, prevMonthPeriod, carryForwardEdits, cascade, NUMERIC_FIELDS } from "../features/adjustment-payroll/adjustmentPayroll.utils";
 import {
   Search, Calendar, Clock, Download, Plus, Check, X, FileText,
   BarChart3, CreditCard, Calculator, Filter, Eye, Trash2, Save,
@@ -2237,11 +2237,15 @@ const Payroll = () => {
     const existing = new Map((res?.data || []).map((d) => [Number(d.employeeId), fromDbRow(d)]));
 
     const prevAdv = new Map();
+    const prevRows = new Map();
     const prevPeriod = prevMonthPeriod(period);
     if (prevPeriod) {
       try {
         const prevRes = await adjustmentPayrollApi.list(prevPeriod);
-        for (const d of prevRes?.data || []) prevAdv.set(Number(d.employeeId), Number(d.advDifference) || 0);
+        for (const d of prevRes?.data || []) {
+          prevAdv.set(Number(d.employeeId), Number(d.advDifference) || 0);
+          prevRows.set(Number(d.employeeId), fromDbRow(d));
+        }
       } catch {
         // No adjustment payroll saved for the previous month — nothing to carry forward.
       }
@@ -2253,11 +2257,14 @@ const Payroll = () => {
       if (old) {
         const kept = { ...row, advDifference: old.advDifference, editedFields: old.editedFields };
         for (const f of old.editedFields) if (f in old) kept[f] = old[f];
-        return kept;
+        // Edited rates must flow into earnings/deductions (payroll still has the old rate)
+        return cascade(kept, old.editedFields.filter((f) => NUMERIC_FIELDS.includes(f)));
       }
+      // Brand-new row: carry ADV and the cells edited in last month's adjustment (rates, UAN/IP, bank...)
       const carried = prevAdv.get(row.employeeId) || 0;
-      if (!carried) return row;
-      return { ...row, advDifference: carried, originalValues: { ...row.originalValues, advDifference: carried } };
+      const base = carried ? { ...row, advDifference: carried, originalValues: { ...row.originalValues, advDifference: carried } } : row;
+      const prev = prevRows.get(row.employeeId);
+      return prev ? carryForwardEdits(base, prev) : base;
     });
     rows.push(...existing.values()); // employees only in the adjustment stay untouched
     await adjustmentPayrollApi.save(period, rows, { markSynced: true, source });

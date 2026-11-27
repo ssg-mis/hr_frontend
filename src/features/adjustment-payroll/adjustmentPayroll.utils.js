@@ -166,3 +166,16 @@ export const revertCell = (row, field) => {
 };
 
 export const resetRow = (row) => ({ ...row, ...(row.originalValues || {}), editedFields: [] });
+
+// Cells that stay as set in the adjustment until changed again (month-specific cells such as days/OT/deductions never carry).
+export const CARRY_FIELDS = ['basicRate', 'allowanceRate', 'uanNo', 'ipNo', 'bankAccountNo', 'ifscCode', 'paymentMode', 'remarks'];
+
+// New month's row (copied from payroll) + previous month's adjustment row -> keep what was edited there.
+// Carried cells stay marked as edited, so they keep carrying into the following months.
+export const carryForwardEdits = (row, prev) => {
+  const fields = CARRY_FIELDS.filter((f) => (prev.editedFields || []).includes(f));
+  if (!fields.length) return row;
+  const next = { ...row, editedFields: [...new Set([...(row.editedFields || []), ...fields])] };
+  for (const f of fields) next[f] = prev[f];
+  return cascade(next, fields.filter((f) => NUMERIC_FIELDS.includes(f)));
+};
