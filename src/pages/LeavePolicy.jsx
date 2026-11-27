@@ -667,7 +667,7 @@ const LeavePolicy = () => {
                                             {policy.leaveCode || policy.leaveName}
                                         </th>
                                     ))}
-                                    <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-center" title="Normal Leave (no type)">NL</th>
+                                    <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-center" title="Normal Leave: Opening | Consumed | Balance">NL (Open | Used | Bal)</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider text-center font-bold text-indigo-600">Total Taken</th>
                                     {(isAdmin || isHR) && (
                                         <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-center">Action</th>
@@ -689,7 +689,7 @@ const LeavePolicy = () => {
                                                     </td>
                                                 );
                                             })}
-                                            <td className="px-6 py-4 whitespace-nowrap text-center text-indigo-600 font-medium">{emp.leaves?.NL?.taken || 0}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-center text-indigo-600 font-medium"><span title="Opening | Consumed | Balance">{emp.leaves?.NL?.limit || 0} | {emp.leaves?.NL?.taken || 0} | {(emp.leaves?.NL?.limit || 0) - (emp.leaves?.NL?.taken || 0)}</span></td>
                                             <td className="px-6 py-4 whitespace-nowrap text-center font-bold text-indigo-700 bg-indigo-50/30">{emp.total}</td>
                                             {(isAdmin || isHR) && (
                                                 <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -923,6 +923,23 @@ const LeavePolicy = () => {
                                         </div>
                                     );
                                 })}
+                                {(() => {
+                                    const nl = managingEmp.leaves?.NL || { limit: 0, taken: 0 };
+                                    const bal = Number(nl.limit) - Number(nl.taken);
+                                    return (
+                                        <div className="rounded-lg border border-emerald-100 bg-emerald-50/40 p-3">
+                                            <p className="text-xs font-bold text-emerald-700 uppercase" title="Normal Leave">NL</p>
+                                            <div className="mt-2 space-y-0.5 text-xs text-gray-600">
+                                                <div className="flex justify-between"><span>Opening</span><span className="font-semibold text-gray-800">{nl.limit}</span></div>
+                                                <div className="flex justify-between"><span>Consumed</span><span className="font-semibold text-gray-800">{nl.taken}</span></div>
+                                                <div className="flex justify-between border-t border-emerald-100 pt-0.5">
+                                                    <span>Balance</span>
+                                                    <span className={`font-bold ${bal < 0 ? 'text-red-600' : 'text-green-600'}`}>{bal}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
 
                             <h3 className="text-sm font-bold text-gray-700 mb-2">Leave Entries – edit or delete</h3>

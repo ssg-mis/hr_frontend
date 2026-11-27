@@ -493,7 +493,7 @@ const OvertimeManagement = () => {
                   const startFormatted = req.startDate ? new Date(req.startDate).toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: IST }) : "—";
                   const endFormatted = req.endDate ? new Date(req.endDate).toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: IST }) : "—";
 
-                  const isEmpHOD = isHOD || isAdmin;
+                  const isEmpHOD = isHOD; // HOD stage: only the department HOD (backend enforces the department)
                   const isEmpHR = isHR || isAdmin;
                   const isOwnRequest = Number(req.employeeId) === Number(user?.employeeId) || req.biometricEmployeeCode === user?.biometricEmployeeCode;
                   const canHodApprove = isEmpHOD && req.status === "Pending HOD" && !isOwnRequest;
@@ -658,7 +658,9 @@ const OvertimeManagement = () => {
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Employee *</label>
                   <SearchableEmployeeSelect
-                    employees={employees}
+                    employees={employees.filter(e =>
+                      Number(e.id) === Number(user?.employeeId) ||
+                      (user?.headedDepartments || []).some(h => String(h.id) === String(e.departmentId) || h.name === e.departmentName))}
                     selectedEmployeeId={formData.employeeId}
                     onSelect={handlePickEmployee}
                     searchBy="both"
