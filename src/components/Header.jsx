@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import { Bell, User, Menu } from 'lucide-react';
 import useAuthStore from '../store/authStore';
+import { getRoleDisplayLabel } from '../data/pagePermissions';
 
 const Header = ({ onMenuClick }) => {
   const { user } = useAuthStore();
@@ -152,7 +153,7 @@ const Header = ({ onMenuClick }) => {
               <p className="text-sm font-semibold text-gray-800 group-hover:text-indigo-600 transition-colors">
                 {user?.name || 'Guest'}
               </p>
-              <p className="text-xs text-gray-500">Administrator</p>
+              <p className="text-xs text-gray-500">{getRoleDisplayLabel(user)}</p>
             </div>
             <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100 group-hover:bg-indigo-100 transition-all">
               <User size={20} className="text-indigo-600" />

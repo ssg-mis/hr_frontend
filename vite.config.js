@@ -19,7 +19,9 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api/v1": {
-        target: "http://127.0.0.1:5006",
+        // Overridable so the Vite dev server can reach the backend when both run in Docker
+        // (e.g. API_PROXY_TARGET=http://host.docker.internal:5006).
+        target: process.env.API_PROXY_TARGET || "http://127.0.0.1:5006",
         changeOrigin: true,
         secure: false,
       },

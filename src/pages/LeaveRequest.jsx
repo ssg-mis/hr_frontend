@@ -1,12 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, X, Calendar, Clock, CheckCircle, AlertCircle, Filter, Search } from 'lucide-react';
 import useAuthStore from '../store/authStore';
+import HodInfo, { HodLabel } from '../components/HodInfo';
 import useDataStore from '../store/dataStore';
 import toast from 'react-hot-toast';
+import { api } from '../lib/api';
+import SearchableEmployeeSelect from '../components/SearchableEmployeeSelect';
 
 const LeaveRequest = () => {
-  const { user } = useAuthStore();
-  const employeeId = user?.employee_id || user?.id || localStorage.getItem("employeeId");
+  const { user, isHOD, isAdmin, isHR } = useAuthStore();
+  const canPickEmployee = isAdmin;
+  const userRoles = user?.roles ?? (user?.role ? [user.role] : []);
+  const userIsHOD = isHOD || userRoles.some(r => r.toLowerCase() === 'hod');
+  const employeeId = user?.employeeId || user?.employee_id || user?.id || localStorage.getItem("employeeId");
   const [loading, setLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   const [leavesData, setLeavesData] = useState([]);
@@ -15,12 +21,12 @@ const LeaveRequest = () => {
   const [showModal, setShowModal] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState('all');
   const [employees, setEmployees] = useState([]);
-  const API_URL = import.meta.env.VITE_API_URL || "/api/v1";
   const [hods, setHods] = useState([]);
+  const [selfEmp, setSelfEmp] = useState(null);
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [formData, setFormData] = useState({
     employeeName: user?.name || user?.Name || '',
-    employeeId: user?.employee_id || user?.id || '',
+    employeeId: user?.employeeId || user?.employee_id || user?.id || '',
     department: '',
     departmentId: '',
     hodName: '',
@@ -33,34 +39,38 @@ const LeaveRequest = () => {
 
   const fetchEmployeeData = async () => {
     try {
-      const userName = user?.name || user?.Name;
-      if (!userName) return;
+      const result = await api.get('/employees/active');
 
-      const response = await fetch(`${API_URL}/employees/active?name=${encodeURIComponent(userName)}`);
-      const result = await response.json();
+      if (result.success && result.data && result.data.length > 0) {
+        setEmployees(result.data);
+        const currentEmpId = user?.employeeId || user?.employee_id || user?.id;
+        const currentEmpCode = user?.employeeCode;
 
-      if (result.success && result.data.length > 0) {
-        const emp = result.data[0]; // Take the first matching employee
+        const emp = result.data.find(e =>
+          (currentEmpId && Number(e.employee_id) === Number(currentEmpId)) ||
+          (currentEmpCode && e.employee_code === currentEmpCode)
+        ) || result.data[0];
+
         if (emp) {
+          setSelfEmp(emp);
           setFormData(prev => ({
             ...prev,
-            employeeId: emp.employee_id,
-            department: emp.department?.department_name || '',
-            departmentId: emp.department_id || '',
-            hodName: emp.department?.hod_name || ''
+            employeeName: emp.name_as_per_aadhar || user?.name || user?.Name || prev.employeeName,
+            employeeId: emp.employee_id || prev.employeeId,
+            department: emp.department?.department_name || prev.department,
+            departmentId: emp.department_id || prev.departmentId,
+            hodName: emp.department?.hod_name || '',
+            hodCode: emp.department?.hod_code || ''
           }));
-          // Fetch leave data using the resolved employee_id
           fetchLeaveData(emp.employee_id);
-        } else {
-          // If no employee found, still try to fetch with what we have
-          fetchLeaveData(employeeId);
+          return;
         }
-      } else {
-        // If API fails, try with existing ID
-        fetchLeaveData(employeeId);
       }
+      fetchLeaveData(employeeId);
     } catch (error) {
-      console.error('Error fetching employee data:', error);
+      if (error?.status !== 403 && error?.status !== 401) {
+        console.error('Error fetching employee data:', error);
+      }
       fetchLeaveData(employeeId);
     }
   };
@@ -73,8 +83,7 @@ const LeaveRequest = () => {
   // Fetch HODs from backend
   const fetchHods = async () => {
     try {
-      const response = await fetch(`${API_URL}/leaves/hods`);
-      const result = await response.json();
+      const result = await api.get('/leaves/hods');
       if (result.success) {
         setHods(result.data);
       }
@@ -85,8 +94,7 @@ const LeaveRequest = () => {
 
   const fetchLeaveTypes = async () => {
     try {
-      const response = await fetch(`${API_URL}/leaves/policies`);
-      const result = await response.json();
+      const result = await api.get('/leaves/policies');
       if (result.success) {
         setLeaveTypes(result.data);
       }
@@ -212,8 +220,7 @@ const LeaveRequest = () => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_URL}/leaves/employee/${idToUse}`);
-      const result = await response.json();
+      const result = await api.get(`/leaves/employee/${idToUse}`);
 
       if (!result.success) {
         throw new Error(result.message || 'Failed to fetch leave data');
@@ -231,7 +238,8 @@ const LeaveRequest = () => {
         status: leave.status,
         leaveType: leave.leaveType,
         appliedDate: new Date(leave.createdAt).toLocaleDateString(),
-        hodName: leave.hodName
+        hodName: leave.hodName,
+        hodCode: leave.hodCode
       }));
 
       setLeavesData(processedData);
@@ -255,55 +263,87 @@ const LeaveRequest = () => {
     }
   }, [employeeId]);
 
+  // Admin/HR picks which employee the request is for (null = back to themselves)
+  const handlePickEmployee = (picked) => {
+    const emp = picked || selfEmp;
+    if (!emp) return;
+    setFormData(prev => ({
+      ...prev,
+      employeeName: emp.name_as_per_aadhar || '',
+      employeeId: emp.employee_id,
+      department: emp.department?.department_name || '',
+      departmentId: emp.department_id || '',
+      hodName: emp.department?.hod_name || '',
+      hodCode: emp.department?.hod_code || '',
+      leaveType: '',
+      leaveCode: '',
+    }));
+  };
+
+  const selfId = selfEmp?.employee_id ?? employeeId;
+  const isForSelf = !formData.employeeId || String(formData.employeeId) === String(selfId);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason || !formData.hodName) {
+    if (!formData.employeeName || !formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason) {
       toast.error('Please fill all required fields');
       return;
     }
 
+    const selectedPolicy = leaveTypes.find(t => t.leaveName === formData.leaveType || t.leaveCode === formData.leaveCode);
+    // For another employee the server checks overlap and balance, since leavesData is only the logged-in user's.
+    if (selectedPolicy && isForSelf) {
+      const activeLeaves = leavesData.filter(leave =>
+        leave.status && !leave.status.toLowerCase().includes('reject') &&
+        (leave.leaveCode === selectedPolicy.leaveCode || leave.leaveType === selectedPolicy.leaveName)
+      );
+      const usedDays = activeLeaves.reduce((sum, l) => sum + (l.days || 0), 0);
+      const totalLimit = selectedPolicy.balance || 0;
+      const remaining = totalLimit - usedDays;
+      const reqDays = calculateDays(formData.fromDate, formData.toDate);
+
+      if (remaining <= 0) {
+        toast.error(`You have no leave balance left for ${formData.leaveType} (0 days remaining).`);
+        return;
+      }
+      if (reqDays > remaining) {
+        toast.error(`Cannot request ${reqDays} day(s). You only have ${remaining} day(s) of ${formData.leaveType} balance remaining.`);
+        return;
+      }
+    }
+
     try {
       setSubmitting(true);
-      const response = await fetch(`${API_URL}/leaves`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeId: formData.employeeId,
-          employeeName: formData.employeeName,
-          startDate: formData.fromDate,
-          endDate: formData.toDate,
-          remark: formData.reason,
-          leaveCode: formData.leaveCode,
-          hodName: formData.hodName,
-          departmentId: formData.departmentId
-        }),
+      const result = await api.post('/leaves', {
+        employeeId: formData.employeeId,
+        employeeName: formData.employeeName,
+        startDate: formData.fromDate,
+        endDate: formData.toDate,
+        remark: formData.reason,
+        leaveCode: formData.leaveCode,
+        hodName: userIsHOD ? 'N/A' : (formData.hodName || 'N/A'),
+        departmentId: formData.departmentId
       });
-
-      const result = await response.json();
 
       if (result.success) {
         toast.success('Leave Request submitted successfully!');
-        setFormData({
-          employeeId: employeeId,
-          employeeName: user.Name || user.name || '',
-          department: formData.department,
-          departmentId: formData.departmentId,
-          hodName: '',
+        setFormData(prev => ({
+          ...prev,
           leaveType: '',
           leaveCode: '',
           fromDate: '',
           toDate: '',
           reason: ''
-        });
+        }));
         setShowModal(false);
-        fetchLeaveData();
+        fetchLeaveData(selfId);
       } else {
         toast.error('Failed to submit: ' + (result.message || 'Unknown error'));
       }
     } catch (error) {
       console.error('Insert error:', error);
-      toast.error('Something went wrong!');
+      toast.error(error.message || 'Something went wrong!');
     } finally {
       setSubmitting(false);
     }
@@ -311,18 +351,15 @@ const LeaveRequest = () => {
 
 
 
-  // Calculate leave balances dynamically based on policies and approved leaves
+  // Calculate leave balances dynamically based on policies and approved/pending leaves
   const getLeaveStats = () => {
-    const approvedLeaves = leavesData.filter(leave =>
-      leave.status && leave.status.toLowerCase() === 'approved' &&
-      leave.employeeId?.toString() === employeeId?.toString() &&
-      (selectedMonth === 'all' ||
-        isDateInMonth(leave.startDate, selectedMonth) ||
-        isDateInMonth(leave.endDate, selectedMonth))
+    const activeLeaves = leavesData.filter(leave =>
+      leave.status && !leave.status.toLowerCase().includes('reject') &&
+      leave.employeeId?.toString() === employeeId?.toString()
     );
 
     return leaveTypes.map(policy => {
-      const used = approvedLeaves
+      const used = activeLeaves
         .filter(leave => leave.leaveCode === policy.leaveCode || leave.leaveType === policy.leaveName)
         .reduce((sum, leave) => sum + (leave.days || 0), 0);
       
@@ -341,6 +378,13 @@ const LeaveRequest = () => {
   };
 
   const leaveStats = getLeaveStats();
+
+  // Normal Leave has no policy/balance: card shows only the days taken
+  const normalLeaveUsed = leavesData
+    .filter(l => l.status && !l.status.toLowerCase().includes('reject') &&
+      l.employeeId?.toString() === employeeId?.toString() &&
+      (l.leaveCode === 'NL' || l.leaveType === 'Normal Leave'))
+    .reduce((sum, l) => sum + (l.days || 0), 0);
 
   const handleCardClick = (policy) => {
     setFormData(prev => ({
@@ -435,6 +479,26 @@ const LeaveRequest = () => {
             </div>
           </div>
         ))}
+        <div
+          className="flex-1 bg-white rounded-lg shadow border p-3 cursor-pointer hover:shadow-md transition-shadow border-l-4 border-l-emerald-500 min-w-0"
+          onClick={() => handleCardClick({ leaveName: 'Normal Leave', leaveCode: 'NL' })}
+        >
+          <div className="flex items-center justify-between">
+            <div className="min-w-0 overflow-hidden">
+              <p className="text-[10px] text-gray-500 font-medium truncate uppercase tracking-wider">Normal Leave</p>
+              <div className="flex items-baseline gap-1">
+                <h3 className="text-lg font-bold text-gray-800">{normalLeaveUsed}</h3>
+                <span className="text-[10px] text-gray-400">Days taken</span>
+              </div>
+              <p className="text-[10px] font-medium truncate text-gray-500 mt-0.5">
+                <span className="text-emerald-600">No limit</span> • Plain leave
+              </p>
+            </div>
+            <div className="p-1.5 rounded-full bg-emerald-50 flex-shrink-0">
+              <Calendar size={14} className="text-emerald-600" />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Leave Requests Table */}
@@ -489,6 +553,7 @@ const LeaveRequest = () => {
                            }`}>
                              {request.status}
                            </span>
+                           {request.status === 'Pending HOD' && <HodLabel hodName={request.hodName} hodCode={request.hodCode} />}
                          </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {request.appliedDate}
@@ -520,13 +585,23 @@ const LeaveRequest = () => {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Employee Name *</label>
-                <input
-                  type="text"
-                  name="employeeName"
-                  value={formData.employeeName}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
-                  readOnly
-                />
+                {canPickEmployee ? (
+                  <SearchableEmployeeSelect
+                    employees={employees}
+                    selectedEmployeeId={formData.employeeId}
+                    onSelect={handlePickEmployee}
+                    searchBy="both"
+                    placeholder="Search by employee code or name..."
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    name="employeeName"
+                    value={formData.employeeName}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 focus:outline-none"
+                    readOnly
+                  />
+                )}
               </div>
 
               <div>
@@ -551,20 +626,13 @@ const LeaveRequest = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">HOD Name *</label>
-                <select
-                  name="hodName"
-                  value={formData.hodName}
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  required
-                >
-                  <option value="">Select HOD</option>
-                  {hods.map(hod => (
-                    <option key={hod.id} value={hod.name}>{hod.name}</option>
-                  ))}
-                </select>
+              <div className="md:col-span-2">
+                <HodInfo
+                  hodName={formData.hodName}
+                  hodCode={formData.hodCode}
+                  departmentName={formData.department}
+                  isSelfHod={userIsHOD && isForSelf}
+                />
               </div>
 
               <div>
@@ -589,6 +657,19 @@ const LeaveRequest = () => {
                     </>
                   )}
                 </select>
+                {formData.leaveType && isForSelf && (() => {
+                  const stat = leaveStats.find(s => s.leaveName === formData.leaveType || s.leaveCode === formData.leaveCode);
+                  if (!stat) return null;
+                  return stat.remaining <= 0 ? (
+                    <p className="text-xs text-red-600 font-semibold mt-1 flex items-center">
+                      ⚠️ No leave balance left for this leave type (0 days remaining).
+                    </p>
+                  ) : (
+                    <p className="text-xs text-emerald-600 font-medium mt-1">
+                      Available balance: {stat.remaining} day(s) remaining out of {stat.total}
+                    </p>
+                  );
+                })()}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
