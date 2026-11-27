@@ -103,6 +103,14 @@ const LeaveManagement = () => {
     }));
   };
 
+  // Admin can raise a request only for employees of the departments they head (plus themselves)
+  const headedDepts = user?.headedDepartments || [];
+  const requestableEmployees = !isAdmin
+    ? employees
+    : employees.filter(e =>
+        Number(e.id) === Number(user?.employeeId) ||
+        headedDepts.some(h => String(h.id) === String(e.departmentId) || h.name === e.department));
+
   // Fetch employees from backend
   const fetchEmployees = async () => {
     try {
@@ -477,8 +485,7 @@ const LeaveManagement = () => {
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 <div className="flex space-x-2">
                   {item.status === 'Pending HOD' && (
-                    (user?.roles?.some(r => r.toLowerCase() === 'hod') || user?.roles?.some(r => r.toLowerCase() === 'admin'))
-                    || (user?.role === 'hod' || user?.role === 'admin')
+                    user?.roles?.some(r => r.toLowerCase() === 'hod') || user?.role === 'hod'
                   ) && (
                     <>
                       <button
@@ -838,7 +845,7 @@ const LeaveManagement = () => {
                   />
                 ) : (
                   <SearchableEmployeeSelect
-                    employees={employees.map(e => ({ ...e, employee_id: e.id, employee_code: e.employeeCode }))}
+                    employees={requestableEmployees.map(e => ({ ...e, employee_id: e.id, employee_code: e.employeeCode }))}
                     selectedEmployeeId={formData.employeeId}
                     onSelect={(emp) => emp && handleEmployeeChange(emp.name)}
                     searchBy="both"
